@@ -6,6 +6,7 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import { IPC } from '../../shared/constants';
 import { vaultEngine } from '../vault/index';
+import { securityManager } from '../security';
 import type { NexusSettings } from '../../shared/types';
 
 /** Wrap a handler result in a standardised envelope. */
@@ -111,6 +112,21 @@ async function getAllSettings(): Promise<NexusSettings> {
   return result;
 }
 
+/**
+ * Push the vault's security settings into the security manager. They live in the vault, so
+ * this runs on every unlock and whenever one of them changes.
+ */
+async function applySecuritySettings(): Promise<void> {
+  const autoLock = Number(await getSetting('autoLockTimeout'));
+  const clipboardClear = Number(await getSetting('clipboardClearTimeout'));
+  securityManager.setAutoLockTimeout(Number.isFinite(autoLock) ? autoLock : DEFAULTS.autoLockTimeout);
+  securityManager.setClipboardClearTimeout(
+    Number.isFinite(clipboardClear) ? clipboardClear : DEFAULTS.clipboardClearTimeout,
+  );
+}
+
+const SECURITY_SETTING_KEYS = new Set(['autoLockTimeout', 'clipboardClearTimeout']);
+
 function notifyRenderer(key: string, value: unknown): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed()) {
@@ -124,6 +140,12 @@ function notifyRenderer(key: string, value: unknown): void {
 // ---------------------------------------------------------------------------
 
 export function registerSettingsHandlers(): void {
+  vaultEngine.onUnlocked(() => {
+    applySecuritySettings().catch(() => {
+      // Keep the current values if the settings can't be read
+    });
+  });
+
   // ── SETTINGS_GET ────────────────────────────────────────────
   ipcMain.handle(IPC.SETTINGS_GET, async (_event, key: string) => {
     try {
@@ -138,6 +160,7 @@ export function registerSettingsHandlers(): void {
   ipcMain.handle(IPC.SETTINGS_SET, async (_event, key: string, value: unknown) => {
     try {
       await setSetting(key, value);
+      if (SECURITY_SETTING_KEYS.has(key)) await applySecuritySettings();
       notifyRenderer(key, value);
       return ok(null);
     } catch (err: unknown) {
@@ -163,6 +186,7 @@ export function registerSettingsHandlers(): void {
         throw new Error(`Unknown setting: ${key}`);
       }
       await setSetting(key, defaultValue);
+      if (SECURITY_SETTING_KEYS.has(key)) await applySecuritySettings();
       notifyRenderer(key, defaultValue);
       return ok(defaultValue);
     } catch (err: unknown) {

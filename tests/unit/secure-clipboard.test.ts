@@ -44,4 +44,11 @@ describe('secure clipboard auto-clear', () => {
     await vi.advanceTimersByTimeAsync(30_000);
     expect(clipboardText).toBe('something the user copied');
   });
+
+  it('never clears when the timeout is 0 (disabled)', async () => {
+    securityManager.setClipboardClearTimeout(0);
+    await securityManager.copyToClipboardSecure('s3cret');
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(clipboardText).toBe('s3cret');
+  });
 });

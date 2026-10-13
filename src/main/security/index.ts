@@ -142,6 +142,12 @@ class SecurityManager {
     // 3. Clear any existing clipboard timer
     this.clearClipboardTimer();
 
+    // A timeout of 0 means "don't auto-clear" (same convention as the auto-lock timeout)
+    if (this.clipboardClearTimeout <= 0) {
+      this.lastClipboardText = null;
+      return;
+    }
+
     // 4. Set a new timer to clear the clipboard after the configured timeout
     this.clipboardTimer = setTimeout(() => {
       this.clipboardTimer = null;

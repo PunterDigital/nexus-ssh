@@ -282,7 +282,7 @@ export const SettingsPanel: React.FC = () => {
 
             <SettingRow
               label="Clipboard clear timeout"
-              description="Automatically clear copied passwords from clipboard."
+              description="Automatically clear copied passwords from clipboard. Set to 0 to disable."
             >
               <div className="flex items-center gap-1.5">
                 <input
