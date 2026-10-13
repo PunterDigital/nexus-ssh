@@ -67,8 +67,10 @@ test('SFTP upload can be paused and resumed, and the file arrives intact', async
   await acceptOnce.click({ timeout: 15_000 }).catch(() => {});
 
   // Point the local pane at the temp dir and upload the file from its context menu
+  // Click the empty right-hand end: the breadcrumb's segments are buttons that navigate instead.
   const localPath = page.getByTitle('Click to edit path').first();
-  await localPath.click();
+  const box = (await localPath.boundingBox())!;
+  await localPath.click({ position: { x: box.width - 4, y: box.height / 2 } });
   const pathInput = page.locator('input.font-mono').first();
   await pathInput.fill(localDir);
   await pathInput.press('Enter');
