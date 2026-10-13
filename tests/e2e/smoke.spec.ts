@@ -2,6 +2,7 @@ import { test, expect, _electron as electron, type ElectronApplication } from '@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { version } from '../../package.json';
 
 // Launches the built app (run `pnpm build` first) with an isolated profile, so a real vault is never touched.
 // Set NEXUS_E2E_EXECUTABLE to a packaged binary (e.g. dist-release/win-unpacked/Nexus.exe) to test that instead.
@@ -36,6 +37,7 @@ test('first run: create an encrypted vault, then unlock it after a restart', asy
   await page.getByRole('button', { name: 'Create Vault', exact: true }).click();
 
   await expect(page.getByText('No connections yet')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(`Nexus v${version}`)).toBeVisible();
   await app.close();
 
   // Relaunch: the vault must reopen with the master password (exercises SQLCipher + Argon2id).
