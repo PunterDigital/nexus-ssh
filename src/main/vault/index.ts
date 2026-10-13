@@ -115,6 +115,25 @@ class VaultEngine {
    * Windows where open handles hold an exclusive lock.
    */
   private cachedPassword: string | null = null;
+  private unlockListeners: Array<() => void> = [];
+
+  /** Run `listener` every time a vault is opened (create, password, PIN or hardware-key unlock). */
+  onUnlocked(listener: () => void): () => void {
+    this.unlockListeners.push(listener);
+    return () => {
+      this.unlockListeners = this.unlockListeners.filter((l) => l !== listener);
+    };
+  }
+
+  private notifyUnlocked(): void {
+    for (const listener of this.unlockListeners) {
+      try {
+        listener();
+      } catch {
+        // A listener must never break unlocking
+      }
+    }
+  }
 
   // -----------------------------------------------------------------------
   // Create a brand-new vault
@@ -177,6 +196,8 @@ class VaultEngine {
     this.dbKey = key;
     this.vaultPath = vaultPath;
     this.cachedPassword = password;
+
+    this.notifyUnlocked();
   }
 
   // -----------------------------------------------------------------------
@@ -229,6 +250,8 @@ class VaultEngine {
     this.dbKey = Buffer.from(dbKey);
     this.vaultPath = vaultPath;
     this.cachedPassword = null;
+
+    this.notifyUnlocked();
   }
 
   // -----------------------------------------------------------------------
@@ -272,6 +295,8 @@ class VaultEngine {
     this.dbKey = Buffer.from(dbKey);
     this.vaultPath = vaultPath;
     this.cachedPassword = null;
+
+    this.notifyUnlocked();
   }
 
   // -----------------------------------------------------------------------
@@ -325,6 +350,8 @@ class VaultEngine {
     this.dbKey = key;
     this.vaultPath = vaultPath;
     this.cachedPassword = password;
+
+    this.notifyUnlocked();
   }
 
   // -----------------------------------------------------------------------
