@@ -41,8 +41,9 @@ mac:
         - arm64
   artifactName: ${productName}-${version}-${arch}.${ext}
   category: public.app-category.developer-tools
-  # Unsigned builds: ad-hoc sign so Apple Silicon will run the app; hardened runtime needs a real identity.
-  identity: '-'
+  # No Developer ID: electron-builder skips signing and scripts/after-pack.js ad-hoc signs the bundle
+  # instead (Apple Silicon won't run an app with a broken signature). Hardened runtime needs a real identity.
+  identity: null
   hardenedRuntime: false
   gatekeeperAssess: false
 
@@ -67,6 +68,7 @@ linux:
   category: Development
 
 asar: true
+afterPack: scripts/after-pack.js
 
 # Native modules are never rebuilt: @journeyapps/sqlcipher is N-API, so its prebuilt binaries work in
 # Electron as-is, and they live in per-arch folders (lib/binding/napi-v6-<platform>-<arch>). CI downloads

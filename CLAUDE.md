@@ -51,14 +51,17 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
 
 `@journeyapps/sqlcipher` is N-API (`napi-v6`): the prebuilt binary works in Electron without a
 rebuild. `scripts/postinstall.js` only falls back to `electron-rebuild` if no prebuilt binary exists.
-`electron-builder` has `npmRebuild: true` so each macOS arch gets the right binary.
+`electron-builder` never rebuilds native modules (`npmRebuild: false`; its node-gyp breaks on current
+runners). Prebuilt binaries live in per-arch folders (`lib/binding/napi-v6-<platform>-<arch>`), so the
+macOS CI job also downloads the darwin-x64 binary and both Mac builds load the right one at runtime.
 
 ## CI / release
 
 - `ci.yml`: ubuntu typecheck/lint/unit/build → windows + macOS E2E + package (artifacts kept 7 days).
 - `release.yml`: on `v*` tag (must equal `package.json` version) builds Windows NSIS `.exe` and macOS
   `.dmg` (x64 + arm64), then creates the GitHub Release with `latest.yml` for electron-updater.
-- macOS builds are ad-hoc signed (`identity: '-'`, hardened runtime off); Windows unsigned.
+- macOS builds are ad-hoc signed by `scripts/after-pack.js` (electron-builder 25 can't do ad-hoc itself;
+  `identity: null`, hardened runtime off). CI runs `codesign --verify --deep --strict`. Windows unsigned.
 
 ## Known debt
 
