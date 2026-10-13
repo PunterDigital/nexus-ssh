@@ -70,7 +70,9 @@ export const SFTPBrowser: React.FC<SFTPBrowserProps> = ({ sessionId }) => {
         } else if (p.status === 'failed') {
           failTransfer(p.id, p.error ?? 'Transfer failed');
         } else if (typeof p.transferred === 'number') {
-          updateTransferProgress(p.id, p.transferred, p.size);
+          const status =
+            p.status === 'paused' || p.status === 'queued' ? p.status : 'active';
+          updateTransferProgress(p.id, p.transferred, p.size, status);
         }
       },
       [updateTransferProgress, completeTransfer, failTransfer],

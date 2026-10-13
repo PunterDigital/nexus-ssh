@@ -166,6 +166,9 @@ const nexusAPI = {
       call('sftp:stat', sessionId, remotePath),
     chmod: (sessionId: string, remotePath: string, mode: string) =>
       call('sftp:chmod', sessionId, remotePath, mode),
+    pauseTransfer: (transferId: string) => call('sftp:transfer-pause', transferId),
+    resumeTransfer: (transferId: string) => call('sftp:transfer-resume', transferId),
+    cancelTransfer: (transferId: string) => call('sftp:transfer-cancel', transferId),
     onTransferProgress: (callback: (progress: unknown) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, progress: unknown) =>
         callback(progress);

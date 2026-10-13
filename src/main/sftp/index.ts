@@ -9,6 +9,7 @@ import { Client } from 'ssh2';
 import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
 import * as path from 'path';
+import type { Readable, Writable } from 'stream';
 import { v4 as uuidv4 } from 'uuid';
 import type { BrowserWindow } from 'electron';
 import { sshManager } from '../ssh';
@@ -21,10 +22,12 @@ import type { SFTPEntry, TransferItem } from '../../shared/types';
 
 interface TransferState {
   item: TransferItem;
-  readStream?: fs.ReadStream | NodeJS.ReadableStream;
-  writeStream?: fs.WriteStream | NodeJS.WritableStream;
+  readStream?: Readable;
+  writeStream?: Writable;
   paused: boolean;
   aborted: boolean;
+  /** Settles the running transfer's promise early (used on cancel). */
+  settle?: (err?: Error) => void;
 }
 
 interface TransferQueueItem {
@@ -338,13 +341,17 @@ class SFTPManager {
 
   pauseTransfer(transferId: string): void {
     const state = this.transfers.get(transferId);
-    if (!state || state.paused || state.aborted) return;
+    if (!state || state.paused || state.aborted || state.item.status !== 'active') return;
 
     state.paused = true;
     state.item.status = 'paused';
 
-    if (state.readStream && 'pause' in state.readStream) {
-      (state.readStream as NodeJS.ReadableStream).pause();
+    // Unpipe as well as pause: pipe() resumes the source on the destination's
+    // next 'drain', which would silently undo a bare pause().
+    const { readStream, writeStream } = state;
+    if (readStream) {
+      if (writeStream) readStream.unpipe(writeStream);
+      readStream.pause();
     }
 
     this.emitTransferProgress(state.item);
@@ -357,8 +364,11 @@ class SFTPManager {
     state.paused = false;
     state.item.status = 'active';
 
-    if (state.readStream && 'resume' in state.readStream) {
-      (state.readStream as NodeJS.ReadableStream).resume();
+    // Re-piping continues from the source's current offset; anything already
+    // read but not yet written is still in the readable buffer.
+    const { readStream, writeStream } = state;
+    if (readStream && writeStream) {
+      readStream.pipe(writeStream);
     }
 
     this.emitTransferProgress(state.item);
@@ -366,19 +376,21 @@ class SFTPManager {
 
   cancelTransfer(transferId: string): void {
     const state = this.transfers.get(transferId);
-    if (!state) return;
+    if (!state || state.aborted) return;
+    if (state.item.status === 'completed' || state.item.status === 'failed') return;
 
     state.aborted = true;
+    state.paused = false;
     state.item.status = 'failed';
     state.item.error = 'Cancelled by user';
 
     // Destroy streams to stop I/O
-    if (state.readStream && 'destroy' in state.readStream) {
-      (state.readStream as any).destroy();
-    }
-    if (state.writeStream && 'destroy' in state.writeStream) {
-      (state.writeStream as any).destroy();
-    }
+    state.readStream?.destroy();
+    state.writeStream?.destroy();
+
+    // Destroyed streams don't always emit 'close'/'error', so settle the
+    // transfer explicitly to free its concurrency slot.
+    state.settle?.(new Error('Cancelled by user'));
 
     this.emitTransferProgress(state.item);
 
@@ -554,89 +566,69 @@ class SFTPManager {
 
   private async executeUpload(queueItem: TransferQueueItem, state: TransferState): Promise<void> {
     const sftp = await this.getSFTP(queueItem.connectionId);
-    return new Promise<void>((resolve, reject) => {
-      const readStream = fs.createReadStream(queueItem.localPath);
-      const writeStream = sftp.createWriteStream(queueItem.remotePath);
-
-      state.readStream = readStream;
-      state.writeStream = writeStream;
-
-      let transferred = 0;
-
-      readStream.on('data', (chunk: Buffer) => {
-        if (state.aborted) {
-          readStream.destroy();
-          writeStream.destroy();
-          return;
-        }
-
-        transferred += chunk.length;
-        state.item.transferred = transferred;
-        this.emitTransferProgress(state.item);
-      });
-
-      writeStream.on('close', () => {
-        if (state.aborted) return;
-        resolve();
-      });
-
-      readStream.on('error', (err: Error) => {
-        writeStream.destroy();
-        reject(err);
-      });
-
-      writeStream.on('error', (err: Error) => {
-        readStream.destroy();
-        reject(err);
-      });
-
-      readStream.pipe(writeStream);
-    });
+    if (state.aborted) return;
+    const readStream = fs.createReadStream(queueItem.localPath);
+    const writeStream = sftp.createWriteStream(queueItem.remotePath);
+    return this.pump(state, readStream, writeStream);
   }
 
   private async executeDownload(queueItem: TransferQueueItem, state: TransferState): Promise<void> {
     const sftp = await this.getSFTP(queueItem.connectionId);
-    return new Promise<void>((resolve, reject) => {
-      // Ensure the local directory exists
-      const localDir = path.dirname(queueItem.localPath);
-      fs.mkdirSync(localDir, { recursive: true });
+    if (state.aborted) return;
+    // Ensure the local directory exists
+    await fsPromises.mkdir(path.dirname(queueItem.localPath), { recursive: true });
+    const readStream = sftp.createReadStream(queueItem.remotePath);
+    const writeStream = fs.createWriteStream(queueItem.localPath);
+    return this.pump(state, readStream, writeStream);
+  }
 
-      const readStream = sftp.createReadStream(queueItem.remotePath);
-      const writeStream = fs.createWriteStream(queueItem.localPath);
+  /** Pipe source → destination with progress reporting, pause/resume and cancel support. */
+  private pump(state: TransferState, readStream: Readable, writeStream: Writable): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const settle = (err?: Error): void => {
+        if (settled) return;
+        settled = true;
+        state.settle = undefined;
+        if (err) reject(err);
+        else resolve();
+      };
 
       state.readStream = readStream;
       state.writeStream = writeStream;
+      state.settle = settle;
 
       let transferred = 0;
 
       readStream.on('data', (chunk: Buffer) => {
-        if (state.aborted) {
-          readStream.destroy();
-          writeStream.destroy();
-          return;
-        }
-
+        if (state.aborted) return;
         transferred += chunk.length;
         state.item.transferred = transferred;
         this.emitTransferProgress(state.item);
       });
 
       writeStream.on('close', () => {
-        if (state.aborted) return;
-        resolve();
+        if (state.aborted) return settle(new Error('Cancelled by user'));
+        settle();
       });
 
       readStream.on('error', (err: Error) => {
         writeStream.destroy();
-        reject(err);
+        settle(err);
       });
 
       writeStream.on('error', (err: Error) => {
         readStream.destroy();
-        reject(err);
+        settle(err);
       });
 
       readStream.pipe(writeStream);
+
+      // Honour a pause that arrived while the SFTP channel was still opening
+      if (state.paused) {
+        readStream.unpipe(writeStream);
+        readStream.pause();
+      }
     });
   }
 
