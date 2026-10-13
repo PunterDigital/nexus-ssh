@@ -10,10 +10,10 @@ import { securityManager } from '../security';
  */
 export function registerClipboardHandlers(): void {
   // Copy sensitive text (e.g. passwords) to clipboard with auto-clear
-  ipcMain.handle('clipboard:copy-secure', (_event, text: string) => {
+  ipcMain.handle('clipboard:copy-secure', async (_event, text: string) => {
     if (typeof text !== 'string') {
       throw new Error('clipboard:copy-secure expects a string argument');
     }
-    securityManager.copyToClipboardSecure(text);
+    await securityManager.copyToClipboardSecure(text);
   });
 }

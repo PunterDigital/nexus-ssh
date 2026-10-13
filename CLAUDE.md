@@ -6,7 +6,7 @@ Design doc: `ssh-client-spec.md` (read the relevant section before changing a fe
 
 ## Stack
 
-- Electron 33, main process bundled by esbuild (`src/main` → `dist/main`, CJS)
+- Electron 44, main process bundled by esbuild (`src/main` → `dist/main`, CJS)
 - Renderer: React 19 + Zustand + Tailwind 4, built by Vite (`src/renderer` → `dist/renderer`)
 - `src/shared`: types and constants (incl. every IPC channel name in `IPC`)
 - Native/heavy deps are esbuild externals: `ssh2`, `@journeyapps/sqlcipher`, `basic-ftp`,
@@ -63,7 +63,7 @@ macOS CI job also downloads the darwin-x64 binary and both Mac builds load the r
 - `ci.yml`: ubuntu typecheck/lint/unit/build → windows + macOS E2E + package (artifacts kept 7 days).
 - `release.yml`: on `v*` tag (must equal `package.json` version) builds Windows NSIS `.exe` and macOS
   `.dmg` (x64 + arm64), then creates the GitHub Release with `latest.yml` for electron-updater.
-- macOS builds are ad-hoc signed by `scripts/after-pack.js` (electron-builder 25 can't do ad-hoc itself;
+- macOS builds are ad-hoc signed by `scripts/after-pack.js` (kept from electron-builder 25, which could not ad-hoc sign itself;
   `identity: null`, hardened runtime off). CI runs `codesign --verify --deep --strict`. Windows unsigned.
 
 ## Known debt

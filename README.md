@@ -19,6 +19,8 @@ Get the latest build from the **[downloads page](https://punterdigital.github.io
 Builds are unsigned. On Windows, click *More info → Run anyway* on the SmartScreen prompt. On macOS,
 right-click the app → *Open* the first time.
 
+Requires Windows 10+ or macOS 13 (Ventura)+.
+
 ## Development
 
 Requires Node 24 and pnpm 10. Building the native SQLCipher module needs Visual Studio Build Tools
