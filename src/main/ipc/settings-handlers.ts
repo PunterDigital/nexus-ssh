@@ -73,7 +73,7 @@ async function getSetting(key: string): Promise<unknown> {
     [SETTINGS_KEY_PREFIX + key],
   );
   if (!row) {
-    return (DEFAULTS as Record<string, unknown>)[key] ?? null;
+    return (DEFAULTS as unknown as Record<string, unknown>)[key] ?? null;
   }
   try {
     return JSON.parse(row.value);
@@ -158,7 +158,7 @@ export function registerSettingsHandlers(): void {
   // ── SETTINGS_RESET ──────────────────────────────────────────
   ipcMain.handle(IPC.SETTINGS_RESET, async (_event, key: string) => {
     try {
-      const defaultValue = (DEFAULTS as Record<string, unknown>)[key];
+      const defaultValue = (DEFAULTS as unknown as Record<string, unknown>)[key];
       if (defaultValue === undefined) {
         throw new Error(`Unknown setting: ${key}`);
       }

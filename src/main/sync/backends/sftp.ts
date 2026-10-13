@@ -140,7 +140,7 @@ export class SFTPSyncBackend implements SyncBackend {
       this.sftp!.stat(remotePath, (err, stats) => {
         if (err) {
           // File not found is not an error — return null
-          if ((err as NodeJS.ErrnoException).code === 2 || err.message.includes('No such file')) {
+          if ((err as { code?: unknown }).code === 2 || err.message.includes('No such file')) {
             resolve(null);
           } else {
             reject(new Error(`SFTP stat failed: ${err.message}`));

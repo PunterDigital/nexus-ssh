@@ -7,7 +7,7 @@ import { IPC } from '../../shared/constants';
 import { syncEngine } from '../sync/engine';
 import { vaultEngine } from '../vault/index';
 import * as crud from '../vault/crud';
-import type { BackendConfig } from '../../shared/types';
+import type { BackendConfig, SyncBackendType } from '../../shared/types';
 
 /** Wrap a handler result in a standardised envelope. */
 function ok<T>(data: T) {
@@ -79,7 +79,7 @@ export function registerSyncHandlers(): void {
         });
 
         await crud.upsertSyncState({
-          backend_type: payload.backendType,
+          backend_type: payload.backendType as SyncBackendType,
           backend_config: fullConfigJson,
           sync_interval: payload.syncInterval ?? 300,
         });
@@ -90,6 +90,23 @@ export function registerSyncHandlers(): void {
       }
     },
   );
+
+  // ── SYNC_TEST_CONNECTION ────────────────────────────────────
+  // Tests the config from the settings form without replacing the active backend.
+  ipcMain.handle(IPC.SYNC_TEST_CONNECTION, async (_event, config: BackendConfig) => {
+    if (!config || !config.type) {
+      return fail('Choose a sync backend first.');
+    }
+    const backend = syncEngine.createBackend(config.type);
+    try {
+      await backend.connect(config);
+      return ok(await backend.testConnection());
+    } catch (err: unknown) {
+      return fail(err instanceof Error ? err.message : String(err));
+    } finally {
+      await backend.disconnect().catch(() => {});
+    }
+  });
 
   // ── SYNC_GET_CONFIG ─────────────────────────────────────────
   ipcMain.handle(IPC.SYNC_GET_CONFIG, async () => {

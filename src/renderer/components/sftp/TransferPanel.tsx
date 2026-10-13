@@ -80,7 +80,6 @@ const TransferRow: React.FC<TransferRowProps> = ({ transfer }) => {
   const handlePauseResume = useCallback(() => {
     if (transfer.status === 'active') {
       pauseTransfer(transfer.id);
-      window.nexus.sftp.chmod; // noop reference; real impl would call transfer-pause IPC
     } else if (transfer.status === 'paused') {
       resumeTransfer(transfer.id);
     }

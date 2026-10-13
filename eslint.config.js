@@ -36,6 +36,10 @@ export default [
     },
     rules: {
       ...tsPlugin.configs.recommended.rules,
+      // TypeScript already checks for undefined identifiers (typescript-eslint recommends this off).
+      'no-undef': 'off',
+      'no-redeclare': 'off',
+      '@typescript-eslint/no-redeclare': 'error',
       'react/react-in-jsx-scope': 'off',
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'warn',
@@ -51,6 +55,13 @@ export default [
       react: {
         version: 'detect',
       },
+    },
+  },
+  {
+    // Electron main process: native CommonJS modules (sqlcipher, libsodium) are loaded with require().
+    files: ['src/main/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
     },
   },
   {

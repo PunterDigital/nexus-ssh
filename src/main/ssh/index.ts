@@ -6,8 +6,9 @@
 
 import crypto from 'node:crypto';
 import { Client, type ConnectConfig, type ClientChannel } from 'ssh2';
-import type { ParsedKey } from 'ssh2-streams';
-import { BrowserWindow, ipcMain } from 'electron';
+import type { ParsedKey } from 'ssh2';
+import type { BrowserWindow} from 'electron';
+import { ipcMain } from 'electron';
 import { IPC, DEFAULT_KEEPALIVE_INTERVAL } from '../../shared/constants';
 import type {
   ResolvedCredentials,
@@ -382,6 +383,7 @@ class SSHManager {
         label: s.label,
         colour: s.colour,
         connected: s.connected,
+        status: s.connected ? 'connected' : 'disconnected',
         startedAt: s.startedAt,
       });
     }

@@ -148,6 +148,7 @@ export const IPC = {
   SYNC_PULL: 'sync:pull',
   SYNC_GET_STATUS: 'sync:get-status',
   SYNC_SET_ENABLED: 'sync:set-enabled',
+  SYNC_TEST_CONNECTION: 'sync:test-connection',
   SYNC_STATUS_UPDATE: 'sync:status-update',
 
   // Snippets

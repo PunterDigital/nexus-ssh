@@ -10,14 +10,16 @@ files:
   - dist/**/*
   - package.json
 
-# Auto-update via GitHub Releases
+# Releases are created by .github/workflows/release.yml (electron-builder runs with --publish never);
+# this block only tells electron-updater where to look for updates.
 publish:
   provider: github
-  owner: punterdigital
+  owner: PunterDigital
   repo: nexus-ssh
 
 # Windows
 win:
+  artifactName: ${productName}-Setup-${version}.${ext}
   signAndEditExecutable: false
   target:
     - target: nsis
@@ -37,8 +39,11 @@ mac:
       arch:
         - x64
         - arm64
+  artifactName: ${productName}-${version}-${arch}.${ext}
   category: public.app-category.developer-tools
-  hardenedRuntime: true
+  # Unsigned builds: ad-hoc sign so Apple Silicon will run the app; hardened runtime needs a real identity.
+  identity: '-'
+  hardenedRuntime: false
   gatekeeperAssess: false
 
 dmg:
@@ -63,7 +68,8 @@ linux:
 
 asar: true
 
-# Rebuild native modules for correct Electron ABI
+# Native modules: @journeyapps/sqlcipher is N-API, so electron-builder's rebuild step just fetches the
+# prebuilt binary for each target arch (needed for the x64 + arm64 macOS builds).
 buildDependenciesFromSource: false
 nodeGypRebuild: false
-npmRebuild: false
+npmRebuild: true

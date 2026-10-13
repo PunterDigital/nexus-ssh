@@ -4,7 +4,8 @@
 // and coordinates vault locking with the renderer.
 // ============================================================
 
-import { BrowserWindow, clipboard, powerMonitor } from 'electron';
+import type { BrowserWindow } from 'electron';
+import { clipboard, powerMonitor } from 'electron';
 import { vaultEngine } from '../vault';
 import { sshManager } from '../ssh';
 import {

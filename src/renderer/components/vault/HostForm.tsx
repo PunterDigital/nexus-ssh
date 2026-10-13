@@ -179,24 +179,24 @@ export const HostForm: React.FC<HostFormProps> = ({
 
       const payload = {
         vault_id: vaultId,
-        group_id: form.groupId || undefined,
+        group_id: form.groupId || null,
         label: form.label.trim(),
         hostname: form.hostname.trim(),
         port: portVal,
-        username: form.username || undefined,
-        password: form.authMethod === 'password' ? form.password || undefined : undefined,
-        identity_id: form.authMethod === 'identity' ? form.identityId || undefined : undefined,
-        key_id: form.authMethod === 'key' ? form.keyId || undefined : undefined,
+        username: form.username || null,
+        password: form.authMethod === 'password' ? form.password || null : null,
+        identity_id: form.authMethod === 'identity' ? form.identityId || null : null,
+        key_id: form.authMethod === 'key' ? form.keyId || null : null,
         keepalive_interval: Number(form.keepaliveInterval) || 60,
         compression: form.compression,
-        os_type: (form.osType as OSType) || undefined,
-        notes: form.notes || undefined,
+        os_type: (form.osType as OSType) || null,
+        notes: form.notes || null,
         colour: form.colour,
       };
       if (isEditing) {
         await updateHost(host!.id, payload);
       } else {
-        await addHost(payload);
+        await addHost({ ...payload, last_connected: null });
       }
       onClose();
     } catch (err) {

@@ -6,8 +6,8 @@
 
 import path from 'path';
 import { promises as fs } from 'fs';
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const { Database } = require('@journeyapps/sqlcipher');
+// eslint-disable-next-line @typescript-eslint/no-redeclare -- type alias for the runtime class
 type Database = InstanceType<typeof Database>;
 import {
   SQLCIPHER_PAGE_SIZE,

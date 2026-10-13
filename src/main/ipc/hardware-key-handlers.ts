@@ -9,7 +9,6 @@
 import { ipcMain } from 'electron';
 import { promises as fs } from 'fs';
 import path from 'path';
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const sodium = require('libsodium-wrappers-sumo');
 import { IPC, VAULT_FILE_EXTENSION } from '../../shared/constants';
 import { vaultEngine } from '../vault/index';
@@ -38,6 +37,7 @@ function vaultIdFromPath(vaultPath: string): string {
 function sanitizeVaultFilename(name: string): string {
   const cleaned = name
     .trim()
+    // eslint-disable-next-line no-control-regex -- strip control characters from filenames
     .replace(/[<>:"/\\|?*\x00-\x1f]+/g, '')
     .replace(/\s+/g, ' ')
     .slice(0, 80);
@@ -158,7 +158,7 @@ export function registerHardwareKeyHandlers(): void {
         dbKey = Buffer.from(sodium.randombytes_buf(32));
 
         await vaultEngine.createWithKey(vaultPath, dbKey);
-        await crud.createVault({ name: payload.name ?? 'Default', description: null });
+        await crud.createVault({ name: payload.name ?? 'Default' });
 
         await hardwareKeyManager.setup({
           vaultId: vaultIdFromPath(vaultPath),
