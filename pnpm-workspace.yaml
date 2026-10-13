@@ -2,5 +2,7 @@ allowBuilds:
   '@journeyapps/sqlcipher': true
   cpu-features: true
   electron: true
+  # Squirrel.Windows installer helper pulled in by electron-builder; we build NSIS, so its script isn't needed
+  electron-winstaller: false
   esbuild: true
   ssh2: true

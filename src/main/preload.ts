@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
 /**
  * Nexus preload script.
@@ -281,6 +281,8 @@ const nexusAPI = {
       filters?: { name: string; extensions: string[] }[];
     }) =>
       call<{ filePaths: string[]; canceled: boolean }>('fs:pick-file', options),
+    /** Absolute path of a File from an OS drag-and-drop (File.path was removed in Electron 32). */
+    getPathForFile: (file: File): string => webUtils.getPathForFile(file),
   },
 
   // ── System events (from main → renderer) ───────────────────

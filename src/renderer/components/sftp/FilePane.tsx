@@ -398,10 +398,8 @@ export const FilePane: React.FC<FilePaneProps> = ({ side }) => {
       if (e.dataTransfer.files.length > 0 && side === 'remote') {
         const paths: string[] = [];
         for (let i = 0; i < e.dataTransfer.files.length; i++) {
-          const file = e.dataTransfer.files[i];
-          if ((file as unknown as { path?: string }).path) {
-            paths.push((file as unknown as { path: string }).path);
-          }
+          const filePath = window.nexus.fs.getPathForFile(e.dataTransfer.files[i]);
+          if (filePath) paths.push(filePath);
         }
         if (paths.length > 0) {
           uploadFiles(paths, path);

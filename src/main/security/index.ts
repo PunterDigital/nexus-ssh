@@ -116,9 +116,10 @@ class SecurityManager {
   // Secure clipboard — copy with auto-clear
   // ---------------------------------------------------------------------------
 
-  copyToClipboardSecure(text: string): void {
+  // Electron 44's main-process clipboard is async (readText/writeText return Promises).
+  async copyToClipboardSecure(text: string): Promise<void> {
     // 1. Write the text to the system clipboard
-    clipboard.writeText(text);
+    await clipboard.writeText(text);
 
     // 2. Remember what we wrote so we can verify before clearing
     this.lastClipboardText = text;
@@ -129,19 +130,20 @@ class SecurityManager {
     // 4. Set a new timer to clear the clipboard after the configured timeout
     this.clipboardTimer = setTimeout(() => {
       this.clipboardTimer = null;
+      const expected = this.lastClipboardText;
+      this.lastClipboardText = null;
 
       // Only clear if the clipboard still contains our text
       // (user may have copied something else in the meantime)
-      try {
-        const current = clipboard.readText();
-        if (current === this.lastClipboardText) {
-          clipboard.writeText('');
+      void (async () => {
+        try {
+          if ((await clipboard.readText()) === expected) {
+            await clipboard.writeText('');
+          }
+        } catch {
+          // Best-effort; clipboard access can occasionally throw on some platforms
         }
-      } catch {
-        // Best-effort; clipboard access can occasionally throw on some platforms
-      }
-
-      this.lastClipboardText = null;
+      })();
     }, this.clipboardClearTimeout * 1000);
   }
 
