@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect } from 'react';
-import { useUIStore, useTerminalStore, useVaultStore } from './stores';
-import { useSystemLock } from './hooks';
+import { useUIStore, useTerminalStore, useVaultStore, useSFTPStore } from './stores';
+import { useVaultLocked } from './hooks';
 import type { ViewType } from './stores';
 import { applyTheme } from './styles/themes';
 import { LockScreen, Sidebar, ConnectionsView } from './components/vault';
@@ -284,7 +284,6 @@ export default function App(): React.ReactElement {
   const currentView = useUIStore((s) => s.currentView);
   const setView = useUIStore((s) => s.setView);
   const setLockScreenVisible = useUIStore((s) => s.setLockScreenVisible);
-  const lockVault = useVaultStore((s) => s.lockVault);
   const loadPersistedTheme = useUIStore((s) => s.loadPersistedTheme);
 
   // Apply UI preferences (theme, font size) on mount — they're stored
@@ -313,13 +312,17 @@ export default function App(): React.ReactElement {
     applyTheme(theme);
   }, [theme]);
 
-  // Lock vault on system lock
-  const handleSystemLock = useCallback(() => {
-    lockVault();
+  // The main process locked the vault (idle, sleep, OS screen lock): drop every bit of
+  // vault-derived state and go back to the lock screen.
+  const handleVaultLocked = useCallback(() => {
+    useVaultStore.getState().reset();
+    useTerminalStore.getState().reset();
+    useSFTPStore.getState().reset();
+    setView('connections');
     setLockScreenVisible(true);
-  }, [lockVault, setLockScreenVisible]);
+  }, [setView, setLockScreenVisible]);
 
-  useSystemLock(handleSystemLock);
+  useVaultLocked(handleVaultLocked);
 
   if (lockScreenVisible) {
     return <LockScreen />;

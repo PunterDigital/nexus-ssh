@@ -16,6 +16,7 @@ async function launch(): Promise<ElectronApplication> {
       ...process.env,
       NEXUS_USE_BUILT_RENDERER: '1',
       NEXUS_USER_DATA_DIR: userDataDir,
+      NEXUS_DISABLE_IDLE_LOCK: '1',
     },
   });
 }

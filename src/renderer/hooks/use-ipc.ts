@@ -83,6 +83,17 @@ export function useSettingsChanged(
 }
 
 /**
+ * Listen for the main process locking the vault (idle timeout, sleep, OS screen lock).
+ * By the time this fires the vault is closed and SSH/SFTP sessions are gone.
+ */
+export function useVaultLocked(callback: () => void): void {
+  useEffect(() => {
+    const cleanup = window.nexus.system.onVaultLocked(callback);
+    return cleanup;
+  }, [callback]);
+}
+
+/**
  * Listen for system lock events (e.g., OS screen lock).
  * Useful for auto-locking the vault.
  */
