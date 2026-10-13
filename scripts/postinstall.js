@@ -7,6 +7,7 @@
 // ============================================================
 
 const { execSync } = require('child_process');
+const fs = require('fs');
 const path = require('path');
 
 const MODULES_TO_REBUILD = ['@journeyapps/sqlcipher'];
@@ -29,7 +30,7 @@ function tryRebuild() {
   const only = MODULES_TO_REBUILD.map((m) => `--only ${m}`).join(' ');
   try {
     console.log(`\n🔧 Rebuilding native modules for Electron: ${MODULES_TO_REBUILD.join(', ')}`);
-    execSync(`npx @electron/rebuild ${only}`, {
+    execSync(`electron-rebuild -f ${only}`, {
       stdio: 'inherit',
       cwd: path.resolve(__dirname, '..'),
     });
@@ -41,11 +42,16 @@ function tryRebuild() {
 }
 
 function tryPrebuilt() {
-  // @journeyapps/sqlcipher uses node-pre-gyp which downloads prebuilt binaries
-  // The install script may have already fetched them. Check if the binding exists.
+  // @journeyapps/sqlcipher is an N-API module (napi-v6), so the prebuilt binary that
+  // node-pre-gyp downloads at install time works in Electron without a rebuild.
   try {
-    const bindingPath = require.resolve('@journeyapps/sqlcipher/lib/binding');
-    console.log(`✅ Found prebuilt sqlcipher binding at: ${bindingPath}\n`);
+    const pkgDir = path.dirname(require.resolve('@journeyapps/sqlcipher/package.json'));
+    const bindingDir = path.join(pkgDir, 'lib', 'binding');
+    const found = fs
+      .readdirSync(bindingDir, { recursive: true })
+      .find((f) => String(f).endsWith('.node'));
+    if (!found) return false;
+    console.log(`✅ Found prebuilt sqlcipher binding at: ${path.join(bindingDir, String(found))}\n`);
     return true;
   } catch {
     return false;

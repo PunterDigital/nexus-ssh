@@ -5,7 +5,7 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { BrowserWindow } from 'electron';
+import type { BrowserWindow } from 'electron';
 import { IPC, VAULT_SALT_EXTENSION, VAULT_FILE_EXTENSION } from '@shared/constants';
 import type { BackendConfig, SyncBackendType } from '@shared/types';
 import type { SyncBackend, SyncStatus } from './types';

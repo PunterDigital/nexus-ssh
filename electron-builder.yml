@@ -10,14 +10,16 @@ files:
   - dist/**/*
   - package.json
 
-# Auto-update via GitHub Releases
+# Releases are created by .github/workflows/release.yml (electron-builder runs with --publish never);
+# this block only tells electron-updater where to look for updates.
 publish:
   provider: github
-  owner: punterdigital
+  owner: PunterDigital
   repo: nexus-ssh
 
 # Windows
 win:
+  artifactName: ${productName}-Setup-${version}.${ext}
   signAndEditExecutable: false
   target:
     - target: nsis
@@ -37,8 +39,12 @@ mac:
       arch:
         - x64
         - arm64
+  artifactName: ${productName}-${version}-${arch}.${ext}
   category: public.app-category.developer-tools
-  hardenedRuntime: true
+  # No Developer ID: electron-builder skips signing and scripts/after-pack.js ad-hoc signs the bundle
+  # instead (Apple Silicon won't run an app with a broken signature). Hardened runtime needs a real identity.
+  identity: null
+  hardenedRuntime: false
   gatekeeperAssess: false
 
 dmg:
@@ -62,8 +68,12 @@ linux:
   category: Development
 
 asar: true
+afterPack: scripts/after-pack.js
 
-# Rebuild native modules for correct Electron ABI
+# Native modules are never rebuilt: @journeyapps/sqlcipher is N-API, so its prebuilt binaries work in
+# Electron as-is, and they live in per-arch folders (lib/binding/napi-v6-<platform>-<arch>). CI downloads
+# the darwin-x64 binary next to the arm64 one so both macOS builds load the right one at runtime.
+# ssh2's optional native bits (cpu-features, crypto binding) fall back to pure JS when absent.
 buildDependenciesFromSource: false
 nodeGypRebuild: false
 npmRebuild: false

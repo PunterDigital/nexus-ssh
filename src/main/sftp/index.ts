@@ -4,12 +4,13 @@
  * tracking over SSH connections (reused or standalone).
  */
 
-import { Client, SFTPWrapper } from 'ssh2';
+import type { SFTPWrapper } from 'ssh2';
+import { Client } from 'ssh2';
 import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
-import { BrowserWindow } from 'electron';
+import type { BrowserWindow } from 'electron';
 import { sshManager } from '../ssh';
 import { IPC, DEFAULT_SFTP_CONCURRENCY } from '../../shared/constants';
 import type { SFTPEntry, TransferItem } from '../../shared/types';
@@ -579,12 +580,12 @@ class SFTPManager {
         resolve();
       });
 
-      readStream.on('error', (err) => {
+      readStream.on('error', (err: Error) => {
         writeStream.destroy();
         reject(err);
       });
 
-      writeStream.on('error', (err) => {
+      writeStream.on('error', (err: Error) => {
         readStream.destroy();
         reject(err);
       });
@@ -625,12 +626,12 @@ class SFTPManager {
         resolve();
       });
 
-      readStream.on('error', (err) => {
+      readStream.on('error', (err: Error) => {
         writeStream.destroy();
         reject(err);
       });
 
-      writeStream.on('error', (err) => {
+      writeStream.on('error', (err: Error) => {
         readStream.destroy();
         reject(err);
       });

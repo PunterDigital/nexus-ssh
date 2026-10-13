@@ -19,7 +19,11 @@ let mainWindow: BrowserWindow | null = null;
 let localServer: http.Server | null = null;
 let rendererOrigin: string | null = null;
 
-const isDev = !app.isPackaged;
+// E2E tests run the unpackaged app against the built renderer, with an isolated profile.
+const isDev = !app.isPackaged && process.env.NEXUS_USE_BUILT_RENDERER !== '1';
+if (process.env.NEXUS_USER_DATA_DIR) {
+  app.setPath('userData', process.env.NEXUS_USER_DATA_DIR);
+}
 
 // WebAuthn (used for hardware-key vault unlock) requires the renderer's
 // origin to be HTTPS-with-valid-cert, "localhost" HTTP, or an extension page.

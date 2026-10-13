@@ -132,7 +132,9 @@ const nexusAPI = {
         payload: { sessionId: string; data: string },
       ) => callback(payload.sessionId, payload.data);
       ipcRenderer.on('ssh:data', listener);
-      return () => ipcRenderer.removeListener('ssh:data', listener);
+      return () => {
+        ipcRenderer.removeListener('ssh:data', listener);
+      };
     },
     onClose: (callback: (sessionId: string, code: number) => void) => {
       const listener = (
@@ -140,7 +142,9 @@ const nexusAPI = {
         payload: { sessionId: string; error?: string },
       ) => callback(payload.sessionId, payload.error ? 1 : 0);
       ipcRenderer.on('ssh:close', listener);
-      return () => ipcRenderer.removeListener('ssh:close', listener);
+      return () => {
+        ipcRenderer.removeListener('ssh:close', listener);
+      };
     },
   },
 
@@ -166,7 +170,9 @@ const nexusAPI = {
       const listener = (_event: Electron.IpcRendererEvent, progress: unknown) =>
         callback(progress);
       ipcRenderer.on('sftp:transfer-progress', listener);
-      return () => ipcRenderer.removeListener('sftp:transfer-progress', listener);
+      return () => {
+        ipcRenderer.removeListener('sftp:transfer-progress', listener);
+      };
     },
   },
 
@@ -202,11 +208,15 @@ const nexusAPI = {
       call('sync:get-status'),
     setEnabled: (enabled: boolean) =>
       call('sync:set-enabled', enabled),
+    testConnection: (config: unknown) =>
+      call<boolean>('sync:test-connection', config),
     onSyncStatus: (callback: (status: unknown) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, status: unknown) =>
         callback(status);
       ipcRenderer.on('sync:status-update', listener);
-      return () => ipcRenderer.removeListener('sync:status-update', listener);
+      return () => {
+        ipcRenderer.removeListener('sync:status-update', listener);
+      };
     },
   },
 
@@ -238,7 +248,9 @@ const nexusAPI = {
       const listener = (_event: Electron.IpcRendererEvent, key: string, value: unknown) =>
         callback(key, value);
       ipcRenderer.on('settings:changed', listener);
-      return () => ipcRenderer.removeListener('settings:changed', listener);
+      return () => {
+        ipcRenderer.removeListener('settings:changed', listener);
+      };
     },
   },
 
@@ -273,27 +285,37 @@ const nexusAPI = {
     onSuspend: (callback: () => void) => {
       const listener = () => callback();
       ipcRenderer.on('system:suspend', listener);
-      return () => ipcRenderer.removeListener('system:suspend', listener);
+      return () => {
+        ipcRenderer.removeListener('system:suspend', listener);
+      };
     },
     onResume: (callback: () => void) => {
       const listener = () => callback();
       ipcRenderer.on('system:resume', listener);
-      return () => ipcRenderer.removeListener('system:resume', listener);
+      return () => {
+        ipcRenderer.removeListener('system:resume', listener);
+      };
     },
     onLock: (callback: () => void) => {
       const listener = () => callback();
       ipcRenderer.on('system:lock', listener);
-      return () => ipcRenderer.removeListener('system:lock', listener);
+      return () => {
+        ipcRenderer.removeListener('system:lock', listener);
+      };
     },
     onUnlock: (callback: () => void) => {
       const listener = () => callback();
       ipcRenderer.on('system:unlock', listener);
-      return () => ipcRenderer.removeListener('system:unlock', listener);
+      return () => {
+        ipcRenderer.removeListener('system:unlock', listener);
+      };
     },
     onVaultLocked: (callback: () => void) => {
       const listener = () => callback();
       ipcRenderer.on('security:vault-locked', listener);
-      return () => ipcRenderer.removeListener('security:vault-locked', listener);
+      return () => {
+        ipcRenderer.removeListener('security:vault-locked', listener);
+      };
     },
   },
 };

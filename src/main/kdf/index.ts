@@ -4,7 +4,6 @@
 // and XSalsa20-Poly1305 for key wrapping.
 // ============================================================
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const sodium = require('libsodium-wrappers-sumo');
 import {
   ARGON2_OPS_LIMIT,

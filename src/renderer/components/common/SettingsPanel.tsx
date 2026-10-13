@@ -141,7 +141,7 @@ export const SettingsPanel: React.FC = () => {
     (async () => {
       try {
         const [vaultSettings, appSettings] = await Promise.all([
-          window.nexus.settings.getAll().catch(() => null),
+          (window.nexus.settings.getAll() as Promise<Partial<SettingsValues>>).catch(() => null),
           window.nexus.appSettings.getAll().catch(() => null),
         ]);
 

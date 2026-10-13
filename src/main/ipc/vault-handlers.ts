@@ -36,6 +36,7 @@ function sanitizeVaultFilename(name: string): string {
   const cleaned = name
     .trim()
     // Remove filesystem-invalid characters
+    // eslint-disable-next-line no-control-regex -- control characters are invalid in filenames
     .replace(/[<>:"/\\|?*\x00-\x1f]+/g, '')
     // Collapse repeated spaces
     .replace(/\s+/g, ' ')
