@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+dist-release/
+
+# Vite
+.vite/
+
+# Environment & secrets
+.env
+.env.*
+*.db
+*.salt
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Testing
+coverage/
+
+# Electron
+*.asar
+
+# Claude Code (local, per-machine)
+.claude/settings.local.json
+.claude/worktrees/
+test-results/
+playwright-report/

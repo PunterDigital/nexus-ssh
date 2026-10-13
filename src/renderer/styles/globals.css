@@ -1,0 +1,409 @@
+@import 'tailwindcss';
+
+/*
+ * Nexus SSH Client — Global Styles & Theme System
+ *
+ * Theme CSS custom properties are set on :root and updated dynamically
+ * by applyTheme() when the user switches themes.
+ * Default values below match the Tokyo Night theme.
+ */
+
+:root {
+  /* ── Surface colours ─────────────────────────────────── */
+  --color-bg-primary: #1a1b26;
+  --color-bg-secondary: #16161e;
+  --color-bg-tertiary: #24283b;
+  --color-bg-hover: #24283b;
+
+  /* ── Text colours ────────────────────────────────────── */
+  --color-text-primary: #ffffff;
+  --color-text-secondary: #cbd7ff;
+  --color-text-muted: #9da3bc;
+
+  /* ── Accent ──────────────────────────────────────────── */
+  --color-accent: #7aa2f7;
+  --color-accent-hover: #7aa2f7;
+  --color-accent-muted: rgba(122, 162, 247, 0.15);
+
+  /* ── Border ──────────────────────────────────────────── */
+  --color-border: #292e42;
+  --color-border-focus: #7aa2f7;
+
+  /* ── Semantic colours ────────────────────────────────── */
+  --color-danger: #f7768e;
+  --color-success: #9ece6a;
+  --color-warning: #e0af68;
+
+  /* ── Sidebar ─────────────────────────────────────────── */
+  --sidebar-width: 260px;
+  --sidebar-collapsed-width: 40px;
+  --sidebar-transition-duration: 200ms;
+
+  /* ── Tab bar ─────────────────────────────────────────── */
+  --tab-height: 36px;
+
+  /* ── Status bar ──────────────────────────────────────── */
+  --statusbar-height: 24px;
+
+  /* ── Header ──────────────────────────────────────────── */
+  --header-height: 40px;
+}
+
+/* ── Base resets ─────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Prevent text selection in UI chrome (but not in terminals/editors) */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ── Scrollbar styling ───────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-bg-tertiary);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
+/* Thin scrollbar variant */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+/* Hide scrollbar but keep scroll functionality */
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hidden {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ── Selection styling ───────────────────────────────────── */
+
+::selection {
+  background: var(--color-accent-muted);
+  color: var(--color-text-primary);
+}
+
+/* ── Focus ring ──────────────────────────────────────────── */
+
+.focus-ring:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+/* ── Sidebar transitions ─────────────────────────────────── */
+
+.sidebar-transition {
+  transition: width var(--sidebar-transition-duration) ease-in-out;
+}
+
+/* ── Tab bar ─────────────────────────────────────────────── */
+
+.tab-bar {
+  display: flex;
+  align-items: center;
+  height: var(--tab-height);
+  overflow-x: auto;
+  overflow-y: hidden;
+  background-color: var(--color-bg-secondary);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.tab-bar::-webkit-scrollbar {
+  height: 2px;
+}
+
+.tab-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease;
+  color: var(--color-text-muted);
+}
+
+.tab-item:hover {
+  background-color: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+}
+
+.tab-item.active {
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+}
+
+.tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.tab-item:hover .tab-close {
+  opacity: 1;
+}
+
+.tab-close:hover {
+  background-color: var(--color-bg-tertiary);
+}
+
+/* ── Drag-and-drop indicators ────────────────────────────── */
+
+.drop-indicator-left {
+  border-left: 2px solid var(--color-accent);
+}
+
+.drop-indicator-right {
+  border-right: 2px solid var(--color-accent);
+}
+
+/* ── Button base styles ──────────────────────────────────── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    opacity 150ms ease;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background-color: var(--color-accent);
+  color: #ffffff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.btn-ghost {
+  background-color: transparent;
+  color: var(--color-text-muted);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background-color: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+}
+
+.btn-danger {
+  background-color: var(--color-danger);
+  color: #ffffff;
+}
+
+.btn-danger:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+/* ── Input base styles ───────────────────────────────────── */
+
+.input {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background-color: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 150ms ease;
+}
+
+.input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.input:focus {
+  border-color: var(--color-border-focus);
+}
+
+/* ── Tree node styles ────────────────────────────────────── */
+
+.tree-node {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+  color: var(--color-text-secondary);
+}
+
+.tree-node:hover {
+  background-color: var(--color-bg-tertiary);
+}
+
+.tree-node.active {
+  background-color: var(--color-accent-muted);
+  color: var(--color-accent);
+}
+
+/* ── Transfer progress bar ───────────────────────────────── */
+
+.transfer-progress {
+  height: 3px;
+  border-radius: 2px;
+  background-color: var(--color-bg-tertiary);
+  overflow: hidden;
+}
+
+.transfer-progress-bar {
+  height: 100%;
+  background-color: var(--color-accent);
+  transition: width 200ms ease;
+}
+
+/* ── Animations ──────────────────────────────────────────── */
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-fade-in {
+  animation: fade-in 200ms ease-out;
+}
+
+.animate-slide-up {
+  animation: slide-up 200ms ease-out;
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* ── Modal overlay ───────────────────────────────────────── */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.6);
+  z-index: 50;
+  animation: fade-in 150ms ease-out;
+}
+
+.modal-content {
+  background-color: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  animation: slide-up 200ms ease-out;
+}
+
+/* ── Notification toast ──────────────────────────────────── */
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  background-color: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  animation: slide-up 200ms ease-out;
+}
+
+/* ── Resizable handle ────────────────────────────────────── */
+
+.resize-handle {
+  width: 4px;
+  cursor: col-resize;
+  background-color: transparent;
+  transition: background-color 150ms ease;
+}
+
+.resize-handle:hover {
+  background-color: var(--color-accent);
+}
+
+/* ── Electron window drag region ─────────────────────────── */
+
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}

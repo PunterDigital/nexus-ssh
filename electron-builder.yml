@@ -1,0 +1,69 @@
+appId: com.punterdigital.nexus
+productName: Nexus
+copyright: Copyright © 2026 Punter Digital Limited
+
+directories:
+  output: dist-release
+  buildResources: resources
+
+files:
+  - dist/**/*
+  - package.json
+
+# Auto-update via GitHub Releases
+publish:
+  provider: github
+  owner: punterdigital
+  repo: nexus-ssh
+
+# Windows
+win:
+  signAndEditExecutable: false
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+
+# macOS
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  category: public.app-category.developer-tools
+  hardenedRuntime: true
+  gatekeeperAssess: false
+
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+# Linux
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+  category: Development
+
+asar: true
+
+# Rebuild native modules for correct Electron ABI
+buildDependenciesFromSource: false
+nodeGypRebuild: false
+npmRebuild: false
