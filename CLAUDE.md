@@ -44,8 +44,11 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   profile — it holds Shay's vaults.
 - The smoke test creates a vault, restarts, and unlocks it. Extend `tests/e2e` for new UI flows;
   prefer `getByRole` / `getByPlaceholder` selectors.
-- SSH/SFTP features need a server: for E2E, spin up a throwaway one (e.g. `ssh2`'s Server class in a
-  test fixture) rather than hitting real hosts.
+- SSH/SFTP features need a server: use `tests/fixtures/ssh-server.ts` (`startTestServer`), a throwaway
+  `ssh2` server on 127.0.0.1 with password auth, an echo shell and an SFTP subsystem backed by a temp
+  dir. `writeDelayMs`/`readDelayMs` slow transfers down enough to pause them. Never hit real hosts.
+  It works from vitest (`tests/unit/sftp-transfer.test.ts`, mocks `electron`) and Playwright
+  (`tests/e2e/sftp-transfer.spec.ts`, drives host creation → SFTP → upload through the UI).
 
 ## Native module
 

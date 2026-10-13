@@ -58,9 +58,15 @@ export interface SFTPActions {
 
   // Transfers
   addTransfer: (transfer: TransferItem) => void;
-  updateTransferProgress: (id: string, transferred: number, size?: number) => void;
+  updateTransferProgress: (
+    id: string,
+    transferred: number,
+    size?: number,
+    status?: TransferItem['status'],
+  ) => void;
   pauseTransfer: (id: string) => void;
   resumeTransfer: (id: string) => void;
+  resumeTransferLocal: (id: string) => void;
   cancelTransfer: (id: string) => void;
   completeTransfer: (id: string) => void;
   failTransfer: (id: string, error: string) => void;
@@ -233,7 +239,7 @@ export const useSFTPStore = create<SFTPState & SFTPActions>()((set, get) => ({
   addTransfer: (transfer) =>
     set((state) => ({ transfers: [...state.transfers, transfer] })),
 
-  updateTransferProgress: (id, transferred, size) =>
+  updateTransferProgress: (id, transferred, size, status) =>
     set((state) => ({
       transfers: state.transfers.map((t) =>
         t.id === id
@@ -241,30 +247,48 @@ export const useSFTPStore = create<SFTPState & SFTPActions>()((set, get) => ({
               ...t,
               transferred,
               size: typeof size === 'number' && size > 0 ? size : t.size,
-              status: 'active' as const,
+              status: status ?? ('active' as const),
             }
           : t
       ),
     })),
 
-  pauseTransfer: (id) =>
+  // Pause/resume/cancel go to the main process, which owns the streams. The
+  // status flip here is optimistic; the next progress event confirms it.
+  pauseTransfer: (id) => {
     set((state) => ({
       transfers: state.transfers.map((t) =>
         t.id === id ? { ...t, status: 'paused' as const } : t
       ),
-    })),
+    }));
+    window.nexus.sftp.pauseTransfer(id).catch((err: Error) => {
+      console.error('Pause failed:', err.message);
+      get().resumeTransferLocal(id);
+    });
+  },
 
-  resumeTransfer: (id) =>
+  resumeTransfer: (id) => {
+    get().resumeTransferLocal(id);
+    window.nexus.sftp.resumeTransfer(id).catch((err: Error) => {
+      console.error('Resume failed:', err.message);
+    });
+  },
+
+  resumeTransferLocal: (id) =>
     set((state) => ({
       transfers: state.transfers.map((t) =>
-        t.id === id ? { ...t, status: 'active' as const } : t
+        t.id === id && t.status === 'paused' ? { ...t, status: 'active' as const } : t
       ),
     })),
 
-  cancelTransfer: (id) =>
+  cancelTransfer: (id) => {
     set((state) => ({
       transfers: state.transfers.filter((t) => t.id !== id),
-    })),
+    }));
+    window.nexus.sftp.cancelTransfer(id).catch((err: Error) => {
+      console.error('Cancel failed:', err.message);
+    });
+  },
 
   completeTransfer: (id) =>
     set((state) => ({
