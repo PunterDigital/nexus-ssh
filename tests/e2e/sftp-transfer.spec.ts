@@ -39,7 +39,7 @@ test.afterAll(async () => {
 test('SFTP upload can be paused and resumed, and the file arrives intact', async () => {
   app = await electron.launch({
     ...(executablePath ? { executablePath, args: [] } : { args: [path.resolve(__dirname, '../..')] }),
-    env: { ...process.env, NEXUS_USE_BUILT_RENDERER: '1', NEXUS_USER_DATA_DIR: userDataDir },
+    env: { ...process.env, NEXUS_USE_BUILT_RENDERER: '1', NEXUS_USER_DATA_DIR: userDataDir, NEXUS_DISABLE_IDLE_LOCK: '1' },
   });
   const page = await app.firstWindow();
 

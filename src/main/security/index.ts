@@ -8,10 +8,17 @@ import type { BrowserWindow } from 'electron';
 import { clipboard, powerMonitor } from 'electron';
 import { vaultEngine } from '../vault';
 import { sshManager } from '../ssh';
+import { sftpManager } from '../sftp';
 import {
   DEFAULT_AUTO_LOCK_TIMEOUT,
   DEFAULT_CLIPBOARD_CLEAR_TIMEOUT,
 } from '../../shared/constants';
+
+/** True when the system has been idle at least `timeoutMinutes` (0 disables auto-lock). */
+export function shouldIdleLock(idleSeconds: number, timeoutMinutes: number): boolean {
+  const thresholdSeconds = timeoutMinutes * 60;
+  return thresholdSeconds > 0 && idleSeconds >= thresholdSeconds;
+}
 
 class SecurityManager {
   private idleTimer: ReturnType<typeof setInterval> | null = null;
@@ -51,8 +58,11 @@ class SecurityManager {
       this.resetIdleTimer();
     });
 
-    // Start periodic idle-time checking
-    this.startIdleMonitoring();
+    // Start periodic idle-time checking. E2E runs on unattended machines where the OS idle
+    // time is already past the threshold, so tests turn it off with NEXUS_DISABLE_IDLE_LOCK=1.
+    if (process.env.NEXUS_DISABLE_IDLE_LOCK !== '1') {
+      this.startIdleMonitoring();
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -65,15 +75,15 @@ class SecurityManager {
     this.idleTimer = setInterval(() => {
       // powerMonitor.getSystemIdleTime() returns seconds of idle time
       const idleSeconds = powerMonitor.getSystemIdleTime();
-      const thresholdSeconds = this.autoLockTimeout * 60;
 
-      if (thresholdSeconds > 0 && idleSeconds >= thresholdSeconds) {
+      if (shouldIdleLock(idleSeconds, this.autoLockTimeout)) {
         this.lockVault();
       }
     }, 30_000); // check every 30 seconds
   }
 
   resetIdleTimer(): void {
+    if (process.env.NEXUS_DISABLE_IDLE_LOCK === '1') return;
     // Restarting the monitoring resets the check cycle.
     // The actual idle time comes from the OS so we don't need to
     // track it ourselves — we just ensure the interval is running.
@@ -99,9 +109,14 @@ class SecurityManager {
     // 1. Lock the vault engine (closes DB, zeros key buffer)
     vaultEngine.lock();
 
-    // 2. Disconnect all SSH sessions (best-effort; prevents orphaned connections)
+    // 2. Disconnect all SSH and SFTP sessions (best-effort; prevents orphaned connections)
     try {
       sshManager.destroyAll();
+    } catch {
+      // Best-effort cleanup
+    }
+    try {
+      sftpManager.destroyAll();
     } catch {
       // Best-effort cleanup
     }

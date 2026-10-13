@@ -6,4 +6,5 @@ export {
   useSettingsChanged,
   useSystemLock,
   useSystemSuspend,
+  useVaultLocked,
 } from './use-ipc';

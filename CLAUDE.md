@@ -40,8 +40,13 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
 ## Testing
 
 - **E2E env hooks** (in `src/main/index.ts`): `NEXUS_USE_BUILT_RENDERER=1` loads `dist/renderer`
-  instead of Vite; `NEXUS_USER_DATA_DIR=<dir>` isolates the profile. Never run E2E against the real
-  profile — it holds Shay's vaults.
+  instead of Vite; `NEXUS_USER_DATA_DIR=<dir>` isolates the profile; `NEXUS_DISABLE_IDLE_LOCK=1` turns
+  off idle auto-lock polling (on an unattended machine OS idle time is already past 15 min, so the
+  vault would lock ~30s in). Never run E2E against the real profile — it holds Shay's vaults.
+- Locking: `securityManager.lockVault()` (main) closes the vault, drops SSH + SFTP sessions and sends
+  `security:vault-locked`; the renderer's `useVaultLocked` (App.tsx) resets the vault/terminal/SFTP
+  stores and shows the lock screen. E2E triggers it with `app.evaluate(({ powerMonitor }) =>
+  powerMonitor.emit('lock-screen'))` (`tests/e2e/auto-lock.spec.ts`).
 - The smoke test creates a vault, restarts, and unlocks it. Extend `tests/e2e` for new UI flows;
   prefer `getByRole` / `getByPlaceholder` selectors.
 - SSH/SFTP features need a server: use `tests/fixtures/ssh-server.ts` (`startTestServer`), a throwaway
