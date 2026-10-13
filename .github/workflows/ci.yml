@@ -28,6 +28,12 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
       - run: pnpm build
+      - name: Add the Intel (x64) SQLCipher binary alongside arm64
+        if: runner.os == 'macOS'
+        working-directory: node_modules/@journeyapps/sqlcipher
+        run: |
+          ./node_modules/.bin/node-pre-gyp install --target_arch=x64 --update-binary
+          ls lib/binding
 
   package:
     name: E2E + package (${{ matrix.os }})
@@ -37,9 +43,7 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            # Windows ships x64 only (same arch as the runner): the prebuilt N-API binaries are
-            # already right, and electron-builder's node-gyp can't find the runner's Visual Studio.
-            target: --win -c.npmRebuild=false
+            target: --win
             artifacts: |
               dist-release/*.exe
           - os: macos-latest
@@ -56,6 +60,12 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      - name: Add the Intel (x64) SQLCipher binary alongside arm64
+        if: runner.os == 'macOS'
+        working-directory: node_modules/@journeyapps/sqlcipher
+        run: |
+          ./node_modules/.bin/node-pre-gyp install --target_arch=x64 --update-binary
+          ls lib/binding
       - name: End-to-end smoke test
         run: pnpm exec playwright test
       - name: Package
@@ -73,8 +83,11 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           for app in dist-release/mac*/Nexus.app; do
+            echo "== $app ($(lipo -archs "$app/Contents/MacOS/Nexus"))"
             codesign --verify --deep --strict --verbose=2 "$app"
-            lipo -archs "$app/Contents/Resources/app.asar.unpacked/node_modules/@journeyapps/sqlcipher/lib/binding/"*/node_sqlite3.node || true
+            for bin in "$app"/Contents/Resources/app.asar.unpacked/node_modules/@journeyapps/sqlcipher/lib/binding/*/node_sqlite3.node; do
+              echo "$bin: $(lipo -archs "$bin")"
+            done
           done
       - uses: actions/upload-artifact@v7
         if: always()

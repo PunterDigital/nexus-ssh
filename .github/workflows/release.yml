@@ -14,9 +14,7 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            # Windows ships x64 only (same arch as the runner): the prebuilt N-API binaries are
-            # already right, and electron-builder's node-gyp can't find the runner's Visual Studio.
-            target: --win -c.npmRebuild=false
+            target: --win
           - os: macos-latest
             target: --mac
     runs-on: ${{ matrix.os }}
@@ -37,6 +35,12 @@ jobs:
           fi
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      - name: Add the Intel (x64) SQLCipher binary alongside arm64
+        if: runner.os == 'macOS'
+        working-directory: node_modules/@journeyapps/sqlcipher
+        run: |
+          ./node_modules/.bin/node-pre-gyp install --target_arch=x64 --update-binary
+          ls lib/binding
       - run: pnpm exec electron-builder ${{ matrix.target }} --publish never
       - uses: actions/upload-artifact@v7
         with:

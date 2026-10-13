@@ -68,8 +68,10 @@ linux:
 
 asar: true
 
-# Native modules: @journeyapps/sqlcipher is N-API, so electron-builder's rebuild step just fetches the
-# prebuilt binary for each target arch (needed for the x64 + arm64 macOS builds).
+# Native modules are never rebuilt: @journeyapps/sqlcipher is N-API, so its prebuilt binaries work in
+# Electron as-is, and they live in per-arch folders (lib/binding/napi-v6-<platform>-<arch>). CI downloads
+# the darwin-x64 binary next to the arm64 one so both macOS builds load the right one at runtime.
+# ssh2's optional native bits (cpu-features, crypto binding) fall back to pure JS when absent.
 buildDependenciesFromSource: false
 nodeGypRebuild: false
-npmRebuild: true
+npmRebuild: false
