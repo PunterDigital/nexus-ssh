@@ -70,6 +70,10 @@ jobs:
         run: pnpm exec playwright test
       - name: Package
         run: pnpm exec electron-builder ${{ matrix.target }} --publish never
+        env:
+          # electron-builder skips signing on PRs; force it so CI checks the same ad-hoc
+          # signature that tagged releases get (no secrets involved).
+          CSC_FOR_PULL_REQUEST: 'true'
       - name: End-to-end smoke test (packaged app)
         shell: bash
         run: |
