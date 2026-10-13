@@ -570,7 +570,7 @@ export const SettingsPanel: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="text-sm font-bold" style={{ color: 'var(--color-text-primary)' }}>
-                    {APP_NAME} v0.1.0
+                    {APP_NAME} v{__APP_VERSION__}
                   </h3>
                   <p className="text-[11px] mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
                     Punter Digital Limited

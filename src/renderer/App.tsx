@@ -272,7 +272,7 @@ function StatusBar(): React.ReactElement {
         <span className="text-[var(--color-text-muted)]">Synced</span>
       </div>
 
-      <span className="ml-3 text-[var(--color-text-muted)]">Nexus v0.1.0</span>
+      <span className="ml-3 text-[var(--color-text-muted)]">Nexus v{__APP_VERSION__}</span>
     </div>
   );
 }
