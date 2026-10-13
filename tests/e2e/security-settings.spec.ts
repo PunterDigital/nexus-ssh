@@ -42,8 +42,21 @@ test('a changed clipboard timeout applies at once and again after an unlock', as
   const row = page.locator('div.justify-between', {
     has: page.getByText('Clipboard clear timeout', { exact: true }),
   });
+  // The main process sends settings:changed only after it has saved and applied the value, so
+  // wait for that instead of the input (which updates before the save lands).
+  const applied = page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        const off = window.nexus.settings.onChanged((key, value) => {
+          if (key === 'clipboardClearTimeout' && value === 1) {
+            off();
+            resolve();
+          }
+        });
+      }),
+  );
   await row.getByRole('spinbutton').fill('1');
-  await expect(row.getByRole('spinbutton')).toHaveValue('1');
+  await applied;
 
   await page.evaluate((s) => window.nexus.clipboard.copySecure(s), SECRET);
   expect(await readClipboard()).toBe(SECRET);
