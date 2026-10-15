@@ -2,7 +2,8 @@
  * Throwaway SSH + SFTP server for tests. Never point tests at real hosts.
  *
  * - Password auth with a fixed test user.
- * - A minimal echo shell (enough for a terminal session to connect).
+ * - A minimal line shell: echoes keystrokes, records each entered line in
+ *   `commands`, and answers `echo <text>` with `<text>`.
  * - An SFTP subsystem backed by a real directory (`root`), so tests can check
  *   transferred files byte for byte.
  * - Optional per-request delays so transfers are slow enough to pause.
@@ -30,14 +31,19 @@ export interface TestServer {
   port: number;
   username: string;
   password: string;
+  /** Lines entered in shell sessions, in order. */
+  commands: string[];
   close: () => Promise<void>;
 }
+
+const PROMPT = 'nexus-test-shell$ ';
 
 export async function startTestServer(opts: TestServerOptions): Promise<TestServer> {
   const username = opts.username ?? 'tester';
   const password = opts.password ?? 'test-password';
   const hostKey = utils.generateKeyPairSync('ed25519').private;
   const clients = new Set<Connection>();
+  const commands: string[] = [];
 
   const server = new Server({ hostKeys: [hostKey] }, (client) => {
     clients.add(client);
@@ -45,7 +51,11 @@ export async function startTestServer(opts: TestServerOptions): Promise<TestServ
     client.on('error', () => {});
 
     client.on('authentication', (ctx) => {
-      if (ctx.method === 'password' && ctx.username === username && ctx.password === password) {
+      if (
+        ctx.method === 'password' &&
+        ctx.username === username &&
+        ctx.password === password
+      ) {
         ctx.accept();
       } else {
         ctx.reject(['password']);
@@ -60,8 +70,25 @@ export async function startTestServer(opts: TestServerOptions): Promise<TestServ
         session.on('env', (accept) => accept?.());
         session.on('shell', (accept) => {
           const stream = accept();
-          stream.write('nexus-test-shell$ ');
-          stream.on('data', (data: Buffer) => stream.write(data));
+          let line = '';
+          stream.write(PROMPT);
+          // Echo keystrokes like a pty; on Enter, record the line and answer `echo <text>`.
+          stream.on('data', (data: Buffer) => {
+            for (const ch of data.toString('utf8')) {
+              if (ch === '\r' || ch === '\n') {
+                commands.push(line);
+                const out = line.startsWith('echo ') ? `${line.slice(5)}\r\n` : '';
+                stream.write(`\r\n${out}${PROMPT}`);
+                line = '';
+              } else if (ch === '\x7f') {
+                if (line) stream.write('\b \b');
+                line = line.slice(0, -1);
+              } else {
+                line += ch;
+                stream.write(ch);
+              }
+            }
+          });
         });
         session.on('sftp', (accept) => serveSftp(accept(), opts));
       });
@@ -76,6 +103,7 @@ export async function startTestServer(opts: TestServerOptions): Promise<TestServ
     port,
     username,
     password,
+    commands,
     close: () =>
       new Promise<void>((resolve) => {
         for (const c of clients) c.end();
@@ -95,7 +123,8 @@ function serveSftp(sftp: SFTPWrapper, opts: TestServerOptions): void {
 
   const toLocal = (p: string): string => {
     const local = path.resolve(root, '.' + path.posix.normalize('/' + p));
-    if (local !== root && !local.startsWith(root + path.sep)) throw new Error('path escapes root');
+    if (local !== root && !local.startsWith(root + path.sep))
+      throw new Error('path escapes root');
     return local;
   };
   const toPosix = (p: string): string => path.posix.normalize('/' + p);
@@ -166,7 +195,7 @@ function serveSftp(sftp: SFTPWrapper, opts: TestServerOptions): void {
         const n = fs.readSync(entry.fd!, buf, 0, length, offset);
         if (n === 0) sftp.status(reqid, STATUS_CODE.EOF);
         else sftp.data(reqid, buf.subarray(0, n));
-      }),
+      })
     );
   });
 
@@ -177,7 +206,7 @@ function serveSftp(sftp: SFTPWrapper, opts: TestServerOptions): void {
       guard(reqid, () => {
         fs.writeSync(entry.fd!, data, 0, data.length, offset);
         sftp.status(reqid, STATUS_CODE.OK);
-      }),
+      })
     );
   });
 
@@ -195,7 +224,8 @@ function serveSftp(sftp: SFTPWrapper, opts: TestServerOptions): void {
   sftp.on('OPENDIR', (reqid, p) => {
     guard(reqid, () => {
       const dir = toLocal(p);
-      if (!fs.statSync(dir).isDirectory()) throw Object.assign(new Error('not a dir'), { code: 'ENOENT' });
+      if (!fs.statSync(dir).isDirectory())
+        throw Object.assign(new Error('not a dir'), { code: 'ENOENT' });
       const id = nextHandle++;
       handles.set(id, { dir });
       sftp.handle(reqid, handleBuf(id));
@@ -226,7 +256,9 @@ function serveSftp(sftp: SFTPWrapper, opts: TestServerOptions): void {
   sftp.on('MKDIR', (reqid, p) => ok(reqid, () => fs.mkdirSync(toLocal(p))));
   sftp.on('RMDIR', (reqid, p) => ok(reqid, () => fs.rmdirSync(toLocal(p))));
   sftp.on('REMOVE', (reqid, p) => ok(reqid, () => fs.unlinkSync(toLocal(p))));
-  sftp.on('RENAME', (reqid, from, to) => ok(reqid, () => fs.renameSync(toLocal(from), toLocal(to))));
+  sftp.on('RENAME', (reqid, from, to) =>
+    ok(reqid, () => fs.renameSync(toLocal(from), toLocal(to)))
+  );
   sftp.on('SETSTAT', (reqid) => sftp.status(reqid, STATUS_CODE.OK));
   sftp.on('FSETSTAT', (reqid) => sftp.status(reqid, STATUS_CODE.OK));
 }
