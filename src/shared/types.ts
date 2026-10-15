@@ -207,6 +207,8 @@ export interface SSHSession {
 export type HostKeyVerification = 'accept' | 'reject' | 'always';
 
 export interface HostKeyPrompt {
+  /** Identifies the pending prompt when the renderer answers. */
+  id: string;
   hostname: string;
   port: number;
   keyType: string;

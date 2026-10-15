@@ -10,6 +10,7 @@ import { registerAllHandlers } from './ipc/index';
 import { initSodium } from './kdf';
 import { vaultEngine } from './vault/index';
 import { sshManager } from './ssh/index';
+import { hostKeyPrompter } from './ssh/host-key';
 import { sftpManager } from './sftp/index';
 import { syncEngine } from './sync/engine';
 import { securityManager } from './security';
@@ -177,6 +178,7 @@ app.whenReady().then(async () => {
   // Wire singletons to the main window for IPC push events
   if (mainWindow) {
     sshManager.setMainWindow(mainWindow);
+    hostKeyPrompter.setMainWindow(mainWindow);
     sftpManager.setMainWindow(mainWindow);
     syncEngine.setMainWindow(mainWindow);
     securityManager.setMainWindow(mainWindow);

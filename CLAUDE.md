@@ -34,6 +34,13 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
 - Preload listener helpers must return `() => void` cleanups (block body), or React effect typings break.
 - Production renderer is served from a loopback HTTP server (WebAuthn needs a localhost origin);
   dev loads Vite on :5173.
+- Host keys (TOFU): `src/main/ssh/host-key.ts`. Every interactive connection (terminal, SFTP tabs,
+  which open their own `ssh:connect`, and the host form's Test Connection) passes
+  `createHostVerifier(host, port).hostVerifier` to ssh2. It must use ssh2's **callback** form
+  `(key, verify)`: ssh2 passes a verifier's *return value* to `verify()`, so returning a Promise
+  accepts every key (the bug fixed in #2553). Unknown/changed keys go to the renderer via
+  `ssh:host-key-prompt` → `HostKeyPromptHost` (portal, above other dialogs) → `ssh:host-key-response`.
+  The ssh2 `readyTimeout` (`HANDSHAKE_TIMEOUT_MS`, 60 s) includes the time the prompt is open.
 - Vault = SQLCipher DB + `.salt` file under `userData/vaults`. Keys: Argon2id (libsodium) →
   XSalsa20-Poly1305 key wrapping (`src/main/kdf`). Optional PIN and hardware-key (WebAuthn PRF) unlock.
 
