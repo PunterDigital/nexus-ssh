@@ -52,6 +52,14 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
 - `addNotification(type, message)` (ui-store) shows a toast via `ToastHost` (portal, z-[150]:
   above dialogs, below the host-key prompt), auto-removed after 5 s. Errors are `role="alert"`,
   the rest `role="status"`, so E2E asserts them with `getByRole('alert' | 'status')`.
+- App updates (`src/main/updater`, #2356): `core.ts` holds the logic (no Electron imports, unit-tested),
+  `index.ts` the wiring. Modes: Windows installs (electron-updater reads `latest.yml` from GitHub
+  Releases, downloads in the background, `autoInstallOnAppQuit = false`, "Restart to update" in
+  `UpdateBanner` calls `quitAndInstall(true, true)`); macOS only notifies (GitHub API version check,
+  "Download" opens the downloads page, since unsigned apps can't self-update); dev and test profiles
+  are off. First check 5 s after launch, then every 6 h; app setting `checkForUpdates` (default on).
+  electron-updater is an esbuild external loaded with a lazy `require`: a dynamic `import()` of it
+  returns an undefined `autoUpdater` in the packaged app.
 - Vault = SQLCipher DB + `.salt` file under `userData/vaults`. Keys: Argon2id (libsodium) →
   XSalsa20-Poly1305 key wrapping (`src/main/kdf`). Optional PIN and hardware-key (WebAuthn PRF) unlock.
 
@@ -61,6 +69,13 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   instead of Vite; `NEXUS_USER_DATA_DIR=<dir>` isolates the profile; `NEXUS_DISABLE_IDLE_LOCK=1` turns
   off idle auto-lock polling (on an unattended machine OS idle time is already past 15 min, so the
   vault would lock ~30s in). Never run E2E against the real profile — it holds Shay's vaults.
+- **Update checks in tests:** a `NEXUS_USER_DATA_DIR` profile never checks for updates, so E2E of the
+  packaged app never reaches GitHub. `NEXUS_UPDATE_TEST_URL=<url>` turns on notify mode against a
+  local fake of the GitHub "latest release" JSON (`tests/e2e/updater.spec.ts`).
+  `NEXUS_UPDATE_IN_TEST_PROFILE=1` lets a packaged build with a test profile run the real updater:
+  package with `-c.extraMetadata.version=<older>` and it downloads the current release into
+  `%LOCALAPPDATA%/nexus-ssh-updater` (delete it afterwards; never click "Restart to update", it
+  would install over the real app). `NEXUS_DISABLE_UPDATES=1` turns everything off.
 - Locking: `securityManager.lockVault()` (main) closes the vault, drops SSH + SFTP sessions and sends
   `security:vault-locked`; the renderer's `useVaultLocked` (App.tsx) resets the vault/terminal/SFTP
   stores and shows the lock screen. E2E triggers it with `app.evaluate(({ powerMonitor }) =>

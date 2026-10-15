@@ -10,6 +10,7 @@ import { KeychainView } from './components/keychain/KeychainView';
 import { SnippetsPanel } from './components/common/SnippetsPanel';
 import { SettingsPanel } from './components/common/SettingsPanel';
 import { ToastHost } from './components/common/ToastHost';
+import { UpdateBanner } from './components/common/UpdateBanner';
 
 // ============================================================
 // Nexus SSH Client — App Shell
@@ -329,6 +330,7 @@ export default function App(): React.ReactElement {
     return (
       <>
         <LockScreen />
+        <UpdateBanner />
         <ToastHost />
       </>
     );
@@ -350,6 +352,9 @@ export default function App(): React.ReactElement {
 
       {/* Unknown / changed host keys wait here for the user's decision */}
       <HostKeyPromptHost />
+
+      {/* "New version" card (src/main/updater) */}
+      <UpdateBanner />
 
       {/* addNotification() messages */}
       <ToastHost />

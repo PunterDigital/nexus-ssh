@@ -21,6 +21,11 @@ right-click the app → *Open* the first time.
 
 Requires Windows 10+ or macOS 13 (Ventura)+.
 
+**Updates.** From v0.2.0 the app checks for new versions at launch and every few hours. On Windows it
+downloads the update in the background and asks before restarting into it; on macOS it shows a
+link to the downloads page. Turn it off under *Settings → General*, or check by hand under
+*Settings → About*.
+
 ## Development
 
 Requires Node 24 and pnpm 10. Building the native SQLCipher module needs Visual Studio Build Tools

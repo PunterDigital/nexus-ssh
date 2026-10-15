@@ -180,4 +180,23 @@ export const IPC = {
 
   // Security
   SECURITY_VAULT_LOCKED: 'security:vault-locked',
+
+  // App updates
+  UPDATER_GET_STATUS: 'updater:get-status',
+  UPDATER_CHECK: 'updater:check',
+  UPDATER_INSTALL: 'updater:install',
+  UPDATER_OPEN_DOWNLOADS: 'updater:open-downloads',
+  UPDATER_STATUS: 'updater:status',
 } as const;
+
+// ── App updates ──────────────────────────────────────────────
+/** Where macOS (and any build that can't self-install) sends people for a new version. */
+export const DOWNLOADS_PAGE_URL = 'https://punterdigital.github.io/personal-apps/';
+/** Latest published release, used by `notify` mode (electron-updater reads latest.yml itself). */
+export const LATEST_RELEASE_API_URL =
+  'https://api.github.com/repos/PunterDigital/nexus-ssh/releases/latest';
+/** App-level setting (app-settings.json) that turns automatic update checks off. Default on. */
+export const UPDATE_CHECK_SETTING = 'checkForUpdates';
+/** First check a few seconds after launch (never during startup), then every 6 hours. */
+export const UPDATE_FIRST_CHECK_DELAY_MS = 5_000;
+export const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
