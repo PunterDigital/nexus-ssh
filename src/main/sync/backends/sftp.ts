@@ -4,7 +4,13 @@
 
 import { Client } from 'ssh2';
 import type { SFTPWrapper } from 'ssh2';
-import type { SyncBackend, BackendConfig, FileMetadata } from '../types';
+import type { SyncBackend, BackendConfig, FileMetadata, SyncConnectOptions } from '../types';
+import { createHostVerifier, createPinnedHostVerifier } from '../../ssh/host-key';
+
+/** Background connections give up after this long. */
+const CONNECT_TIMEOUT_MS = 30_000;
+/** Interactive connections may wait on the host-key prompt, so they get longer. */
+const INTERACTIVE_CONNECT_TIMEOUT_MS = 60_000;
 
 export class SFTPSyncBackend implements SyncBackend {
   readonly type = 'sftp' as const;
@@ -14,17 +20,51 @@ export class SFTPSyncBackend implements SyncBackend {
   private sftp: SFTPWrapper | null = null;
   private connected = false;
 
-  async connect(config: BackendConfig): Promise<void> {
+  /**
+   * Connect and open the SFTP subsystem. The server's host key is always checked against
+   * known_hosts. Background syncs (the default) never prompt: an unknown or changed key
+   * fails the connection. `interactive` (Test Connection in the sync settings) shows the
+   * host-key prompt instead, and "Always Accept" pins the key for later background syncs.
+   */
+  async connect(config: BackendConfig, options: SyncConnectOptions = {}): Promise<void> {
     if (this.connected) {
       await this.disconnect();
     }
 
+    const host = config.host ?? 'localhost';
+    const port = config.port ?? 22;
+    const interactive = options.interactive === true;
+    const prompted = interactive ? createHostVerifier(host, port) : null;
+    const pinned = interactive ? null : createPinnedHostVerifier(host, port);
+    const timeoutMs = interactive ? INTERACTIVE_CONNECT_TIMEOUT_MS : CONNECT_TIMEOUT_MS;
+
+    const hostKeyError = (): Error | null => {
+      const where = `${host}:${port}`;
+      if (pinned?.failure === 'changed') {
+        return new Error(
+          `The SFTP server's host key for ${where} has changed, so vault sync stopped. ` +
+            'If you expect the change, use Test Connection in Settings → Vault Sync to review and trust the new key.'
+        );
+      }
+      if (pinned?.failure === 'unknown') {
+        return new Error(
+          `The SFTP server's host key for ${where} isn't trusted yet. ` +
+            'Use Test Connection in Settings → Vault Sync to check and trust it.'
+        );
+      }
+      if (prompted?.rejected) {
+        return new Error(`Host key for ${where} was not accepted.`);
+      }
+      return null;
+    };
+
     return new Promise<void>((resolve, reject) => {
       const client = new Client();
       const timeout = setTimeout(() => {
+        prompted?.dismiss();
         client.destroy();
-        reject(new Error('SFTP connection timed out after 30 seconds'));
-      }, 30_000);
+        reject(new Error(`SFTP connection timed out after ${timeoutMs / 1000} seconds`));
+      }, timeoutMs);
 
       client.on('ready', () => {
         client.sftp((err, sftp) => {
@@ -43,15 +83,17 @@ export class SFTPSyncBackend implements SyncBackend {
 
       client.on('error', (err) => {
         clearTimeout(timeout);
+        prompted?.dismiss();
         this.connected = false;
-        reject(new Error(`SFTP connection error: ${err.message}`));
+        reject(hostKeyError() ?? new Error(`SFTP connection error: ${err.message}`));
       });
 
       const connectOpts: Record<string, unknown> = {
-        host: config.host ?? 'localhost',
-        port: config.port ?? 22,
+        host,
+        port,
         username: config.username ?? 'root',
-        readyTimeout: 30_000,
+        readyTimeout: timeoutMs,
+        hostVerifier: (prompted ?? pinned)!.hostVerifier,
       };
 
       if (config.password) {

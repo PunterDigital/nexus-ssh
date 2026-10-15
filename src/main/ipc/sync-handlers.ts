@@ -99,7 +99,9 @@ export function registerSyncHandlers(): void {
     }
     const backend = syncEngine.createBackend(config.type);
     try {
-      await backend.connect(config);
+      // Interactive: an unknown/changed SSH host key is shown to the user, and trusting it
+      // pins it for the background syncs, which never prompt.
+      await backend.connect(config, { interactive: true });
       return ok(await backend.testConnection());
     } catch (err: unknown) {
       return fail(err instanceof Error ? err.message : String(err));

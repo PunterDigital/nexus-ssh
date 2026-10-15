@@ -41,6 +41,12 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   accepts every key (the bug fixed in #2553). Unknown/changed keys go to the renderer via
   `ssh:host-key-prompt` → `HostKeyPromptHost` (portal, above other dialogs) → `ssh:host-key-response`.
   The ssh2 `readyTimeout` (`HANDSHAKE_TIMEOUT_MS`, 60 s) includes the time the prompt is open.
+- Vault sync over SFTP (`src/main/sync/backends/sftp.ts`) checks host keys too, but background
+  syncs can't prompt: they use `createPinnedHostVerifier` (known_hosts only; unknown/changed key →
+  clear error). Only the sync settings' Test Connection (`connect(config, { interactive: true })`)
+  shows the prompt, and "Always Accept" there pins the key for later syncs.
+- The renderer has a notification store (`addNotification`) but nothing renders it yet, so E2E
+  can't assert toasts (see the toast card on the board).
 - Vault = SQLCipher DB + `.salt` file under `userData/vaults`. Keys: Argon2id (libsodium) →
   XSalsa20-Poly1305 key wrapping (`src/main/kdf`). Optional PIN and hardware-key (WebAuthn PRF) unlock.
 
