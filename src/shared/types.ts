@@ -168,8 +168,13 @@ export interface FileMetadata {
   hash?: string;
 }
 
+export interface SyncConnectOptions {
+  /** A user is waiting (Test Connection): unknown/changed SSH host keys may be prompted for. */
+  interactive?: boolean;
+}
+
 export interface SyncBackend {
-  connect(config: BackendConfig): Promise<void>;
+  connect(config: BackendConfig, options?: SyncConnectOptions): Promise<void>;
   disconnect(): Promise<void>;
   testConnection(): Promise<boolean>;
   upload(localPath: string, remotePath: string): Promise<void>;

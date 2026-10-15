@@ -178,3 +178,35 @@ export function createHostVerifier(hostname: string, port: number) {
     },
   };
 }
+
+/** Why a pinned (non-interactive) host-key check refused the server. */
+export type PinnedHostKeyFailure = 'unknown' | 'changed';
+
+/**
+ * A `hostVerifier` for background connections (vault sync) that must never prompt: only a
+ * key already trusted in known_hosts is accepted. `failure` says why a key was refused, so
+ * the caller can tell the user to review it from an interactive Test Connection.
+ */
+export function createPinnedHostVerifier(hostname: string, port: number) {
+  let failure: PinnedHostKeyFailure | null = null;
+
+  const deps: HostKeyDeps = {
+    findKnownHosts: async (hostname, port) =>
+      (await import('../vault/crud')).findKnownHost(hostname, port),
+    remember: async () => {},
+    ask: async (prompt) => {
+      failure = prompt.status === 'changed' ? 'changed' : 'unknown';
+      return 'reject';
+    },
+  };
+
+  return {
+    hostVerifier: (key: Buffer, verify: (valid: boolean) => void): void => {
+      checkHostKey(hostname, port, key, deps).then(verify, () => verify(false));
+    },
+    /** Set once a key was refused because it is unknown or has changed. */
+    get failure() {
+      return failure;
+    },
+  };
+}

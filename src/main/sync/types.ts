@@ -8,6 +8,7 @@ export type {
   BackendConfig,
   FileMetadata,
   SyncBackendType,
+  SyncConnectOptions,
 } from '@shared/types';
 
 export interface SyncStatus {

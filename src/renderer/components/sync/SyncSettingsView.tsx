@@ -93,6 +93,7 @@ export const SyncSettingsView: React.FC = () => {
   // Connection test
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<'success' | 'fail' | null>(null);
+  const [testError, setTestError] = useState<string | null>(null);
 
   // Sync settings
   const [syncInterval, setSyncInterval] = useState<SyncInterval>(300);
@@ -216,11 +217,14 @@ export const SyncSettingsView: React.FC = () => {
   const handleTestConnection = async () => {
     setTesting(true);
     setTestResult(null);
+    setTestError(null);
     try {
       const result = await window.nexus.sync.testConnection(backendConfig);
       setTestResult(result ? 'success' : 'fail');
-    } catch {
+    } catch (err) {
       setTestResult('fail');
+      // e.g. a rejected or changed SFTP host key: say why, not just "failed".
+      setTestError((err as Error).message || null);
     } finally {
       setTesting(false);
     }
@@ -376,7 +380,7 @@ export const SyncSettingsView: React.FC = () => {
                     <line x1="5" y1="5" x2="9" y2="9" />
                     <line x1="9" y1="5" x2="5" y2="9" />
                   </svg>
-                  Connection failed
+                  {testError ? `Connection failed: ${testError}` : 'Connection failed'}
                 </span>
               )}
             </div>
