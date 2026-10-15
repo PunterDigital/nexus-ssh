@@ -4,7 +4,7 @@ import { useVaultLocked } from './hooks';
 import type { ViewType } from './stores';
 import { applyTheme } from './styles/themes';
 import { LockScreen, Sidebar, ConnectionsView } from './components/vault';
-import { TerminalView, ConnectionStatus } from './components/terminal';
+import { TerminalView, ConnectionStatus, HostKeyPromptHost } from './components/terminal';
 import { SFTPBrowser } from './components/sftp/SFTPBrowser';
 import { KeychainView } from './components/keychain/KeychainView';
 import { SnippetsPanel } from './components/common/SnippetsPanel';
@@ -341,6 +341,9 @@ export default function App(): React.ReactElement {
 
       {/* Status bar */}
       <StatusBar />
+
+      {/* Unknown / changed host keys wait here for the user's decision */}
+      <HostKeyPromptHost />
     </div>
   );
 }

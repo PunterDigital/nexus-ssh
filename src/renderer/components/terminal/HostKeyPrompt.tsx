@@ -17,7 +17,7 @@ export const HostKeyPrompt: React.FC<HostKeyPromptProps> = ({
   const isChanged = prompt.status === 'changed';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <div className="mx-4 w-full max-w-lg rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-primary)] shadow-2xl">
         {/* Header */}
         <div

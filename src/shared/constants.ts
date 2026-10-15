@@ -112,6 +112,7 @@ export const IPC = {
   SSH_CLOSE: 'ssh:close',
   SSH_HOST_KEY_PROMPT: 'ssh:host-key-prompt',
   SSH_HOST_KEY_RESPONSE: 'ssh:host-key-response',
+  SSH_HOST_KEY_DISMISS: 'ssh:host-key-dismiss',
 
   // SFTP
   SFTP_LIST: 'sftp:list',

@@ -5,7 +5,8 @@
 import { ipcMain } from 'electron';
 import { v4 as uuidv4 } from 'uuid';
 import { IPC } from '../../shared/constants';
-import { sshManager } from '../ssh/index';
+import { sshManager, HANDSHAKE_TIMEOUT_MS } from '../ssh/index';
+import { createHostVerifier, hostKeyPrompter } from '../ssh/host-key';
 import * as crud from '../vault/crud';
 
 /** Wrap a handler result in a standardised envelope. */
@@ -18,6 +19,9 @@ function fail(error: string) {
 }
 
 export function registerSSHHandlers(): void {
+  // Answers from the host-key prompt (SSH_HOST_KEY_RESPONSE)
+  hostKeyPrompter.registerHandlers();
+
   // ── SSH_CONNECT ─────────────────────────────────────────────
   ipcMain.handle(IPC.SSH_CONNECT, async (_event, hostId: string) => {
     try {
@@ -28,25 +32,21 @@ export function registerSSHHandlers(): void {
       const host = await crud.getHost(hostId);
       if (!host) throw new Error(`Host not found: ${hostId}`);
 
-      // 3. Load known hosts for host-key verification
-      const knownHosts = await crud.listKnownHosts();
-
-      // 4. Generate a unique session ID
+      // 3. Generate a unique session ID
       const sessionId = uuidv4();
 
-      // 5. Connect
+      // 4. Connect (verifies the host key against known_hosts / asks the user)
       await sshManager.connect({
         sessionId,
         hostId,
         label: host.label,
         colour: host.colour,
         credentials,
-        knownHosts,
         cols: 80,
         rows: 24,
       });
 
-      // 6. Update last_connected timestamp
+      // 5. Update last_connected timestamp
       await crud.updateLastConnected(hostId);
 
       return ok(sessionId);
@@ -91,10 +91,12 @@ export function registerSSHHandlers(): void {
 
       return new Promise((resolve) => {
         const client = new Client();
+        const hostKey = createHostVerifier(opts.hostname, opts.port);
         const timer = setTimeout(() => {
+          hostKey.dismiss();
           try { client.end(); } catch { /* ignore */ }
           resolve(fail('Connection timed out'));
-        }, 15000);
+        }, HANDSHAKE_TIMEOUT_MS);
 
         client.on('ready', () => {
           clearTimeout(timer);
@@ -104,15 +106,17 @@ export function registerSSHHandlers(): void {
 
         client.on('error', (err: Error) => {
           clearTimeout(timer);
-          resolve(fail(err.message));
+          hostKey.dismiss();
+          resolve(fail(hostKey.rejected ? 'Host key was not trusted' : err.message));
         });
 
         const connectConfig: Record<string, unknown> = {
           host: opts.hostname,
           port: opts.port,
           username: opts.username,
-          readyTimeout: 15000,
+          readyTimeout: HANDSHAKE_TIMEOUT_MS,
           tryKeyboard: true,
+          hostVerifier: hostKey.hostVerifier,
         };
         if (privateKey) {
           connectConfig.privateKey = privateKey;

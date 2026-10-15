@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
+import type { HostKeyPrompt, HostKeyVerification } from '../shared/types';
 
 /**
  * Nexus preload script.
@@ -146,6 +147,23 @@ const nexusAPI = {
         ipcRenderer.removeListener('ssh:close', listener);
       };
     },
+    // Host-key verification: main asks, the renderer answers with the prompt's id.
+    onHostKeyPrompt: (callback: (prompt: HostKeyPrompt) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, prompt: HostKeyPrompt) => callback(prompt);
+      ipcRenderer.on('ssh:host-key-prompt', listener);
+      return () => {
+        ipcRenderer.removeListener('ssh:host-key-prompt', listener);
+      };
+    },
+    onHostKeyDismiss: (callback: (id: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, id: string) => callback(id);
+      ipcRenderer.on('ssh:host-key-dismiss', listener);
+      return () => {
+        ipcRenderer.removeListener('ssh:host-key-dismiss', listener);
+      };
+    },
+    respondHostKey: (id: string, answer: HostKeyVerification) =>
+      call('ssh:host-key-response', id, answer),
   },
 
   // ── SFTP ───────────────────────────────────────────────────

@@ -4,19 +4,12 @@
  * PTY allocation, and IPC-based communication with the renderer process.
  */
 
-import crypto from 'node:crypto';
 import { Client, type ConnectConfig, type ClientChannel } from 'ssh2';
 import type { ParsedKey } from 'ssh2';
 import type { BrowserWindow} from 'electron';
-import { ipcMain } from 'electron';
 import { IPC, DEFAULT_KEEPALIVE_INTERVAL } from '../../shared/constants';
-import type {
-  ResolvedCredentials,
-  SSHSession,
-  KnownHost,
-  HostKeyVerification,
-  HostKeyPrompt,
-} from '../../shared/types';
+import type { ResolvedCredentials, SSHSession } from '../../shared/types';
+import { createHostVerifier } from './host-key';
 
 // ---------------------------------------------------------------------------
 // Internal state type
@@ -38,18 +31,11 @@ interface SSHSessionState {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Compute an SHA-256 fingerprint (hex, colon-separated) from a raw key buffer. */
-function fingerprint(key: Buffer): string {
-  const hash = crypto.createHash('sha256').update(key).digest('base64');
-  return `SHA256:${hash}`;
-}
-
-// ---------------------------------------------------------------------------
 // SSHManager
 // ---------------------------------------------------------------------------
+
+/** ssh2 handshake timeout, which includes waiting for the host-key prompt. */
+export const HANDSHAKE_TIMEOUT_MS = 60_000;
 
 class SSHManager {
   private sessions: Map<string, SSHSessionState> = new Map();
@@ -70,7 +56,6 @@ class SSHManager {
     label: string;
     colour: string | null;
     credentials: ResolvedCredentials;
-    knownHosts: KnownHost[];
     cols: number;
     rows: number;
   }): Promise<string> {
@@ -80,7 +65,6 @@ class SSHManager {
       label,
       colour,
       credentials,
-      knownHosts,
       cols,
       rows,
     } = options;
@@ -101,6 +85,8 @@ class SSHManager {
     };
 
     this.sessions.set(sessionId, state);
+
+    const hostKey = createHostVerifier(credentials.hostname, credentials.port);
 
     return new Promise<string>((resolve, reject) => {
       // ---- Event: ready — open a PTY shell ----------------------------------
@@ -150,7 +136,12 @@ class SSHManager {
       });
 
       // ---- Event: error -----------------------------------------------------
-      client.on('error', (err) => {
+      client.on('error', (rawErr) => {
+        // A connection that dies while the host-key prompt is open closes the prompt too.
+        hostKey.dismiss();
+        const err = hostKey.rejected
+          ? new Error(`Host key for ${credentials.hostname}:${credentials.port} was not trusted`)
+          : rawErr;
         this.sendToRenderer(IPC.SSH_CLOSE, {
           sessionId,
           error: err.message,
@@ -161,6 +152,7 @@ class SSHManager {
 
       // ---- Event: end -------------------------------------------------------
       client.on('end', () => {
+        hostKey.dismiss();
         this.sendToRenderer(IPC.SSH_CLOSE, { sessionId });
         this.cleanup(sessionId);
       });
@@ -170,24 +162,12 @@ class SSHManager {
         host: credentials.hostname,
         port: credentials.port,
         username: credentials.username,
-        readyTimeout: 20_000,
+        // The handshake includes the host-key prompt, so leave time to read the fingerprint.
+        readyTimeout: HANDSHAKE_TIMEOUT_MS,
         keepaliveInterval: (DEFAULT_KEEPALIVE_INTERVAL) * 1_000,
 
-        // Host-key verification (TOFU)
-        hostVerifier: (key: Buffer) => {
-          // We return a boolean synchronously here is impossible because we
-          // need to prompt the user asynchronously. ssh2 v1+ supports
-          // returning a Promise<boolean> or using a callback.  We'll return
-          // a promise.
-          return this.verifyHostKey(
-            credentials.hostname,
-            credentials.port,
-            key,
-            knownHosts,
-          ) as unknown as boolean;
-          // ssh2 accepts a Promise<boolean> from hostVerifier at runtime even
-          // though the type signature says boolean. We cast here to satisfy TS.
-        },
+        // Host-key verification (TOFU): waits for known_hosts or the user's answer.
+        hostVerifier: hostKey.hostVerifier,
       };
 
       // --- Auth: privateKey --------------------------------------------------
@@ -227,78 +207,6 @@ class SSHManager {
         this.cleanup(sessionId);
         reject(err);
       }
-    });
-  }
-
-  // -----------------------------------------------------------------------
-  // Host-key verification (TOFU)
-  // -----------------------------------------------------------------------
-
-  private async verifyHostKey(
-    hostname: string,
-    port: number,
-    key: Buffer,
-    knownHosts: KnownHost[],
-  ): Promise<boolean> {
-    const fp = fingerprint(key);
-    const keyBase64 = key.toString('base64');
-
-    // Find matching entries for this host+port
-    const matching = knownHosts.filter(
-      (kh) => kh.hostname === hostname && kh.port === port,
-    );
-
-    if (matching.length > 0) {
-      // Check if any known key matches
-      const trusted = matching.find((kh) => kh.public_key === keyBase64);
-      if (trusted) {
-        // Key matches a known host — accept immediately
-        return true;
-      }
-
-      // Host is known but key has CHANGED — prompt the user
-      return this.promptHostKey(hostname, port, fp, 'changed');
-    }
-
-    // Host is unknown — prompt the user
-    return this.promptHostKey(hostname, port, fp, 'new');
-  }
-
-  private promptHostKey(
-    hostname: string,
-    port: number,
-    fp: string,
-    status: 'new' | 'changed',
-  ): Promise<boolean> {
-    return new Promise<boolean>((resolve) => {
-      if (!this.mainWindow) {
-        // No UI to prompt — reject for safety
-        resolve(false);
-        return;
-      }
-
-      const prompt: HostKeyPrompt = {
-        hostname,
-        port,
-        keyType: 'unknown', // ssh2 raw key doesn't include parsed type easily
-        fingerprint: fp,
-        status,
-      };
-
-      // Listen for the renderer response (one-time handler)
-      ipcMain.once(
-        IPC.SSH_HOST_KEY_RESPONSE,
-        (_event, response: { action: HostKeyVerification }) => {
-          if (response.action === 'accept' || response.action === 'always') {
-            resolve(true);
-          } else {
-            resolve(false);
-          }
-        },
-      );
-
-      // Send prompt to renderer
-      this.mainWindow.webContents.send(IPC.SSH_HOST_KEY_PROMPT, prompt);
     });
   }
 
