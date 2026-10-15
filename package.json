@@ -1,6 +1,6 @@
 {
   "name": "nexus-ssh",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Nexus — a modern SSH terminal client",
   "main": "dist/main/index.js",
   "author": "Punter Digital Limited",
