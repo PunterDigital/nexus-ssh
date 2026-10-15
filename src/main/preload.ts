@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
-import type { HostKeyPrompt, HostKeyVerification } from '../shared/types';
+import type { HostKeyPrompt, HostKeyVerification, UpdateStatus } from '../shared/types';
 
 /**
  * Nexus preload script.
@@ -286,6 +286,22 @@ const nexusAPI = {
     get: (key: string) => call('app-settings:get', key),
     set: (key: string, value: unknown) => call('app-settings:set', key, value),
     getAll: () => call<Record<string, unknown>>('app-settings:get-all'),
+  },
+
+  // ── App updates ────────────────────────────────────────────
+  updater: {
+    getStatus: () => call<UpdateStatus>('updater:get-status'),
+    check: () => call<UpdateStatus>('updater:check'),
+    install: () => call('updater:install'),
+    openDownloads: () => call('updater:open-downloads'),
+    onStatus: (callback: (status: UpdateStatus) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, status: UpdateStatus) =>
+        callback(status);
+      ipcRenderer.on('updater:status', listener);
+      return () => {
+        ipcRenderer.removeListener('updater:status', listener);
+      };
+    },
   },
 
   // ── Local filesystem (for SFTP browser's local pane) ──────

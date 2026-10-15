@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import type { NexusTheme } from '../../../shared/types';
 import { BUNDLED_THEMES } from '../../styles/themes';
 import { useUIStore } from '../../stores/ui-store';
+import { useUpdateStore } from '../../stores/update-store';
 import { FormField } from './FormField';
 import { ThemeCard } from './ThemeCard';
 import { SyncSettingsView } from '../sync/SyncSettingsView';
@@ -13,6 +14,7 @@ import {
   DEFAULT_SCROLLBACK,
   DEFAULT_SFTP_CONCURRENCY,
   APP_NAME,
+  UPDATE_CHECK_SETTING,
 } from '../../../shared/constants';
 
 // ============================================================
@@ -57,6 +59,7 @@ interface SettingsValues {
   sftpConcurrency: number;
   showHiddenFiles: boolean;
   uiFontSize: number;
+  checkForUpdates: boolean;
 }
 
 const DEFAULT_SETTINGS: SettingsValues = {
@@ -72,6 +75,7 @@ const DEFAULT_SETTINGS: SettingsValues = {
   sftpConcurrency: DEFAULT_SFTP_CONCURRENCY,
   showHiddenFiles: false,
   uiFontSize: 16,
+  checkForUpdates: true,
 };
 
 /** Apply the UI font size to the document root so Tailwind rem values scale. */
@@ -159,6 +163,7 @@ export const SettingsPanel: React.FC = () => {
           // UI-only preference lives in app-level settings
           uiFontSize:
             (appSettings?.uiFontSize as number | undefined) ?? prev.uiFontSize,
+          checkForUpdates: appSettings?.[UPDATE_CHECK_SETTING] !== false,
         }));
 
         if (typeof appSettings?.uiFontSize === 'number') {
@@ -171,7 +176,7 @@ export const SettingsPanel: React.FC = () => {
   }, []);
 
   // Keys that live in app-level (unencrypted, cross-vault) settings
-  const APP_LEVEL_KEYS: Array<keyof SettingsValues> = ['uiFontSize'];
+  const APP_LEVEL_KEYS: Array<keyof SettingsValues> = ['uiFontSize', UPDATE_CHECK_SETTING];
 
   const updateSetting = useCallback(
     async <K extends keyof SettingsValues>(key: K, value: SettingsValues[K]) => {
@@ -202,6 +207,37 @@ export const SettingsPanel: React.FC = () => {
     },
     [setTheme],
   );
+
+  const [checking, setChecking] = useState(false);
+  const checkNow = useUpdateStore((s) => s.checkNow);
+  const handleCheckForUpdates = useCallback(async () => {
+    setChecking(true);
+    try {
+      const status = await checkNow();
+      switch (status.state) {
+        case 'up-to-date':
+          addNotification('info', `You're running the latest version (v${__APP_VERSION__}).`);
+          break;
+        case 'available':
+          // notify mode shows the update card; install mode downloads first.
+          if (status.mode === 'install') {
+            addNotification('info', `Downloading Nexus v${status.version}…`);
+          }
+          break;
+        case 'downloaded':
+          break; // the update card offers "Restart to update"
+        case 'error':
+          addNotification('error', `Couldn't check for updates: ${status.message}`);
+          break;
+        default:
+          addNotification('info', 'Update checks only run in the installed app.');
+      }
+    } catch (err) {
+      addNotification('error', `Couldn't check for updates: ${(err as Error).message}`);
+    } finally {
+      setChecking(false);
+    }
+  }, [checkNow, addNotification]);
 
   const handleBrowseVaultDir = useCallback(async () => {
     try {
@@ -334,6 +370,16 @@ export const SettingsPanel: React.FC = () => {
                   Change...
                 </button>
               </div>
+            </SettingRow>
+
+            <SettingRow
+              label="Check for updates automatically"
+              description="Look for a new version at launch and every few hours. On Windows it downloads in the background and asks before restarting; on macOS it links to the downloads page."
+            >
+              <Toggle
+                checked={settings.checkForUpdates}
+                onChange={(v) => updateSetting('checkForUpdates', v)}
+              />
             </SettingRow>
           </div>
         )}
@@ -635,7 +681,8 @@ export const SettingsPanel: React.FC = () => {
               {/* Update button */}
               <button
                 className="btn btn-ghost text-xs self-start"
-                onClick={() => addNotification('info', 'You are running the latest version.')}
+                disabled={checking}
+                onClick={handleCheckForUpdates}
               >
                 <svg
                   width="12"
@@ -651,7 +698,7 @@ export const SettingsPanel: React.FC = () => {
                   <polyline points="23 20 23 14 17 14" />
                   <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15" />
                 </svg>
-                Check for Updates
+                {checking ? 'Checking…' : 'Check for Updates'}
               </button>
             </div>
           </div>

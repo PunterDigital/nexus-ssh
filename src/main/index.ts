@@ -15,6 +15,7 @@ import { sftpManager } from './sftp/index';
 import { syncEngine } from './sync/engine';
 import { securityManager } from './security';
 import { getCSPHeader } from './security/csp';
+import { setUpdaterWindow, startUpdateChecks } from './updater/index';
 
 let mainWindow: BrowserWindow | null = null;
 let localServer: http.Server | null = null;
@@ -182,10 +183,14 @@ app.whenReady().then(async () => {
     sftpManager.setMainWindow(mainWindow);
     syncEngine.setMainWindow(mainWindow);
     securityManager.setMainWindow(mainWindow);
+    setUpdaterWindow(mainWindow);
   }
 
   // Initialise security monitoring (idle auto-lock, power-monitor listeners)
   securityManager.init();
+
+  // Background update checks (installed builds only; never blocks startup)
+  startUpdateChecks();
 });
 
 app.on('window-all-closed', () => {

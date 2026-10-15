@@ -22,7 +22,8 @@ function getAppSettingsPath(): string {
   return path.join(app.getPath('userData'), 'app-settings.json');
 }
 
-async function readAll(): Promise<Record<string, unknown>> {
+/** Read app-settings.json (empty object if missing or malformed). */
+export async function readAppSettings(): Promise<Record<string, unknown>> {
   try {
     const file = getAppSettingsPath();
     const raw = await fs.readFile(file, 'utf-8');
@@ -45,7 +46,7 @@ async function writeAll(data: Record<string, unknown>): Promise<void> {
 export function registerAppSettingsHandlers(): void {
   ipcMain.handle(IPC.APP_SETTINGS_GET, async (_event, key: string) => {
     try {
-      const all = await readAll();
+      const all = await readAppSettings();
       return ok(all[key] ?? null);
     } catch (err: unknown) {
       return fail(err instanceof Error ? err.message : String(err));
@@ -56,7 +57,7 @@ export function registerAppSettingsHandlers(): void {
     IPC.APP_SETTINGS_SET,
     async (_event, key: string, value: unknown) => {
       try {
-        const all = await readAll();
+        const all = await readAppSettings();
         all[key] = value;
         await writeAll(all);
         return ok(null);
@@ -68,7 +69,7 @@ export function registerAppSettingsHandlers(): void {
 
   ipcMain.handle(IPC.APP_SETTINGS_GET_ALL, async () => {
     try {
-      return ok(await readAll());
+      return ok(await readAppSettings());
     } catch (err: unknown) {
       return fail(err instanceof Error ? err.message : String(err));
     }

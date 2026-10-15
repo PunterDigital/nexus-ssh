@@ -12,7 +12,7 @@
     "dev:renderer": "vite",
     "dev:electron": "node scripts/wait-for-vite.js && electron .",
     "build": "pnpm build:main && pnpm build:preload && pnpm build:renderer",
-    "build:main": "esbuild src/main/index.ts --bundle --platform=node --outdir=dist/main --external:electron --external:ssh2 --external:@journeyapps/sqlcipher --external:basic-ftp --external:@aws-sdk/client-s3 --external:libsodium-wrappers-sumo --format=cjs --sourcemap",
+    "build:main": "esbuild src/main/index.ts --bundle --platform=node --outdir=dist/main --external:electron --external:ssh2 --external:@journeyapps/sqlcipher --external:basic-ftp --external:@aws-sdk/client-s3 --external:libsodium-wrappers-sumo --external:electron-updater --format=cjs --sourcemap",
     "build:preload": "esbuild src/main/preload.ts --bundle --platform=node --outdir=dist/main --external:electron --format=cjs --sourcemap",
     "build:renderer": "vite build",
     "package": "pnpm build && electron-builder",

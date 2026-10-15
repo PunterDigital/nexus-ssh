@@ -336,3 +336,27 @@ export interface VaultTreeNode {
   parentId?: string;
   vaultId: string;
 }
+
+// ============================================================
+// App updates (src/main/updater)
+// ============================================================
+
+/**
+ * How this build updates itself:
+ * - `install`: Windows installer builds download the update in the background (electron-updater)
+ *   and ask before restarting into it.
+ * - `notify`: macOS (unsigned apps can't self-update) and anything else only say a newer
+ *   version exists and link to the downloads page.
+ * - `off`: dev / E2E builds, or checks turned off in Settings.
+ */
+export type UpdateMode = 'install' | 'notify' | 'off';
+
+export type UpdateStatus =
+  | { state: 'idle'; mode: UpdateMode }
+  | { state: 'checking'; mode: UpdateMode }
+  | { state: 'up-to-date'; mode: UpdateMode }
+  /** A newer version exists. In `install` mode it is downloading. */
+  | { state: 'available'; mode: UpdateMode; version: string }
+  /** `install` mode only: downloaded and ready for "Restart to update". */
+  | { state: 'downloaded'; mode: UpdateMode; version: string }
+  | { state: 'error'; mode: UpdateMode; message: string };
