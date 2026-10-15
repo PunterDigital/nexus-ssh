@@ -6,6 +6,7 @@ import { Client } from 'ssh2';
 import type { SFTPWrapper } from 'ssh2';
 import type { SyncBackend, BackendConfig, FileMetadata, SyncConnectOptions } from '../types';
 import { createHostVerifier, createPinnedHostVerifier } from '../../ssh/host-key';
+import { joinRemote, locateRemote, normaliseRemoteDir, remoteDirChain } from './remote-dir';
 
 /** Background connections give up after this long. */
 const CONNECT_TIMEOUT_MS = 30_000;
@@ -19,6 +20,9 @@ export class SFTPSyncBackend implements SyncBackend {
   private client: Client | null = null;
   private sftp: SFTPWrapper | null = null;
   private connected = false;
+  /** The configured Remote Path ('' = the login's home directory). */
+  private remoteDir = '';
+  private remoteDirReady = false;
 
   /**
    * Connect and open the SFTP subsystem. The server's host key is always checked against
@@ -77,6 +81,8 @@ export class SFTPSyncBackend implements SyncBackend {
           this.client = client;
           this.sftp = sftp;
           this.connected = true;
+          this.remoteDir = normaliseRemoteDir(config.remotePath);
+          this.remoteDirReady = false;
           resolve();
         });
       });
@@ -146,8 +152,11 @@ export class SFTPSyncBackend implements SyncBackend {
       throw new Error('SFTP not connected — call connect() first');
     }
 
+    await this.ensureRemoteDir();
+    const target = joinRemote(this.remoteDir, remotePath);
+
     return new Promise<void>((resolve, reject) => {
-      this.sftp!.fastPut(localPath, remotePath, (err) => {
+      this.sftp!.fastPut(localPath, target, (err) => {
         if (err) {
           reject(new Error(`SFTP upload failed: ${err.message}`));
         } else {
@@ -162,8 +171,12 @@ export class SFTPSyncBackend implements SyncBackend {
       throw new Error('SFTP not connected — call connect() first');
     }
 
+    const source = await locateRemote(this.remoteDir, remotePath, async (p) =>
+      (await this.stat(p)) !== null
+    );
+
     return new Promise<void>((resolve, reject) => {
-      this.sftp!.fastGet(remotePath, localPath, (err) => {
+      this.sftp!.fastGet(source, localPath, (err) => {
         if (err) {
           reject(new Error(`SFTP download failed: ${err.message}`));
         } else {
@@ -178,6 +191,15 @@ export class SFTPSyncBackend implements SyncBackend {
       throw new Error('SFTP not connected — call connect() first');
     }
 
+    const target = joinRemote(this.remoteDir, remotePath);
+    const meta = await this.stat(target);
+    // Before #2582 the vault went to the home directory: read it from there until the
+    // next push writes it to the configured folder.
+    return meta ?? (target === remotePath ? null : await this.stat(remotePath));
+  }
+
+  /** Size and mtime of a remote file, or null if it doesn't exist. */
+  private stat(remotePath: string): Promise<FileMetadata | null> {
     return new Promise<FileMetadata | null>((resolve, reject) => {
       this.sftp!.stat(remotePath, (err, stats) => {
         if (err) {
@@ -196,5 +218,23 @@ export class SFTPSyncBackend implements SyncBackend {
         });
       });
     });
+  }
+
+  /** Create the Remote Path folder (and its parents) if it doesn't exist yet. */
+  private async ensureRemoteDir(): Promise<void> {
+    if (this.remoteDirReady) return;
+    for (const dir of remoteDirChain(this.remoteDir)) {
+      if (await this.stat(dir)) continue;
+      await new Promise<void>((resolve, reject) => {
+        this.sftp!.mkdir(dir, (err) => {
+          if (err) {
+            reject(new Error(`SFTP couldn't create the Remote Path folder ${dir}: ${err.message}`));
+          } else {
+            resolve();
+          }
+        });
+      });
+    }
+    this.remoteDirReady = true;
   }
 }

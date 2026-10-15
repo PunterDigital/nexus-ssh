@@ -45,6 +45,10 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   syncs can't prompt: they use `createPinnedHostVerifier` (known_hosts only; unknown/changed key →
   clear error). Only the sync settings' Test Connection (`connect(config, { interactive: true })`)
   shows the prompt, and "Always Accept" there pins the key for later syncs.
+- Sync locations: the engine passes bare file names (`<vault>.db`, `.salt`); each backend puts
+  them in its folder: SFTP/FTP Remote Path (`backends/remote-dir.ts`, created on first upload),
+  S3 Prefix, filesystem directory. Before v0.1.5 SFTP/FTP ignored Remote Path, so their reads
+  fall back to the bare name in the login directory while the folder is empty (#2582).
 - The renderer has a notification store (`addNotification`) but nothing renders it yet, so E2E
   can't assert toasts (see the toast card on the board).
 - Vault = SQLCipher DB + `.salt` file under `userData/vaults`. Keys: Argon2id (libsodium) →

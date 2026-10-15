@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { randomBytes } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { utils } from 'ssh2';
@@ -147,5 +147,68 @@ describe('SFTP sync backend host-key checks', () => {
     await expect(connect(true)).rejects.toThrow(/was not accepted/);
     expect(prompts).toHaveLength(1);
     expect(fake.known).toHaveLength(0);
+  });
+});
+
+describe('SFTP sync backend Remote Path (#2582)', () => {
+  // Trust the test server's key the way a user would, then sync in the background.
+  async function connectTo(remotePath: string) {
+    answer = 'always';
+    const tested = await connect(true);
+    await tested.disconnect();
+    const backend = new SFTPSyncBackend();
+    await backend.connect({ ...config(), remotePath });
+    return backend;
+  }
+
+  it('keeps the vault in the configured folder, creating it if needed', async () => {
+    const backend = await connectTo('/backups/nexus/');
+    try {
+      const payload = randomBytes(32 * 1024);
+      const source = path.join(localDir, 'dir.db');
+      writeFileSync(source, payload);
+      await backend.upload(source, 'dir.db');
+      expect(readFileSync(path.join(remoteDir, 'backups/nexus/dir.db')).equals(payload)).toBe(true);
+      expect(existsSync(path.join(remoteDir, 'dir.db'))).toBe(false);
+
+      expect((await backend.getRemoteMetadata('dir.db'))?.size).toBe(payload.length);
+      const dest = path.join(localDir, 'dir.back.db');
+      await backend.download('dir.db', dest);
+      expect(readFileSync(dest).equals(payload)).toBe(true);
+    } finally {
+      await backend.disconnect();
+    }
+  });
+
+  it('reads a vault synced to the home directory before, then pushes to the folder', async () => {
+    const legacy = randomBytes(1024);
+    writeFileSync(path.join(remoteDir, 'legacy.db'), legacy);
+    const backend = await connectTo('moved');
+    try {
+      expect((await backend.getRemoteMetadata('legacy.db'))?.size).toBe(legacy.length);
+      const dest = path.join(localDir, 'legacy.back.db');
+      await backend.download('legacy.db', dest);
+      expect(readFileSync(dest).equals(legacy)).toBe(true);
+
+      const payload = randomBytes(2048);
+      const source = path.join(localDir, 'legacy.db');
+      writeFileSync(source, payload);
+      await backend.upload(source, 'legacy.db');
+      expect(readFileSync(path.join(remoteDir, 'moved/legacy.db')).equals(payload)).toBe(true);
+      expect((await backend.getRemoteMetadata('legacy.db'))?.size).toBe(payload.length);
+      // The old copy is left alone (no data is deleted).
+      expect(readFileSync(path.join(remoteDir, 'legacy.db')).equals(legacy)).toBe(true);
+    } finally {
+      await backend.disconnect();
+    }
+  });
+
+  it('reports a missing vault as null when neither location has it', async () => {
+    const backend = await connectTo('/nowhere/yet');
+    try {
+      expect(await backend.getRemoteMetadata('missing.db')).toBeNull();
+    } finally {
+      await backend.disconnect();
+    }
   });
 });
