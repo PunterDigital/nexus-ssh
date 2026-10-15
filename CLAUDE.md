@@ -54,6 +54,10 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   dir. `writeDelayMs`/`readDelayMs` slow transfers down enough to pause them. Never hit real hosts.
   It works from vitest (`tests/unit/sftp-transfer.test.ts`, mocks `electron`) and Playwright
   (`tests/e2e/sftp-transfer.spec.ts`, drives host creation → SFTP → upload through the UI).
+- Sync backends: `tests/unit/sync-backends.test.ts` round-trips the FTP and S3 backends through the
+  real `basic-ftp` / `@aws-sdk/client-s3` clients against `tests/fixtures/ftp-server.ts` (passive-mode
+  FTP, one user) and `tests/fixtures/s3-server.ts` (in-memory path-style S3, decodes aws-chunked
+  uploads). Run it after bumping either library.
 
 ## Native module
 
@@ -62,6 +66,10 @@ rebuild. `scripts/postinstall.js` only falls back to `electron-rebuild` if no pr
 `electron-builder` never rebuilds native modules (`npmRebuild: false`; its node-gyp breaks on current
 runners). Prebuilt binaries live in per-arch folders (`lib/binding/napi-v6-<platform>-<arch>`), so the
 macOS CI job also downloads the darwin-x64 binary and both Mac builds load the right one at runtime.
+sqlcipher 5.3.1 still asks for `@mapbox/node-pre-gyp` 1.x (tar 6, old brace-expansion: critical/high
+advisories); `pnpm-workspace.yaml` overrides it to 2.x, which keeps the same `find()` / `install` CLI.
+The packaged app loads it at runtime (`lib/sqlite3-binding.js`), so test the packaged build after
+touching it.
 
 ## CI / release
 

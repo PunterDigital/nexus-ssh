@@ -6,3 +6,8 @@ allowBuilds:
   electron-winstaller: false
   esbuild: true
   ssh2: true
+
+overrides:
+  # sqlcipher still pins node-pre-gyp 1.x, which drags in tar 6 and an old brace-expansion
+  # (high/critical advisories). 2.x keeps the same find()/install API on tar 7.
+  '@journeyapps/sqlcipher>@mapbox/node-pre-gyp': ^2.0.3
