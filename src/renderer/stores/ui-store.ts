@@ -18,6 +18,10 @@ export interface UIState {
   sidebarCollapsed: boolean;
   currentView: ViewType;
   lockScreenVisible: boolean;
+  /** "Switch vault" was chosen; SwitchVaultHost confirms (if sessions are open) and switches. */
+  vaultSwitchRequested: boolean;
+  /** The next lock screen opens on the vault picker, even with one vault (#2363). */
+  vaultPickerRequested: boolean;
   theme: NexusTheme;
   modal: ModalState | null;
   commandPaletteOpen: boolean;
@@ -42,6 +46,10 @@ export interface UIActions {
 
   // Lock screen
   setLockScreenVisible: (visible: boolean) => void;
+  requestVaultSwitch: () => void;
+  cancelVaultSwitch: () => void;
+  /** Show the lock screen on the vault picker. */
+  showVaultPicker: () => void;
 
   // Modal
   showModal: (type: string, data?: unknown) => void;
@@ -72,6 +80,8 @@ const initialState: UIState = {
   sidebarCollapsed: false,
   currentView: 'connections',
   lockScreenVisible: true,
+  vaultSwitchRequested: false,
+  vaultPickerRequested: false,
   theme: draculaTheme,
   modal: null,
   commandPaletteOpen: false,
@@ -96,7 +106,17 @@ export const useUIStore = create<UIState & UIActions>()((set, get) => ({
 
   // ── Lock screen ────────────────────────────────────────────
 
-  setLockScreenVisible: (visible) => set({ lockScreenVisible: visible }),
+  // Leaving the lock screen ends a picker request (read by LockScreen without clearing it,
+  // so React StrictMode's double-run effects both see it).
+  setLockScreenVisible: (visible) =>
+    set(visible ? { lockScreenVisible: true } : { lockScreenVisible: false, vaultPickerRequested: false }),
+
+  requestVaultSwitch: () => set({ vaultSwitchRequested: true }),
+
+  cancelVaultSwitch: () => set({ vaultSwitchRequested: false }),
+
+  showVaultPicker: () =>
+    set({ vaultSwitchRequested: false, vaultPickerRequested: true, lockScreenVisible: true }),
 
   // ── Modal ──────────────────────────────────────────────────
 

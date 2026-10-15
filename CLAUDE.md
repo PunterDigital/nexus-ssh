@@ -76,6 +76,11 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   package with `-c.extraMetadata.version=<older>` and it downloads the current release into
   `%LOCALAPPDATA%/nexus-ssh-updater` (delete it afterwards; never click "Restart to update", it
   would install over the real app). `NEXUS_DISABLE_UPDATES=1` turns everything off.
+- Switching vaults (#2363): sidebar vault menu → `requestVaultSwitch()` (ui-store) → `SwitchVaultHost`
+  (confirms if tabs are open) → `vault:switch` (sync-on-lock push, lock, close SSH + SFTP sessions)
+  → stores reset → `showVaultPicker()`, so the lock screen opens on the picker even with one vault.
+  The header Lock button (`vault:lock`) keeps sessions open; only the switch and the idle/OS lock
+  close them. No command palette exists yet (`commandPaletteOpen` in ui-store is unused).
 - Locking: `securityManager.lockVault()` (main) closes the vault, drops SSH + SFTP sessions and sends
   `security:vault-locked`; the renderer's `useVaultLocked` (App.tsx) resets the vault/terminal/SFTP
   stores and shows the lock screen. E2E triggers it with `app.evaluate(({ powerMonitor }) =>

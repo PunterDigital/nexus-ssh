@@ -43,6 +43,8 @@ export interface VaultActions {
   createVault: (password: string, name?: string) => Promise<void>;
   unlockVault: (password: string, vaultPath?: string) => Promise<void>;
   lockVault: () => Promise<void>;
+  /** Lock and close the vault's SSH/SFTP sessions in main, then drop the vault data here. */
+  switchVault: () => Promise<void>;
   checkVaultExists: () => Promise<boolean>;
 
   // Hardware key (FIDO2 / WebAuthn PRF) unlock
@@ -143,6 +145,12 @@ export const useVaultStore = create<VaultState & VaultActions>()((set, get) => (
     } finally {
       get().reset();
     }
+  },
+
+  switchVault: async () => {
+    // Only reset once main has locked: if the switch fails the vault stays open and usable.
+    await window.nexus.vault.switch();
+    get().reset();
   },
 
   checkVaultExists: async () => {

@@ -10,6 +10,8 @@ import { vaultEngine } from '../vault/index';
 import { initSodium, deriveKey, generateSalt, zeroBuffer } from '../kdf';
 import { resolveVaultDir } from './fs-handlers';
 import * as crud from '../vault/crud';
+import { sshManager } from '../ssh';
+import { sftpManager } from '../sftp';
 
 /** Wrap a handler result in a standardised envelope. */
 function ok<T>(data: T) {
@@ -103,32 +105,41 @@ export function registerVaultHandlers(): void {
   // ── VAULT_LOCK ──────────────────────────────────────────────
   ipcMain.handle(IPC.VAULT_LOCK, async () => {
     try {
-      // Before locking, check if sync-on-lock is enabled and push the vault
-      try {
-        const vaultPath = vaultEngine.getVaultPath();
-        if (vaultPath && vaultEngine.isUnlocked()) {
-          const state = await crud.getSyncState();
-          if (state && state.backend_config) {
-            try {
-              const parsed = JSON.parse(state.backend_config);
-              const syncOnLock = parsed?.syncOnLock !== false;
-              const backendConfig = parsed?.backendConfig ?? parsed;
-              if (syncOnLock && backendConfig && backendConfig.type) {
-                const { syncEngine } = require('../sync/engine');
-                await syncEngine.configure(backendConfig);
-                await syncEngine.push(vaultPath);
-              }
-            } catch {
-              // Don't block the lock if sync fails
-            }
-          }
-        }
-      } catch {
-        // Don't block the lock if reading sync state fails
-      }
-
+      await pushBeforeLock();
       vaultEngine.lock();
       return ok(null);
+    } catch (err: unknown) {
+      return fail(err instanceof Error ? err.message : String(err));
+    }
+  });
+
+  // ── VAULT_SWITCH ────────────────────────────────────────────
+  // Same as a lock, but the sessions belong to the vault being left, so they are closed too
+  // (a plain lock keeps them; the idle/OS lock in src/main/security closes them).
+  ipcMain.handle(IPC.VAULT_SWITCH, async () => {
+    try {
+      await pushBeforeLock();
+      vaultEngine.lock();
+      try {
+        sshManager.destroyAll();
+      } catch {
+        // Best-effort cleanup
+      }
+      try {
+        sftpManager.destroyAll();
+      } catch {
+        // Best-effort cleanup
+      }
+      return ok(null);
+    } catch (err: unknown) {
+      return fail(err instanceof Error ? err.message : String(err));
+    }
+  });
+
+  // ── VAULT_CURRENT ───────────────────────────────────────────
+  ipcMain.handle(IPC.VAULT_CURRENT, async () => {
+    try {
+      return ok(vaultEngine.isUnlocked() ? vaultEngine.getVaultPath() : null);
     } catch (err: unknown) {
       return fail(err instanceof Error ? err.message : String(err));
     }
@@ -213,4 +224,30 @@ export function registerVaultHandlers(): void {
       return fail(err instanceof Error ? err.message : String(err));
     }
   });
+}
+
+/** If sync-on-lock is on, push the open vault before it is locked. Never throws. */
+async function pushBeforeLock(): Promise<void> {
+  try {
+    const vaultPath = vaultEngine.getVaultPath();
+    if (vaultPath && vaultEngine.isUnlocked()) {
+      const state = await crud.getSyncState();
+      if (state && state.backend_config) {
+        try {
+          const parsed = JSON.parse(state.backend_config);
+          const syncOnLock = parsed?.syncOnLock !== false;
+          const backendConfig = parsed?.backendConfig ?? parsed;
+          if (syncOnLock && backendConfig && backendConfig.type) {
+            const { syncEngine } = require('../sync/engine');
+            await syncEngine.configure(backendConfig);
+            await syncEngine.push(vaultPath);
+          }
+        } catch {
+          // Don't block the lock if sync fails
+        }
+      }
+    }
+  } catch {
+    // Don't block the lock if reading sync state fails
+  }
 }
