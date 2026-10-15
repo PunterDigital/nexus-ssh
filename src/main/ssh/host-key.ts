@@ -14,7 +14,6 @@ import { ipcMain } from 'electron';
 import { v4 as uuidv4 } from 'uuid';
 import { IPC } from '../../shared/constants';
 import type { HostKeyPrompt, HostKeyVerification, KnownHost } from '../../shared/types';
-import * as crud from '../vault/crud';
 
 /** SHA-256 fingerprint in OpenSSH's format, e.g. `SHA256:abc…=`. */
 export function fingerprint(key: Buffer): string {
@@ -142,8 +141,11 @@ export function createHostVerifier(hostname: string, port: number) {
   let rejected = false;
 
   const deps: HostKeyDeps = {
-    findKnownHosts: crud.findKnownHost,
-    remember: crud.upsertKnownHost,
+    // Loaded on use: the vault module pulls in the SQLCipher native binding, which the SSH
+    // manager (and its unit tests) shouldn't need just to be imported.
+    findKnownHosts: async (hostname, port) =>
+      (await import('../vault/crud')).findKnownHost(hostname, port),
+    remember: async (entry) => (await import('../vault/crud')).upsertKnownHost(entry),
     ask: (prompt) => {
       const { id, answer } = hostKeyPrompter.ask(prompt);
       promptId = id;
