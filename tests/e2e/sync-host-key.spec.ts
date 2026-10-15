@@ -60,7 +60,21 @@ test('SFTP vault sync refuses an untrusted host key until Test Connection trusts
   await page.getByPlaceholder('username').fill(server.username);
   await page.getByPlaceholder('Password (optional if using key)').fill(server.password);
   await page.getByPlaceholder('/home/user/nexus-sync').fill('/');
-  await expect(page.getByText('Saved')).toBeVisible({ timeout: 10_000 });
+  // Push uses the stored config, which auto-saves after a debounce. Wait until it holds the
+  // whole form (the "Saved" label can be left over from an earlier field's save).
+  await expect
+    .poll(
+      () =>
+        page.evaluate(async () => {
+          const cfg = (await window.nexus.sync.getConfig()) as {
+            backendConfig?: { port?: number; password?: string; remotePath?: string };
+          } | null;
+          const b = cfg?.backendConfig;
+          return b ? `${b.port}|${b.password}|${b.remotePath}` : null;
+        }),
+      { timeout: 10_000 }
+    )
+    .toBe(`${server.port}|${server.password}|/`);
 
   // A sync can't prompt, so the unknown key is refused and nothing is uploaded. Push goes
   // through the same IPC call as the Push button; its toast isn't asserted because the app
