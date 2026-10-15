@@ -19,3 +19,5 @@ export { SnippetExecuteDialog } from './SnippetExecuteDialog';
 export type { SnippetExecuteDialogProps } from './SnippetExecuteDialog';
 
 export { SettingsPanel } from './SettingsPanel';
+
+export { ToastHost } from './ToastHost';
