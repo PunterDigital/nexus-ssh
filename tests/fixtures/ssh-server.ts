@@ -33,6 +33,8 @@ export interface TestServer {
   password: string;
   /** Lines entered in shell sessions, in order. */
   commands: string[];
+  /** Client connections that are still open. */
+  openConnections: () => number;
   close: () => Promise<void>;
 }
 
@@ -104,6 +106,7 @@ export async function startTestServer(opts: TestServerOptions): Promise<TestServ
     username,
     password,
     commands,
+    openConnections: () => clients.size,
     close: () =>
       new Promise<void>((resolve) => {
         for (const c of clients) c.end();

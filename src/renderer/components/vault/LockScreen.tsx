@@ -33,6 +33,9 @@ export function LockScreen(): React.ReactElement {
   // Discover vaults on mount
   useEffect(() => {
     let cancelled = false;
+    // "Switch vault" (#2363) asks for the picker even when there is only one vault, so the
+    // user can create another one or pick the same one again.
+    const pickerRequested = useUIStore.getState().vaultPickerRequested;
     (async () => {
       try {
         const files = (await window.nexus.vault.list()) as string[];
@@ -42,7 +45,7 @@ export function LockScreen(): React.ReactElement {
           return;
         }
         setVaultFiles(files);
-        if (files.length === 1) {
+        if (files.length === 1 && !pickerRequested) {
           // Single vault — skip picker, go straight to password entry
           setSelectedVaultPath(files[0]);
           setMode('unlock');
@@ -178,7 +181,8 @@ export function LockScreen(): React.ReactElement {
               Select a Vault
             </h1>
             <p className="text-xs text-[var(--color-text-muted)]">
-              You have {vaultFiles.length} vaults in your vault directory
+              You have {vaultFiles.length} {vaultFiles.length === 1 ? 'vault' : 'vaults'} in your
+              vault directory
             </p>
           </div>
 

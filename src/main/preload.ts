@@ -36,6 +36,12 @@ const nexusAPI = {
       call<boolean>('vault:exists'),
     list: () =>
       call<string[]>('vault:list'),
+    /** Lock the open vault and close every SSH/SFTP session, ready to open another vault. */
+    switch: () =>
+      call('vault:switch'),
+    /** Path of the unlocked vault, or null when locked. */
+    current: () =>
+      call<string | null>('vault:current'),
     changePassword: (oldPassword: string, newPassword: string) =>
       call('vault:change-password', oldPassword, newPassword),
   },

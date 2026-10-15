@@ -21,7 +21,12 @@ export const Sidebar: React.FC = () => {
   const sessions = useTerminalStore((s) => s.sessions);
   const writeToSession = useTerminalStore((s) => s.writeToSession);
 
+  const requestVaultSwitch = useUIStore((s) => s.requestVaultSwitch);
+
   const [snippetsOpen, setSnippetsOpen] = useState(false);
+  const [vaultMenuOpen, setVaultMenuOpen] = useState(false);
+  const [vaultName, setVaultName] = useState('');
+  const vaultMenuRef = useRef<HTMLDivElement>(null);
   const [confirmSnippet, setConfirmSnippet] = useState<Snippet | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -36,6 +41,31 @@ export const Sidebar: React.FC = () => {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [snippetsOpen]);
+
+  // Name of the open vault (file name without .db) for the vault menu.
+  useEffect(() => {
+    let cancelled = false;
+    window.nexus.vault
+      .current()
+      .then((p) => {
+        if (!cancelled && p) setVaultName((p.split(/[/\\]/).pop() ?? '').replace(/\.db$/, ''));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!vaultMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (vaultMenuRef.current && !vaultMenuRef.current.contains(e.target as Node)) {
+        setVaultMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [vaultMenuOpen]);
 
   const activeSession = sessions.find((s) => s.id === activeSessionId);
   const activeHost = activeSession ? hosts.find((h) => h.id === activeSession.hostId) : null;
@@ -116,8 +146,45 @@ export const Sidebar: React.FC = () => {
 
   return (
     <div className="sidebar-transition no-select flex w-48 flex-col border-r border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
-      {/* Header with collapse button */}
-      <div className="flex h-8 items-center justify-end px-3">
+      {/* Header: vault menu + collapse button */}
+      <div className="flex h-8 items-center gap-1 px-2">
+        <div ref={vaultMenuRef} className="relative min-w-0 flex-1">
+          <button
+            type="button"
+            onClick={() => setVaultMenuOpen((v) => !v)}
+            aria-haspopup="menu"
+            aria-expanded={vaultMenuOpen}
+            title="Vault menu"
+            className="flex w-full min-w-0 items-center gap-1.5 rounded px-1.5 py-0.5 text-left text-[11px] font-semibold text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]"
+          >
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" className="flex-shrink-0">
+              <rect x="2" y="6" width="12" height="8" rx="1.5" />
+              <path d="M5 6V4a3 3 0 0 1 6 0v2" />
+            </svg>
+            <span className="truncate">{vaultName || 'Vault'}</span>
+            <svg width="8" height="8" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="flex-shrink-0 opacity-60">
+              <polyline points="2,4 5,7 8,4" />
+            </svg>
+          </button>
+          {vaultMenuOpen && (
+            <div
+              role="menu"
+              className="absolute left-0 right-0 top-full z-50 mt-1 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-primary)] py-1 shadow-lg"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setVaultMenuOpen(false);
+                  requestVaultSwitch();
+                }}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)]"
+              >
+                Switch Vault…
+              </button>
+            </div>
+          )}
+        </div>
         <button
           onClick={toggleSidebar}
           className="rounded p-0.5 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]"

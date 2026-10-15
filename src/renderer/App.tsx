@@ -3,7 +3,7 @@ import { useUIStore, useTerminalStore, useVaultStore, useSFTPStore } from './sto
 import { useVaultLocked } from './hooks';
 import type { ViewType } from './stores';
 import { applyTheme } from './styles/themes';
-import { LockScreen, Sidebar, ConnectionsView } from './components/vault';
+import { LockScreen, Sidebar, ConnectionsView, SwitchVaultHost } from './components/vault';
 import { TerminalView, ConnectionStatus, HostKeyPromptHost } from './components/terminal';
 import { SFTPBrowser } from './components/sftp/SFTPBrowser';
 import { KeychainView } from './components/keychain/KeychainView';
@@ -349,6 +349,9 @@ export default function App(): React.ReactElement {
 
       {/* Status bar */}
       <StatusBar />
+
+      {/* "Switch vault" confirmation (closes the sessions, then shows the vault picker) */}
+      <SwitchVaultHost />
 
       {/* Unknown / changed host keys wait here for the user's decision */}
       <HostKeyPromptHost />

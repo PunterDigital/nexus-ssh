@@ -3,6 +3,7 @@ export { CreateVaultDialog } from './CreateVaultDialog';
 export { PinSetupDialog } from './PinSetupDialog';
 export { PinUnlockForm } from './PinUnlockForm';
 export { Sidebar } from './Sidebar';
+export { SwitchVaultHost } from './SwitchVaultHost';
 export { VaultTree } from './VaultTree';
 export { TreeNode } from './TreeNode';
 export { ContextMenu } from './ContextMenu';
