@@ -1,6 +1,6 @@
 /**
  * Minimal throwaway FTP server for tests: one user, passive mode (EPSV/PASV) on 127.0.0.1,
- * and just enough commands for the FTP sync backend (STOR, RETR, SIZE, MDTM). Files live in
+ * and just enough commands for the FTP sync backend (STOR, RETR, SIZE, MDTM, MKD). Files live in
  * a temp dir. Never point the app at a real FTP host in tests.
  */
 
@@ -93,6 +93,12 @@ export async function startFtpTestServer(
             `227 Entering Passive Mode (127,0,0,1,${port >> 8},${port & 255})`
           );
         }
+        case 'MKD':
+          // Like real servers: 550 if it exists or the parent folder is missing.
+          if (!file || existsSync(file) || !existsSync(path.dirname(file)))
+            return reply('550 Cannot create directory');
+          mkdirSync(file);
+          return reply(`257 "${arg}" created`);
         case 'SIZE':
           if (!file || !existsSync(file)) return reply('550 No such file');
           return reply(`213 ${statSync(file).size}`);
@@ -102,11 +108,14 @@ export async function startFtpTestServer(
         case 'STOR': {
           const sock = await takeData();
           if (!sock || !file) return reply('425 No data connection');
+          if (!existsSync(path.dirname(file))) {
+            sock.destroy();
+            return reply('553 No such directory');
+          }
           reply('150 Ready to receive');
           const chunks: Buffer[] = [];
           sock.on('data', (c: Buffer) => chunks.push(c));
           await new Promise((r) => sock.on('close', r));
-          mkdirSync(path.dirname(file), { recursive: true });
           writeFileSync(file, Buffer.concat(chunks));
           return reply('226 Transfer complete');
         }

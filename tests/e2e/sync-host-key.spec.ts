@@ -30,7 +30,7 @@ test.afterAll(async () => {
   for (const dir of [userDataDir, remoteDir]) rmSync(dir, { recursive: true, force: true });
 });
 
-test('SFTP vault sync refuses an untrusted host key until Test Connection trusts it', async () => {
+test('SFTP vault sync refuses an untrusted host key until Test Connection trusts it, then syncs into Remote Path', async () => {
   app = await electron.launch({
     ...(executablePath
       ? { executablePath, args: [] }
@@ -59,7 +59,7 @@ test('SFTP vault sync refuses an untrusted host key until Test Connection trusts
   await page.getByPlaceholder('22').fill(String(server.port));
   await page.getByPlaceholder('username').fill(server.username);
   await page.getByPlaceholder('Password (optional if using key)').fill(server.password);
-  await page.getByPlaceholder('/home/user/nexus-sync').fill('/');
+  await page.getByPlaceholder('/home/user/nexus-sync').fill('/backups/nexus');
   // Push uses the stored config, which auto-saves after a debounce. Wait until it holds the
   // whole form (the "Saved" label can be left over from an earlier field's save).
   await expect
@@ -74,7 +74,7 @@ test('SFTP vault sync refuses an untrusted host key until Test Connection trusts
         }),
       { timeout: 10_000 }
     )
-    .toBe(`${server.port}|${server.password}|/`);
+    .toBe(`${server.port}|${server.password}|/backups/nexus`);
 
   // A sync can't prompt, so the unknown key is refused and nothing is uploaded. Push goes
   // through the same IPC call as the Push button; its toast isn't asserted because the app
@@ -106,6 +106,9 @@ test('SFTP vault sync refuses an untrusted host key until Test Connection trusts
   // Now the sync goes through without asking
   expect(await push()).toBe('ok');
   await expect(prompt).toHaveCount(0);
-  const uploaded = readdirSync(remoteDir);
+  // ...into the configured Remote Path, which it creates (#2582)
+  expect(readdirSync(remoteDir)).toEqual(['backups']);
+  const uploaded = readdirSync(path.join(remoteDir, 'backups/nexus'));
   expect(uploaded.some((f) => f.endsWith('.db'))).toBe(true);
+  expect(uploaded.some((f) => f.endsWith('.salt'))).toBe(true);
 });

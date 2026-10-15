@@ -4,6 +4,7 @@
 
 import { Client as FTPClient } from 'basic-ftp';
 import type { SyncBackend, BackendConfig, FileMetadata } from '../types';
+import { joinRemote, locateRemote, normaliseRemoteDir, remoteDirChain } from './remote-dir';
 
 export class FTPSyncBackend implements SyncBackend {
   readonly type = 'ftp' as const;
@@ -11,6 +12,9 @@ export class FTPSyncBackend implements SyncBackend {
 
   private client: FTPClient | null = null;
   private connected = false;
+  /** The configured Remote Path ('' = the login directory). */
+  private remoteDir = '';
+  private remoteDirReady = false;
 
   async connect(config: BackendConfig): Promise<void> {
     if (this.connected) {
@@ -31,6 +35,8 @@ export class FTPSyncBackend implements SyncBackend {
 
       this.client = client;
       this.connected = true;
+      this.remoteDir = normaliseRemoteDir(config.remotePath);
+      this.remoteDirReady = false;
     } catch (err: unknown) {
       client.close();
       const message = err instanceof Error ? err.message : String(err);
@@ -64,7 +70,8 @@ export class FTPSyncBackend implements SyncBackend {
     }
 
     try {
-      await this.client.uploadFrom(localPath, remotePath);
+      await this.ensureRemoteDir();
+      await this.client.uploadFrom(localPath, joinRemote(this.remoteDir, remotePath));
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       throw new Error(`FTP upload failed: ${message}`);
@@ -77,7 +84,12 @@ export class FTPSyncBackend implements SyncBackend {
     }
 
     try {
-      await this.client.downloadTo(localPath, remotePath);
+      const source = await locateRemote(
+        this.remoteDir,
+        remotePath,
+        async (p) => (await this.metadata(p)) !== null
+      );
+      await this.client.downloadTo(localPath, source);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       throw new Error(`FTP download failed: ${message}`);
@@ -89,9 +101,18 @@ export class FTPSyncBackend implements SyncBackend {
       throw new Error('FTP not connected — call connect() first');
     }
 
+    const target = joinRemote(this.remoteDir, remotePath);
+    const meta = await this.metadata(target);
+    // Before #2582 the vault went to the login directory: read it from there until the
+    // next push writes it to the configured folder.
+    return meta ?? (target === remotePath ? null : await this.metadata(remotePath));
+  }
+
+  /** Size and mtime of a remote file, or null if it doesn't exist. */
+  private async metadata(remotePath: string): Promise<FileMetadata | null> {
     try {
-      const size = await this.client.size(remotePath);
-      const lastModified = await this.client.lastMod(remotePath);
+      const size = await this.client!.size(remotePath);
+      const lastModified = await this.client!.lastMod(remotePath);
 
       return {
         size,
@@ -105,5 +126,18 @@ export class FTPSyncBackend implements SyncBackend {
       }
       throw new Error(`FTP metadata retrieval failed: ${message}`);
     }
+  }
+
+  /**
+   * Create the Remote Path folder (and its parents). MKD on a folder that already exists
+   * fails with 550, which is fine; a folder that really can't be created makes the upload
+   * fail with the server's message.
+   */
+  private async ensureRemoteDir(): Promise<void> {
+    if (this.remoteDirReady) return;
+    for (const dir of remoteDirChain(this.remoteDir)) {
+      await this.client!.sendIgnoringError(`MKD ${dir}`);
+    }
+    this.remoteDirReady = true;
   }
 }

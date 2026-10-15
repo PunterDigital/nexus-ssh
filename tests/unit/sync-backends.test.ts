@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomBytes } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { FTPSyncBackend } from '../../src/main/sync/backends/ftp';
@@ -39,7 +39,7 @@ describe('FTP sync backend', () => {
     rmSync(remoteDir, { recursive: true, force: true });
   });
 
-  const connect = async (password = creds.password) => {
+  const connect = async (password = creds.password, remotePath?: string) => {
     const backend = new FTPSyncBackend();
     await backend.connect({
       type: 'ftp',
@@ -47,6 +47,7 @@ describe('FTP sync backend', () => {
       port: server.port,
       username: creds.username,
       password,
+      remotePath,
     });
     return backend;
   };
@@ -76,6 +77,53 @@ describe('FTP sync backend', () => {
     const backend = await connect();
     try {
       expect(await backend.getRemoteMetadata('nope.db')).toBeNull();
+    } finally {
+      await backend.disconnect();
+    }
+  });
+
+  it('keeps the vault in the configured Remote Path, creating the folders', async () => {
+    const backend = await connect(creds.password, '/sync/nexus/');
+    try {
+      await backend.upload(source, 'vault.db');
+      expect(readFileSync(path.join(remoteDir, 'sync/nexus/vault.db')).equals(payload)).toBe(true);
+
+      expect((await backend.getRemoteMetadata('vault.db'))?.size).toBe(payload.length);
+      const dest = path.join(localDir, 'from-ftp-dir.db');
+      await backend.download('vault.db', dest);
+      expect(readFileSync(dest).equals(payload)).toBe(true);
+    } finally {
+      await backend.disconnect();
+    }
+
+    // A second connection finds the folder already there.
+    const again = await connect(creds.password, '/sync/nexus');
+    try {
+      await again.upload(source, 'vault.db.salt');
+      expect(existsSync(path.join(remoteDir, 'sync/nexus/vault.db.salt'))).toBe(true);
+      expect(existsSync(path.join(remoteDir, 'vault.db.salt'))).toBe(false);
+    } finally {
+      await again.disconnect();
+    }
+  });
+
+  it('reads a vault synced before Remote Path was honoured, then pushes to the folder', async () => {
+    const legacy = randomBytes(1024);
+    writeFileSync(path.join(remoteDir, 'old.db'), legacy);
+    const backend = await connect(creds.password, 'moved');
+    try {
+      expect((await backend.getRemoteMetadata('old.db'))?.size).toBe(legacy.length);
+      const dest = path.join(localDir, 'old-from-ftp.db');
+      await backend.download('old.db', dest);
+      expect(readFileSync(dest).equals(legacy)).toBe(true);
+
+      await backend.upload(source, 'old.db');
+      expect(readFileSync(path.join(remoteDir, 'moved/old.db')).equals(payload)).toBe(true);
+      expect((await backend.getRemoteMetadata('old.db'))?.size).toBe(payload.length);
+      await backend.download('old.db', dest);
+      expect(readFileSync(dest).equals(payload)).toBe(true);
+      // The old copy is left alone (no data is deleted).
+      expect(readFileSync(path.join(remoteDir, 'old.db')).equals(legacy)).toBe(true);
     } finally {
       await backend.disconnect();
     }
