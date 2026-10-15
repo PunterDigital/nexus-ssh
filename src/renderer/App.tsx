@@ -9,6 +9,7 @@ import { SFTPBrowser } from './components/sftp/SFTPBrowser';
 import { KeychainView } from './components/keychain/KeychainView';
 import { SnippetsPanel } from './components/common/SnippetsPanel';
 import { SettingsPanel } from './components/common/SettingsPanel';
+import { ToastHost } from './components/common/ToastHost';
 
 // ============================================================
 // Nexus SSH Client — App Shell
@@ -325,7 +326,12 @@ export default function App(): React.ReactElement {
   useVaultLocked(handleVaultLocked);
 
   if (lockScreenVisible) {
-    return <LockScreen />;
+    return (
+      <>
+        <LockScreen />
+        <ToastHost />
+      </>
+    );
   }
 
   return (
@@ -344,6 +350,9 @@ export default function App(): React.ReactElement {
 
       {/* Unknown / changed host keys wait here for the user's decision */}
       <HostKeyPromptHost />
+
+      {/* addNotification() messages */}
+      <ToastHost />
     </div>
   );
 }

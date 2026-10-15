@@ -49,8 +49,9 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   them in its folder: SFTP/FTP Remote Path (`backends/remote-dir.ts`, created on first upload),
   S3 Prefix, filesystem directory. Before v0.1.5 SFTP/FTP ignored Remote Path, so their reads
   fall back to the bare name in the login directory while the folder is empty (#2582).
-- The renderer has a notification store (`addNotification`) but nothing renders it yet, so E2E
-  can't assert toasts (see the toast card on the board).
+- `addNotification(type, message)` (ui-store) shows a toast via `ToastHost` (portal, z-[150]:
+  above dialogs, below the host-key prompt), auto-removed after 5 s. Errors are `role="alert"`,
+  the rest `role="status"`, so E2E asserts them with `getByRole('alert' | 'status')`.
 - Vault = SQLCipher DB + `.salt` file under `userData/vaults`. Keys: Argon2id (libsodium) →
   XSalsa20-Poly1305 key wrapping (`src/main/kdf`). Optional PIN and hardware-key (WebAuthn PRF) unlock.
 

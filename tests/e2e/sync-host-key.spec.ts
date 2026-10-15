@@ -76,20 +76,17 @@ test('SFTP vault sync refuses an untrusted host key until Test Connection trusts
     )
     .toBe(`${server.port}|${server.password}|/backups/nexus`);
 
-  // A sync can't prompt, so the unknown key is refused and nothing is uploaded. Push goes
-  // through the same IPC call as the Push button; its toast isn't asserted because the app
-  // doesn't render notifications yet.
-  const push = () =>
-    page.evaluate(() =>
-      window.nexus.sync.push().then(
-        () => 'ok',
-        (err: Error) => err.message
-      )
-    );
+  // A sync can't prompt, so the unknown key is refused and nothing is uploaded. The failure
+  // shows as an error toast (role=alert), which can be dismissed (#2583).
+  const pushButton = page.getByRole('button', { name: 'Push', exact: true });
   const prompt = page.getByRole('button', { name: 'Always Accept' });
-  expect(await push()).toMatch(/isn't trusted yet/);
+  await pushButton.click();
+  const failure = page.getByRole('alert').filter({ hasText: /Sync push failed: .*isn't trusted yet/ });
+  await expect(failure).toBeVisible({ timeout: 15_000 });
   await expect(prompt).toHaveCount(0);
   expect(readdirSync(remoteDir)).toEqual([]);
+  await failure.getByRole('button', { name: 'Dismiss notification' }).click();
+  await expect(failure).toHaveCount(0);
 
   // Test Connection asks; Reject fails with the reason shown
   await page.getByRole('button', { name: 'Test Connection' }).click();
@@ -103,8 +100,11 @@ test('SFTP vault sync refuses an untrusted host key until Test Connection trusts
   await prompt.click({ timeout: 15_000 });
   await expect(page.getByText('Connection successful')).toBeVisible({ timeout: 15_000 });
 
-  // Now the sync goes through without asking
-  expect(await push()).toBe('ok');
+  // Now the sync goes through without asking, and says so
+  await pushButton.click();
+  await expect(
+    page.getByRole('status').filter({ hasText: 'Sync push completed' })
+  ).toBeVisible({ timeout: 15_000 });
   await expect(prompt).toHaveCount(0);
   // ...into the configured Remote Path, which it creates (#2582)
   expect(readdirSync(remoteDir)).toEqual(['backups']);
