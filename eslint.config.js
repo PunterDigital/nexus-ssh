@@ -65,6 +65,28 @@ export default [
     },
   },
   {
+    // Design-system primitives (and, as screens are redesigned, new UI): tokens only.
+    // See docs/design-system.md → "Rules".
+    files: ['src/renderer/components/ui/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'Literal[value=/#[0-9a-fA-F]{3,8}\\b/], TemplateElement[value.raw=/#[0-9a-fA-F]{3,8}\\b/]',
+          message: 'No raw hex colours: use a colour token (bg-surface-raised, text-fg-muted, …).',
+        },
+        {
+          selector: 'Literal[value=/(^|\\s)[\\w:-]+-\\[[^\\]]+\\]/], TemplateElement[value.raw=/(^|\\s)[\\w:-]+-\\[[^\\]]+\\]/]',
+          message: 'No Tailwind arbitrary values (p-[7px], text-[var(--x)]): use the scale or a token, e.g. z-(--z-dialog).',
+        },
+        {
+          selector: "JSXAttribute[name.name='style']",
+          message: 'No inline styles: use token utilities.',
+        },
+      ],
+    },
+  },
+  {
     ignores: ['dist/', 'dist-release/', 'node_modules/', '*.config.*'],
   },
 ];

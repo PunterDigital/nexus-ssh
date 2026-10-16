@@ -1,0 +1,130 @@
+/*
+ * Nexus design tokens. See docs/design-system.md.
+ *
+ * Themes change colours only. applyTheme() (themes.ts) sets the raw theme colours
+ * (--color-bg-*, --color-text-*, --color-accent, …) on :root. Everything here is either
+ * theme-independent (spacing, type, radii, elevation, motion) or a semantic colour derived
+ * from the theme colours, so a new theme never has to touch this file.
+ *
+ * Tailwind 4 turns the @theme variables into utilities: bg-surface-raised, text-fg-muted,
+ * border-line-strong, text-body, shadow-popover, ease-standard, …
+ * Spacing uses Tailwind's 4 px scale (p-1 = 4 px, p-2 = 8 px, h-8 = 32 px), which is the
+ * design system's spacing scale, so it needs no extra tokens.
+ */
+
+/* Raw theme colours that the primitives use as utilities. Defaults are Tokyo Night;
+   applyTheme() overrides them inline on :root. */
+@theme static {
+  --color-accent: #7aa2f7;
+  --color-danger: #f7768e;
+  --color-success: #9ece6a;
+  --color-warning: #e0af68;
+}
+
+/* Semantic colours, derived from the theme colours. */
+@theme inline {
+  /* Surfaces, from back to front */
+  --color-surface-sunken: var(--color-bg-secondary); /* sidebars, status bar, wells */
+  --color-surface: var(--color-bg-primary); /* the page / main content */
+  --color-surface-raised: var(--color-bg-tertiary); /* inputs, cards on surface, menus */
+  --color-surface-hover: color-mix(in srgb, var(--color-text-primary) 7%, transparent);
+  --color-surface-pressed: color-mix(in srgb, var(--color-text-primary) 12%, transparent);
+  --color-overlay: rgb(0 0 0 / 0.6);
+
+  /* Text and icons */
+  --color-fg: var(--color-text-primary);
+  --color-fg-secondary: var(--color-text-secondary);
+  --color-fg-muted: var(--color-text-muted);
+
+  /* Lines. line = dividers; line-strong = control boundaries (inputs, outline buttons),
+     mixed towards the text colour so it stays visible on every theme (WCAG 1.4.11). */
+  --color-line: var(--color-border);
+  --color-line-strong: color-mix(in srgb, var(--color-text-muted) 55%, var(--color-border));
+  --color-focus: var(--color-border-focus);
+
+  /* Accent / primary action */
+  --color-accent-soft: var(--color-accent-muted);
+  --color-on-accent: var(--color-accent-fg);
+
+  /* Status */
+  --color-danger-soft: color-mix(in srgb, var(--color-danger) 15%, transparent);
+  --color-on-danger: var(--color-danger-fg);
+  --color-success-soft: color-mix(in srgb, var(--color-success) 15%, transparent);
+  --color-warning-soft: color-mix(in srgb, var(--color-warning) 15%, transparent);
+}
+
+@theme {
+  /* Type. Dense desktop scale: body is 13 px (macOS) between Fluent's 12 px caption and 14 px body.
+     Sizes are rem so the "UI font size" setting scales the whole UI. */
+  --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-code: 'JetBrains Mono', 'Cascadia Code', 'SF Mono', Consolas, monospace;
+
+  --text-caption: 0.6875rem; /* 11 px: badges, timestamps, keyboard hints */
+  --text-caption--line-height: 1rem;
+  --text-body-sm: 0.75rem; /* 12 px: dense lists, secondary text, small controls */
+  --text-body-sm--line-height: 1.125rem;
+  --text-body: 0.8125rem; /* 13 px: default UI text and controls */
+  --text-body--line-height: 1.25rem;
+  --text-body-lg: 0.875rem; /* 14 px: dialog body, empty-state copy */
+  --text-body-lg--line-height: 1.375rem;
+  --text-heading-sm: 1rem; /* 16 px: dialog and section titles */
+  --text-heading-sm--line-height: 1.5rem;
+  --text-heading: 1.25rem; /* 20 px: page titles */
+  --text-heading--line-height: 1.75rem;
+  --text-display: 1.5rem; /* 24 px: lock screen, onboarding */
+  --text-display--line-height: 2rem;
+
+  /* Elevation: one shadow per layer, the same in every theme */
+  --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.25);
+  --shadow-popover: 0 8px 24px -4px rgb(0 0 0 / 0.45), 0 2px 6px rgb(0 0 0 / 0.25);
+  --shadow-dialog: 0 24px 48px -12px rgb(0 0 0 / 0.6), 0 4px 12px rgb(0 0 0 / 0.3);
+
+  /* Motion */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-enter: cubic-bezier(0, 0, 0, 1);
+  --ease-exit: cubic-bezier(0.3, 0, 1, 1);
+}
+
+:root {
+  /* Text on the accent / danger colours. applyTheme() picks whichever of white or
+     near-black contrasts most with the theme's colour (white on most accents is < 3:1). */
+  --color-accent-fg: #111111;
+  --color-danger-fg: #111111;
+
+  /* Motion durations (Tailwind has no duration namespace: use duration-(--duration-fast)) */
+  --duration-instant: 75ms; /* colour changes on press */
+  --duration-fast: 120ms; /* hover, focus, small toggles */
+  --duration-base: 180ms; /* menus, popovers, tabs */
+  --duration-slow: 260ms; /* dialogs, panels */
+
+  /* Layers */
+  --z-dropdown: 40;
+  --z-dialog: 50;
+  --z-toast: 150;
+  --z-critical: 200; /* host-key prompt: above everything */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-instant: 0ms;
+    --duration-fast: 0ms;
+    --duration-base: 0ms;
+    --duration-slow: 0ms;
+  }
+}
+
+/* Focus indicator for every interactive primitive: 2 px accent ring, keyboard focus only
+   (WCAG 2.4.7 / 2.4.13). Use focus-ring-inset inside clipped lists (menus, tabs). */
+@utility focus-ring {
+  &:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+}
+
+@utility focus-ring-inset {
+  &:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: -2px;
+  }
+}

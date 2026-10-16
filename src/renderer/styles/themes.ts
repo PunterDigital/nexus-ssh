@@ -1,4 +1,5 @@
 import type { NexusTheme } from '../../shared/types';
+import { readableOn } from './contrast';
 
 // ============================================================
 // Nexus SSH Client — Bundled Themes
@@ -344,6 +345,9 @@ export function applyTheme(theme: NexusTheme): void {
   root.style.setProperty('--color-danger', ui.danger);
   root.style.setProperty('--color-success', ui.success);
   root.style.setProperty('--color-warning', ui.warning);
+  // Derived, not themeable: text on accent / danger fills, whichever of white or near-black reads best.
+  root.style.setProperty('--color-accent-fg', readableOn(ui.accent));
+  root.style.setProperty('--color-danger-fg', readableOn(ui.danger));
 }
 
 /**
