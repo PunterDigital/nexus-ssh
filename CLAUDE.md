@@ -90,11 +90,17 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   (`<nav aria-label="Settings sections">`, buttons with `aria-current`), `SettingRow`s in titled
   Cards, and stacks controls under labels in narrow containers (`@container`). The theme picker is a
   `radiogroup` of `ThemeCard` radios (roving tabindex); its preview sets the theme's palette as
-  `--preview-*` custom properties (the one inline style: theme colours are data). Main's
-  `getAllSettings()` doesn't return `cursorStyle`/`cursorBlink`, so the panel reads them with
-  `settings.get`. `SyncSettingsView` auto-saves 400 ms after an edit; Push/Pull/unmount flush a
-  pending save first. Keychain: `KeychainView` list + per-key Menu, delete via a Dialog. Snippets and
+  `--preview-*` custom properties (the one inline style: theme colours are data).
+  `SyncSettingsView` auto-saves 400 ms after an edit; Push/Pull/unmount flush a pending save first. Keychain: `KeychainView` list + per-key Menu, delete via a Dialog. Snippets and
   SFTP are part 2 (still on the old `FormField`/`Modal`/inline styles).
+- Terminal settings (#2662): `lib/terminal-options.ts` turns the vault's Settings → Terminal values
+  into xterm options (validated, clamped). A module cache holds the current values: `useTerminalPrefsCache`
+  (App) loads it on unlock and follows `settings:changed`, `terminal-store.reset()` clears it.
+  `TerminalInstance` builds xterm from the cache (WebGL only if `gpuAcceleration`: applies to new
+  sessions) and updates open terminals in place. Another view unmounts `TerminalView`; coming back
+  rebuilds each xterm from the cache, and main replays the output (`markReady` → `scrollbackBuffer`).
+  Main's settings `DEFAULTS` must list every vault setting: `getAll` returns only those keys
+  (cursor style/blink were missing until #2662).
 - `sr-only` is `position: absolute`: give its parent `relative`, or inside a scroll container it
   escapes to the nearest positioned ancestor outside and makes the whole page scroll (#2367).
 - Icons (#2374): Lucide only (`lucide-react`), always through `<Icon icon={Terminal} size={14} />`

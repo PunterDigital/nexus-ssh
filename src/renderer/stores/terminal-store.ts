@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { SSHSession } from '../../shared/types';
+import { setCachedTerminalPrefs } from '../lib/terminal-options';
 
 // ============================================================
 // Terminal Store — manages SSH sessions and terminal tabs
@@ -374,5 +375,9 @@ export const useTerminalStore = create<TerminalState & TerminalActions>()((set, 
 
   // ── Reset ──────────────────────────────────────────────────
 
-  reset: () => set(initialState),
+  reset: () => {
+    // The next vault may have other terminal settings: new terminals load them again.
+    setCachedTerminalPrefs(null);
+    set(initialState);
+  },
 }));

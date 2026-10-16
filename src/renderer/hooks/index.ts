@@ -8,3 +8,4 @@ export {
   useSystemSuspend,
   useVaultLocked,
 } from './use-ipc';
+export { useTerminalPrefsCache } from './use-terminal-prefs';

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect } from 'react';
 import { useUIStore, useTerminalStore, useVaultStore, useSFTPStore } from './stores';
-import { useVaultLocked } from './hooks';
+import { useTerminalPrefsCache, useVaultLocked } from './hooks';
 import { applyTheme } from './styles/themes';
 import { LockScreen, ConnectionsView, SwitchVaultHost } from './components/vault';
 import { AppHeader, Sidebar, StatusBar } from './components/shell';
@@ -130,6 +130,7 @@ export default function App(): React.ReactElement {
   }, [setView, setLockScreenVisible]);
 
   useVaultLocked(handleVaultLocked);
+  useTerminalPrefsCache(!lockScreenVisible);
 
   if (lockScreenVisible) {
     return (

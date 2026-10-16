@@ -6,9 +6,17 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { WebglAddon } from '@xterm/addon-webgl';
 import type { TerminalTheme } from '../../../shared/types';
-import { DEFAULT_FONT, DEFAULT_FONT_SIZE, DEFAULT_SCROLLBACK } from '../../../shared/constants';
-import { useSSHData, useSSHClose } from '../../hooks/use-ipc';
+import { useSSHData, useSSHClose, useSettingsChanged } from '../../hooks/use-ipc';
 import { useTerminalStore } from '../../stores/terminal-store';
+import {
+  cachedTerminalPrefs,
+  isTerminalPrefKey,
+  readTerminalPref,
+  readTerminalPrefs,
+  setCachedTerminalPrefs,
+  toXtermOptions,
+  type TerminalPrefs,
+} from '../../lib/terminal-options';
 
 // ============================================================
 // TerminalInstance — wraps a single xterm.js Terminal
@@ -59,16 +67,45 @@ export const TerminalInstance: React.FC<TerminalInstanceProps> = ({
 
   const updateSession = useTerminalStore((s) => s.updateSession);
 
+  // Apply terminal settings to the open terminal and refit: a new font size changes cols/rows.
+  const applyPrefs = useCallback(
+    (prefs: TerminalPrefs) => {
+      const terminal = terminalRef.current;
+      if (!terminal) return;
+      const next = toXtermOptions(prefs);
+      for (const key of Object.keys(next) as Array<keyof typeof next>) {
+        if (terminal.options[key] !== next[key]) terminal.options[key] = next[key] as never;
+      }
+      try {
+        fitAddonRef.current?.fit();
+        if (terminal.cols > 0 && terminal.rows > 0) window.nexus.ssh.resize(sessionId, terminal.cols, terminal.rows);
+      } catch {
+        // hidden tab: it refits when it becomes active
+      }
+    },
+    [sessionId],
+  );
+
+  const handleSettingChanged = useCallback(
+    (key: string, value: unknown) => {
+      if (!isTerminalPrefKey(key)) return;
+      const prefs = { ...cachedTerminalPrefs(), [key]: readTerminalPref(key, value) };
+      setCachedTerminalPrefs(prefs);
+      applyPrefs(prefs);
+    },
+    [applyPrefs],
+  );
+
+  useSettingsChanged(handleSettingChanged);
+
   // Initialize xterm.js on mount
   useEffect(() => {
     if (!containerRef.current) return;
 
+    // Settings → Terminal (#2662): start with the last values read, then load the current ones.
+    const prefs = cachedTerminalPrefs();
     const terminal = new Terminal({
-      fontFamily: `'${DEFAULT_FONT}', 'Fira Code', 'Cascadia Code', Menlo, monospace`,
-      fontSize: DEFAULT_FONT_SIZE,
-      scrollback: DEFAULT_SCROLLBACK,
-      cursorBlink: true,
-      cursorStyle: 'block',
+      ...toXtermOptions(prefs),
       allowProposedApi: true,
       theme: terminalThemeToXterm(theme),
     });
@@ -87,15 +124,17 @@ export const TerminalInstance: React.FC<TerminalInstanceProps> = ({
     // Open the terminal in the container
     terminal.open(containerRef.current);
 
-    // Try WebGL renderer, fall back to canvas
-    try {
-      const webgl = new WebglAddon();
-      webgl.onContextLoss(() => {
-        webgl.dispose();
-      });
-      terminal.loadAddon(webgl);
-    } catch {
-      // WebGL not available — xterm falls back to canvas renderer automatically
+    // WebGL renderer when GPU acceleration is on; otherwise (or if it fails) xterm's DOM renderer
+    if (prefs.gpuAcceleration) {
+      try {
+        const webgl = new WebglAddon();
+        webgl.onContextLoss(() => {
+          webgl.dispose();
+        });
+        terminal.loadAddon(webgl);
+      } catch {
+        // WebGL not available — xterm keeps its DOM renderer
+      }
     }
 
     // Initial fit
@@ -107,6 +146,18 @@ export const TerminalInstance: React.FC<TerminalInstanceProps> = ({
 
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
+
+    let disposed = false;
+    window.nexus.settings
+      .getAll()
+      .then((all: unknown) => {
+        const current = readTerminalPrefs(all as Record<string, unknown>);
+        setCachedTerminalPrefs(current);
+        if (!disposed) applyPrefs(current);
+      })
+      .catch(() => {
+        // Vault locked meanwhile: keep what the terminal has
+      });
 
     // User keystrokes -> backend
     const dataDisposable = terminal.onData((data) => {
@@ -156,6 +207,7 @@ export const TerminalInstance: React.FC<TerminalInstanceProps> = ({
     resizeObserverRef.current = observer;
 
     return () => {
+      disposed = true;
       container.removeEventListener('contextmenu', handleContextMenu);
       dataDisposable.dispose();
       observer.disconnect();

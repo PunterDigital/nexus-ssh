@@ -318,6 +318,8 @@ export interface NexusSettings {
   terminalFont: string;          // default 'JetBrains Mono'
   terminalFontSize: number;      // default 14
   scrollbackLines: number;       // default 10000
+  cursorStyle: 'block' | 'underline' | 'bar'; // default 'block'
+  cursorBlink: boolean;          // default true
   sftpConcurrency: number;       // default 3
   gpuAcceleration: boolean;      // default true
   showHiddenFiles: boolean;      // default false
