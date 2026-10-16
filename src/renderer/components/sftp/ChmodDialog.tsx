@@ -1,44 +1,53 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import { Modal } from '../common/Modal';
+import React, { useEffect, useId, useState } from 'react';
+import { Button, Checkbox, Dialog, Field, Input } from '../ui';
 
 // ============================================================
-// ChmodDialog — permissions editor with octal + checkbox grid
+// ChmodDialog — edit a remote file's permissions: an octal field and a Read / Write / Execute
+// checkbox per class (owner, group, others), kept in sync. Special bits (setuid, setgid,
+// sticky) aren't editable here but are kept, so applying never clears them.
 // ============================================================
 
 interface ChmodDialogProps {
   open: boolean;
   onClose: () => void;
   filename: string;
+  /** The entry's full st_mode (type bits are ignored). */
   currentMode: number;
-  onApply: (mode: string) => void;
+  /**
+   * Applies the new mode, as octal digits (e.g. "644", or "4755" when special bits are set).
+   * The dialog closes when it resolves and stays open when it rejects (the caller reports why).
+   */
+  onApply: (mode: string) => Promise<void> | void;
 }
 
-const PERM_LABELS = ['Read', 'Write', 'Execute'] as const;
-const ROLE_LABELS = ['Owner', 'Group', 'Others'] as const;
+const PERMS = ['Read', 'Write', 'Execute'] as const;
+const CLASSES = ['Owner', 'Group', 'Others'] as const;
 
-// Bit positions: owner r=8, w=7, x=6, group r=5, w=4, x=3, others r=2, w=1, x=0
-const BIT_MAP: number[][] = [
-  [0o400, 0o200, 0o100], // Owner: r, w, x
-  [0o040, 0o020, 0o010], // Group: r, w, x
-  [0o004, 0o002, 0o001], // Others: r, w, x
+// BITS[class][perm]: owner rwx = 0o400 0o200 0o100, group = 0o040 …, others = 0o004 …
+const BITS: number[][] = [
+  [0o400, 0o200, 0o100],
+  [0o040, 0o020, 0o010],
+  [0o004, 0o002, 0o001],
 ];
 
-function modeToString(mode: number): string {
+const SPECIAL_BITS = 0o7000;
+
+export function modeToString(mode: number): string {
   const chars = 'rwxrwxrwx';
   let result = '';
-  for (let i = 8; i >= 0; i--) {
-    result += (mode & (1 << i)) ? chars[8 - i] : '-';
-  }
+  for (let i = 8; i >= 0; i--) result += mode & (1 << i) ? chars[8 - i] : '-';
   return result;
 }
 
-function modeToOctal(mode: number): string {
-  return (mode & 0o777).toString(8).padStart(3, '0');
+function toOctal(perms: number): string {
+  return (perms & 0o777).toString(8).padStart(3, '0');
 }
 
-function octalToMode(octal: string): number {
-  const parsed = parseInt(octal, 8);
-  return isNaN(parsed) ? 0 : parsed & 0o777;
+/** The mode string sent to the server: the edited rwx bits plus the file's special bits. */
+export function chmodModeString(currentMode: number, perms: number): string {
+  const special = currentMode & SPECIAL_BITS;
+  const mode = special | (perms & 0o777);
+  return special ? mode.toString(8).padStart(4, '0') : toOctal(mode);
 }
 
 export const ChmodDialog: React.FC<ChmodDialogProps> = ({
@@ -48,127 +57,131 @@ export const ChmodDialog: React.FC<ChmodDialogProps> = ({
   currentMode,
   onApply,
 }) => {
-  const [mode, setMode] = useState(currentMode & 0o777);
-  const [octalInput, setOctalInput] = useState(modeToOctal(currentMode));
+  const id = useId();
+  const [perms, setPerms] = useState(currentMode & 0o777);
+  const [octal, setOctal] = useState(toOctal(currentMode));
+  const [octalError, setOctalError] = useState<string | null>(null);
+  const [applying, setApplying] = useState(false);
 
   useEffect(() => {
-    const m = currentMode & 0o777;
-    setMode(m);
-    setOctalInput(modeToOctal(m));
+    setPerms(currentMode & 0o777);
+    setOctal(toOctal(currentMode));
+    setOctalError(null);
   }, [currentMode, open]);
 
-  const toggleBit = useCallback((bit: number) => {
-    setMode((prev) => {
-      const next = prev ^ bit;
-      setOctalInput(modeToOctal(next));
-      return next;
-    });
-  }, []);
+  const toggleBit = (bit: number) => {
+    const next = perms ^ bit;
+    setPerms(next);
+    setOctal(toOctal(next));
+    setOctalError(null);
+  };
 
-  const handleOctalChange = useCallback((value: string) => {
-    // Only allow valid octal digits
+  const handleOctalChange = (value: string) => {
     const cleaned = value.replace(/[^0-7]/g, '').slice(0, 3);
-    setOctalInput(cleaned);
-    if (cleaned.length === 3) {
-      setMode(octalToMode(cleaned));
-    }
-  }, []);
+    setOctal(cleaned);
+    setOctalError(null);
+    if (cleaned.length === 3) setPerms(parseInt(cleaned, 8));
+  };
 
-  const handleApply = useCallback(() => {
-    onApply(modeToOctal(mode));
-    onClose();
-  }, [mode, onApply, onClose]);
+  const handleApply = async () => {
+    // A half-typed octal value used to be ignored silently (the old mode was applied).
+    if (octal.length !== 3) {
+      setOctalError('Enter three digits from 0 to 7, e.g. 644');
+      return;
+    }
+    setApplying(true);
+    try {
+      await onApply(chmodModeString(currentMode, perms));
+      onClose();
+    } catch {
+      // The caller has shown the error; leave the dialog open to try again.
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  const hasSpecialBits = (currentMode & SPECIAL_BITS) !== 0;
 
   return (
-    <Modal
+    <Dialog
       open={open}
-      onClose={onClose}
-      title={`Permissions: ${filename}`}
-      maxWidth="max-w-md"
+      onClose={() => {
+        if (!applying) onClose();
+      }}
+      size="sm"
+      title={`Permissions for ${filename}`}
+      description={
+        hasSpecialBits ? 'Its special bits (setuid, setgid, sticky) are kept.' : undefined
+      }
+      dismissOnBackdrop={false}
       footer={
         <>
-          <button className="btn btn-ghost" onClick={onClose}>
+          <Button variant="ghost" onClick={onClose} disabled={applying}>
             Cancel
-          </button>
-          <button className="btn btn-primary" onClick={handleApply}>
-            Apply
-          </button>
+          </Button>
+          <Button variant="primary" loading={applying} onClick={() => void handleApply()}>
+            Set Permissions
+          </Button>
         </>
       }
     >
-      <div className="space-y-4">
-        {/* Octal input */}
-        <div className="flex items-center gap-3">
-          <label className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-            Octal:
-          </label>
-          <input
-            className="input w-20 text-center font-mono text-sm"
-            value={octalInput}
-            onChange={(e) => handleOctalChange(e.target.value)}
-            maxLength={3}
-            spellCheck={false}
-          />
-          <span
-            className="font-mono text-sm px-2 py-1 rounded"
-            style={{
-              backgroundColor: 'var(--color-bg-tertiary)',
-              color: 'var(--color-text-primary)',
-            }}
-          >
-            {modeToString(mode)}
-          </span>
-        </div>
-
-        {/* Checkbox grid */}
-        <div className="border rounded" style={{ borderColor: 'var(--color-border)' }}>
-          {/* Header row */}
-          <div
-            className="grid grid-cols-4 gap-0 text-xs font-medium border-b"
-            style={{
-              borderColor: 'var(--color-border)',
-              color: 'var(--color-text-muted)',
-            }}
-          >
-            <div className="px-3 py-2" />
-            {PERM_LABELS.map((label) => (
-              <div key={label} className="px-3 py-2 text-center">
-                {label}
-              </div>
-            ))}
-          </div>
-
-          {/* Permission rows */}
-          {ROLE_LABELS.map((role, ri) => (
-            <div
-              key={role}
-              className="grid grid-cols-4 gap-0 text-xs border-b last:border-b-0"
-              style={{ borderColor: 'var(--color-border)' }}
+      <form
+        className="flex flex-col gap-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void handleApply();
+        }}
+      >
+        <Field label="Octal" error={octalError}>
+          <div className="flex items-center gap-3">
+            {/* Input is full width: the wrapper sizes it */}
+            <div className="w-20 shrink-0">
+              <Input
+                code
+                value={octal}
+                onChange={(e) => handleOctalChange(e.target.value)}
+                inputMode="numeric"
+                maxLength={3}
+                spellCheck={false}
+                autoComplete="off"
+              />
+            </div>
+            <span
+              title="Symbolic notation"
+              className="rounded-sm bg-surface-raised px-2 py-0.5 font-code text-body text-fg"
             >
-              <div
-                className="px-3 py-2 font-medium"
-                style={{ color: 'var(--color-text-secondary)' }}
+              {modeToString(perms)}
+            </span>
+          </div>
+        </Field>
+
+        <div className="flex flex-col divide-y divide-line rounded-lg border border-line">
+          {CLASSES.map((cls, ci) => (
+            <div
+              key={cls}
+              role="group"
+              aria-labelledby={`${id}-${cls}`}
+              className="flex flex-wrap items-center gap-x-5 gap-y-2 px-3 py-2.5"
+            >
+              <span
+                id={`${id}-${cls}`}
+                className="w-16 text-body-sm font-medium text-fg-secondary"
               >
-                {role}
-              </div>
-              {PERM_LABELS.map((_, pi) => {
-                const bit = BIT_MAP[ri][pi];
-                const checked = (mode & bit) !== 0;
-                return (
-                  <div key={pi} className="px-3 py-2 flex items-center justify-center">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleBit(bit)}
-                      className="w-3.5 h-3.5 rounded cursor-pointer accent-[var(--color-accent)]"
-                    />
-                  </div>
-                );
-              })}
+                {cls}
+              </span>
+              {PERMS.map((perm, pi) => (
+                <Checkbox
+                  key={perm}
+                  label={perm}
+                  checked={(perms & BITS[ci][pi]) !== 0}
+                  onChange={() => toggleBit(BITS[ci][pi])}
+                />
+              ))}
             </div>
           ))}
         </div>
-      </div>
-    </Modal>
+        {/* Enter in the octal field submits the form (one text field: implicit submission). */}
+      </form>
+    </Dialog>
   );
 };

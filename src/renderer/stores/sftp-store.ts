@@ -82,7 +82,7 @@ export interface SFTPActions {
 
   // Remote operations
   createRemoteDirectory: (path: string) => Promise<void>;
-  deleteRemoteFile: (path: string) => Promise<void>;
+  deleteRemoteFile: (path: string, isDirectory?: boolean) => Promise<void>;
   renameRemoteFile: (oldPath: string, newPath: string) => Promise<void>;
 
   // Reset
@@ -408,10 +408,10 @@ export const useSFTPStore = create<SFTPState & SFTPActions>()((set, get) => ({
     await get().refreshRemote();
   },
 
-  deleteRemoteFile: async (path) => {
+  deleteRemoteFile: async (path, isDirectory = false) => {
     const { activeSessionId } = get();
     if (!activeSessionId) return;
-    await window.nexus.sftp.delete(activeSessionId, path);
+    await window.nexus.sftp.delete(activeSessionId, path, isDirectory);
     await get().refreshRemote();
   },
 

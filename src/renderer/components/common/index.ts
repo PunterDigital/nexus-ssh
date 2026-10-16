@@ -10,13 +10,9 @@ export type { ColourPickerProps } from './ColourPicker';
 export { ThemeCard } from './ThemeCard';
 export type { ThemeCardProps } from './ThemeCard';
 
-export { SnippetsPanel } from './SnippetsPanel';
-
-export { SnippetForm } from './SnippetForm';
-export type { SnippetFormProps, SnippetFormData } from './SnippetForm';
-
-export { SnippetExecuteDialog } from './SnippetExecuteDialog';
-export type { SnippetExecuteDialogProps } from './SnippetExecuteDialog';
+// Snippets moved to components/snippets (#2367 part 2); re-exported here for old imports.
+export { SnippetsPanel, SnippetForm, SnippetExecuteDialog } from '../snippets';
+export type { SnippetFormProps, SnippetExecuteDialogProps } from '../snippets';
 
 export { SettingsPanel } from './SettingsPanel';
 

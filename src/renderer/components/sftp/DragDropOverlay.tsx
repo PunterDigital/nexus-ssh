@@ -3,7 +3,9 @@ import { Download, Upload } from 'lucide-react';
 import { Icon } from '../common/Icon';
 
 // ============================================================
-// DragDropOverlay — visual drop zone feedback
+// DragDropOverlay — drop-zone feedback over a file pane while something droppable is dragged
+// over it. Purely visual (the pane handles the drop), so it ignores the pointer and is hidden
+// from screen readers.
 // ============================================================
 
 interface DragDropOverlayProps {
@@ -14,32 +16,17 @@ interface DragDropOverlayProps {
 export const DragDropOverlay: React.FC<DragDropOverlayProps> = ({ side, visible }) => {
   if (!visible) return null;
 
-  const label = side === 'remote' ? 'Drop to upload' : 'Drop to download';
-
   return (
     <div
-      className="absolute inset-0 z-30 flex items-center justify-center rounded-lg pointer-events-none"
-      style={{
-        backgroundColor: 'rgba(122, 162, 247, 0.08)',
-        border: '2px dashed var(--color-accent)',
-        animation: 'dropzone-pulse 1.5s ease-in-out infinite',
-      }}
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-1 z-10 flex items-center justify-center rounded-lg border-2 border-dashed border-accent bg-accent-soft animate-fade-in"
     >
-      <div className="flex flex-col items-center gap-2">
-        <Icon icon={side === 'remote' ? Upload : Download} size={32} strokeWidth={1.5} color="var(--color-accent)" />
-        <span
-          className="text-sm font-medium"
-          style={{ color: 'var(--color-accent)' }}
-        >
-          {label}
+      <div className="flex flex-col items-center gap-2 text-accent">
+        <Icon icon={side === 'remote' ? Upload : Download} size={32} strokeWidth={1.5} />
+        <span className="text-body font-medium">
+          {side === 'remote' ? 'Drop to upload' : 'Drop to download'}
         </span>
       </div>
-      <style>{`
-        @keyframes dropzone-pulse {
-          0%, 100% { border-color: var(--color-accent); }
-          50% { border-color: transparent; }
-        }
-      `}</style>
     </div>
   );
 };

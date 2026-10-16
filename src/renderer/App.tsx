@@ -7,7 +7,7 @@ import { AppHeader, Sidebar, StatusBar } from './components/shell';
 import { TerminalView, ConnectionStatus, HostKeyPromptHost } from './components/terminal';
 import { SFTPBrowser } from './components/sftp/SFTPBrowser';
 import { KeychainView } from './components/keychain/KeychainView';
-import { SnippetsPanel } from './components/common/SnippetsPanel';
+import { SnippetsPanel } from './components/snippets/SnippetsPanel';
 import { SettingsPanel } from './components/common/SettingsPanel';
 import { ToastHost } from './components/common/ToastHost';
 import { UpdateBanner } from './components/common/UpdateBanner';

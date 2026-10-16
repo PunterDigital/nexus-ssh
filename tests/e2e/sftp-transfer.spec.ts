@@ -67,20 +67,22 @@ test('SFTP upload can be paused and resumed, and the file arrives intact', async
   await acceptOnce.click({ timeout: 15_000 }).catch(() => {});
 
   // Point the local pane at the temp dir and upload the file from its context menu
-  // Click the empty right-hand end: the breadcrumb's segments are buttons that navigate instead.
-  const localPath = page.getByTitle('Click to edit path').first();
-  const box = (await localPath.boundingBox())!;
-  await localPath.click({ position: { x: box.width - 4, y: box.height / 2 } });
-  const pathInput = page.locator('input.font-mono').first();
+  await page.getByRole('button', { name: 'Edit local path' }).click();
+  const pathInput = page.getByRole('textbox', { name: 'Local path' });
   await pathInput.fill(localDir);
   await pathInput.press('Enter');
-  await page.getByText(FILE_NAME, { exact: true }).first().click({ button: 'right' });
-  await page.getByText('Upload', { exact: true }).click();
+  await page
+    .getByRole('listbox', { name: 'Local files' })
+    .getByRole('option', { name: FILE_NAME, exact: true })
+    .click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Upload' }).click();
 
   // Pause once bytes are flowing
   await expect.poll(remoteSize, { timeout: 30_000 }).toBeGreaterThan(0);
-  await page.getByTitle('Pause').click();
-  await expect(page.getByTitle('Resume')).toBeVisible();
+  const pause = page.getByRole('button', { name: `Pause ${FILE_NAME}` });
+  const resume = page.getByRole('button', { name: `Resume ${FILE_NAME}` });
+  await pause.click();
+  await expect(resume).toBeVisible();
 
   await page.waitForTimeout(500); // in-flight writes land
   const sizeAtPause = remoteSize();
@@ -89,8 +91,8 @@ test('SFTP upload can be paused and resumed, and the file arrives intact', async
   expect(sizeAtPause).toBeLessThan(FILE_SIZE);
 
   // Resume and finish
-  await page.getByTitle('Resume').click();
-  await expect(page.getByTitle('Pause')).toBeVisible();
+  await resume.click();
+  await expect(pause).toBeVisible();
   await expect(page.getByRole('button', { name: 'Clear completed' })).toBeVisible({ timeout: 60_000 });
   expect(sha(path.join(remoteDir, FILE_NAME))).toBe(sha(path.join(localDir, FILE_NAME)));
 });
