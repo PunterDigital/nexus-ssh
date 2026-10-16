@@ -1,13 +1,16 @@
-import React, { useState, useCallback } from 'react';
-import { Modal } from '../common/Modal';
-import { FormField } from '../common/FormField';
+import React, { useEffect, useId, useRef, useState } from 'react';
+import { Check, CircleAlert, CircleCheck, Copy, FolderOpen } from 'lucide-react';
 import { useVaultStore } from '../../stores/vault-store';
 import { useUIStore } from '../../stores/ui-store';
-import { CircleCheck, CircleX, Copy, Eye, EyeOff, FolderOpen, LoaderCircle } from 'lucide-react';
 import { Icon } from '../common/Icon';
+import { Button, Dialog, Field, Input, PasswordInput, RadioGroup, Textarea, cx } from '../ui';
+import type { RadioOption } from '../ui';
 
 // ============================================================
-// ImportKeyDialog — Modal for importing an SSH key
+// ImportKeyDialog — import an existing private key from a file or pasted text (design system:
+// #2367). A ui/Dialog form: validates on submit (errors under the fields), shows a failure in
+// a banner above the form (an encrypted key also reveals the passphrase field), and ends on
+// the key's public key. Mounted only while open, so it always starts from an empty form.
 // ============================================================
 
 interface ImportKeyDialogProps {
@@ -16,57 +19,71 @@ interface ImportKeyDialogProps {
 }
 
 type ImportMode = 'file' | 'clipboard';
-type Stage = 'form' | 'importing' | 'success' | 'error';
+type Stage = 'form' | 'importing' | 'success';
+type Errors = Partial<Record<'name' | 'file' | 'content', string>>;
 
-export const ImportKeyDialog: React.FC<ImportKeyDialogProps> = ({ open, onClose }) => {
+const MODE_OPTIONS: RadioOption<ImportMode>[] = [
+  { value: 'file', label: 'From file' },
+  { value: 'clipboard', label: 'Paste key' },
+];
+
+/** Whether pasted key text looks encrypted (then the passphrase field is shown). */
+function looksEncrypted(content: string): boolean {
+  return content.includes('ENCRYPTED') || content.includes('DEK-Info');
+}
+
+export function ImportKeyDialog(props: ImportKeyDialogProps): React.ReactElement | null {
+  if (!props.open) return null;
+  return <ImportKeyForm onClose={props.onClose} />;
+}
+
+function ImportKeyForm({ onClose }: { onClose: () => void }): React.ReactElement {
   const addNotification = useUIStore((s) => s.addNotification);
+  const formId = useId();
+  const fileLabelId = useId();
+  const fileMessageId = useId();
+  const formRef = useRef<HTMLFormElement>(null);
 
   // Form state
   const [mode, setMode] = useState<ImportMode>('file');
   const [name, setName] = useState('');
   const [passphrase, setPassphrase] = useState('');
-  const [showPassphrase, setShowPassphrase] = useState(false);
   const [clipboardContent, setClipboardContent] = useState('');
   const [selectedFilePath, setSelectedFilePath] = useState('');
   const [selectedFileName, setSelectedFileName] = useState('');
+  const [needsPassphrase, setNeedsPassphrase] = useState(false);
+  const [errors, setErrors] = useState<Errors>({});
+  // Bumped on each failed submit: focuses the first invalid field once it has rendered.
+  const [invalidSubmits, setInvalidSubmits] = useState(0);
 
   // Import state
   const [stage, setStage] = useState<Stage>('form');
   const [publicKey, setPublicKey] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [copied, setCopied] = useState(false);
-  const [needsPassphrase, setNeedsPassphrase] = useState(false);
 
-  const resetForm = useCallback(() => {
-    setMode('file');
-    setName('');
-    setPassphrase('');
-    setShowPassphrase(false);
-    setClipboardContent('');
-    setSelectedFilePath('');
-    setSelectedFileName('');
-    setStage('form');
-    setPublicKey('');
-    setErrorMsg('');
-    setCopied(false);
-    setNeedsPassphrase(false);
-  }, []);
+  const importing = stage === 'importing';
 
-  const handleClose = () => {
-    resetForm();
-    onClose();
-  };
+  useEffect(() => {
+    if (invalidSubmits === 0) return;
+    formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+  }, [invalidSubmits]);
 
-  // Auto-detect if key content looks encrypted
-  const detectEncrypted = (content: string): boolean => {
-    return content.includes('ENCRYPTED') || content.includes('DEK-Info');
+  // "Copied" goes back to "Copy" after 2 s (cleared if the dialog closes first).
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(t);
+  }, [copied]);
+
+  const clearError = (field: keyof Errors) => {
+    if (errors[field]) setErrors((prev) => ({ ...prev, [field]: undefined }));
   };
 
   const handleClipboardContentChange = (content: string) => {
     setClipboardContent(content);
-    if (detectEncrypted(content)) {
-      setNeedsPassphrase(true);
-    }
+    clearError('content');
+    if (looksEncrypted(content)) setNeedsPassphrase(true);
   };
 
   const handleSelectFile = async () => {
@@ -81,6 +98,7 @@ export const ImportKeyDialog: React.FC<ImportKeyDialogProps> = ({ open, onClose 
       if (result && result.filePaths && result.filePaths.length > 0) {
         const filePath = result.filePaths[0];
         setSelectedFilePath(filePath);
+        clearError('file');
         // Extract filename for display
         const parts = filePath.replace(/\\/g, '/').split('/');
         setSelectedFileName(parts[parts.length - 1] || filePath);
@@ -89,6 +107,7 @@ export const ImportKeyDialog: React.FC<ImportKeyDialogProps> = ({ open, onClose 
         if (!name) {
           const baseName = (parts[parts.length - 1] || '').replace(/\.(pem|key|ppk)$/, '');
           setName(baseName);
+          clearError('name');
         }
       }
     } catch (err) {
@@ -96,49 +115,49 @@ export const ImportKeyDialog: React.FC<ImportKeyDialogProps> = ({ open, onClose 
     }
   };
 
+  const validate = (): boolean => {
+    const e: Errors = {};
+    if (mode === 'file' && !selectedFilePath) e.file = 'Choose a key file to import';
+    if (mode === 'clipboard' && !clipboardContent.trim()) e.content = 'Paste a private key to import';
+    if (!name.trim()) e.name = 'Key name is required';
+    setErrors(e);
+    if (Object.keys(e).length === 0) return true;
+    setInvalidSubmits((n) => n + 1);
+    return false;
+  };
+
   const handleImport = async () => {
-    if (!name.trim()) return;
+    if (!validate()) return;
 
     const vaultId = useVaultStore.getState().selectedVaultId;
     if (!vaultId) {
       setErrorMsg('No vault is currently unlocked. Please unlock a vault first.');
-      setStage('error');
       return;
     }
 
+    setErrorMsg('');
     setStage('importing');
     try {
-      let result: unknown;
-      if (mode === 'file') {
-        if (!selectedFilePath) {
-          setErrorMsg('Please select a file first');
-          setStage('error');
-          return;
-        }
-        result = await window.nexus.keychain.importKey({
-          source: 'file',
-          filePath: selectedFilePath,
-          name: name.trim(),
-          passphrase: passphrase || undefined,
-          vaultId,
-        });
-      } else {
-        if (!clipboardContent.trim()) {
-          setErrorMsg('Please paste a private key');
-          setStage('error');
-          return;
-        }
-        result = await window.nexus.keychain.importKey({
-          source: 'clipboard',
-          content: clipboardContent,
-          name: name.trim(),
-          passphrase: passphrase || undefined,
-          vaultId,
-        });
-      }
+      const result =
+        mode === 'file'
+          ? await window.nexus.keychain.importKey({
+              source: 'file',
+              filePath: selectedFilePath,
+              name: name.trim(),
+              passphrase: passphrase || undefined,
+              vaultId,
+            })
+          : await window.nexus.keychain.importKey({
+              source: 'clipboard',
+              content: clipboardContent,
+              name: name.trim(),
+              passphrase: passphrase || undefined,
+              vaultId,
+            });
 
-      const imported = result as { publicKey?: string };
-      setPublicKey(imported.publicKey || '');
+      // The handler returns the saved key (snake_case) without its private material.
+      const imported = result as { public_key?: string; publicKey?: string };
+      setPublicKey(imported.public_key || imported.publicKey || '');
       await useVaultStore.getState().loadKeys();
       setStage('success');
       addNotification('success', `SSH key "${name}" imported successfully`);
@@ -151,7 +170,7 @@ export const ImportKeyDialog: React.FC<ImportKeyDialogProps> = ({ open, onClose 
       } else {
         setErrorMsg(message);
       }
-      setStage('error');
+      setStage('form');
     }
   };
 
@@ -159,230 +178,163 @@ export const ImportKeyDialog: React.FC<ImportKeyDialogProps> = ({ open, onClose 
     try {
       await navigator.clipboard.writeText(publicKey);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
     } catch {
       addNotification('error', 'Failed to copy to clipboard');
     }
   };
 
-  const renderForm = () => (
-    <div className="flex flex-col gap-4">
-      {/* Mode tabs */}
-      <div
-        className="flex rounded-md overflow-hidden border"
-        style={{ borderColor: 'var(--color-border)' }}
-      >
-        {(['file', 'clipboard'] as ImportMode[]).map((m) => (
-          <button
-            key={m}
-            className="flex-1 px-4 py-2 text-xs font-medium transition-colors"
-            style={{
-              backgroundColor: mode === m ? 'var(--color-accent-muted)' : 'var(--color-bg-tertiary)',
-              color: mode === m ? 'var(--color-accent)' : 'var(--color-text-muted)',
-              borderRight: m === 'file' ? '1px solid var(--color-border)' : 'none',
-            }}
-            onClick={() => setMode(m)}
-          >
-            {m === 'file' ? 'From File' : 'From Clipboard'}
-          </button>
-        ))}
-      </div>
-
-      {/* File picker or textarea */}
-      {mode === 'file' ? (
-        <FormField label="Key File">
-          <button
-            className="input text-left flex items-center gap-2 cursor-pointer"
-            onClick={handleSelectFile}
-            type="button"
-          >
-            <Icon icon={FolderOpen} size={14} color="var(--color-text-muted)" />
-            <span
-              className="text-xs truncate"
-              style={{ color: selectedFileName ? 'var(--color-text-primary)' : 'var(--color-text-muted)' }}
-            >
-              {selectedFileName || 'Select .pem, .key, id_rsa, id_ed25519, or .ppk file...'}
-            </span>
-          </button>
-        </FormField>
-      ) : (
-        <FormField label="Private Key Content">
-          <textarea
-            className="input font-mono text-xs"
-            rows={8}
-            placeholder="Paste your private key here (-----BEGIN OPENSSH PRIVATE KEY-----)"
-            value={clipboardContent}
-            onChange={(e) => handleClipboardContentChange(e.target.value)}
-            style={{ resize: 'vertical' }}
-          />
-        </FormField>
-      )}
-
-      <FormField label="Key Name" required>
-        <input
-          className="input"
-          type="text"
-          placeholder="e.g. Production Server Key"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-      </FormField>
-
-      {/* Passphrase (always shown when key may be encrypted) */}
-      {needsPassphrase && (
-        <FormField label="Passphrase" helperText="This key appears to be encrypted.">
-          <div className="relative">
-            <input
-              className="input pr-10"
-              type={showPassphrase ? 'text' : 'password'}
-              placeholder="Enter key passphrase"
-              value={passphrase}
-              onChange={(e) => setPassphrase(e.target.value)}
-            />
-            <button
-              type="button"
-              className="absolute right-2 top-1/2 -translate-y-1/2 btn-ghost p-1 rounded"
-              onClick={() => setShowPassphrase(!showPassphrase)}
-              title={showPassphrase ? 'Hide passphrase' : 'Show passphrase'}
-            >
-              {showPassphrase ? (
-                <Icon icon={EyeOff} size={14} color="var(--color-text-muted)" />
-              ) : (
-                <Icon icon={Eye} size={14} color="var(--color-text-muted)" />
-              )}
-            </button>
-          </div>
-        </FormField>
-      )}
-
-      {/* Always show a passphrase field option */}
-      {!needsPassphrase && (
-        <button
-          className="text-xs self-start"
-          style={{ color: 'var(--color-text-muted)' }}
-          onClick={() => setNeedsPassphrase(true)}
-          type="button"
-        >
-          Key has a passphrase?
-        </button>
-      )}
-
-      {/* Supported formats note */}
-      <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
-        Supports OpenSSH, PEM/PKCS#8, and PuTTY PPK formats
-      </p>
-    </div>
-  );
-
-  const renderImporting = () => (
-    <div className="flex flex-col items-center justify-center py-10 gap-3">
-      <Icon icon={LoaderCircle} size={32} color="var(--color-accent)" className="animate-spin" />
-      <span className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-        Importing key...
-      </span>
-    </div>
-  );
-
-  const renderSuccess = () => (
-    <div className="flex flex-col gap-4">
-      <div
-        className="flex items-center gap-2 px-3 py-2 rounded-md"
-        style={{ backgroundColor: 'rgba(158, 206, 106, 0.1)', border: '1px solid rgba(158, 206, 106, 0.3)' }}
-      >
-        <Icon icon={CircleCheck} size={16} color="var(--color-success)" />
-        <span className="text-xs" style={{ color: 'var(--color-success)' }}>
-          SSH key imported successfully
-        </span>
-      </div>
-
-      {publicKey && (
-        <>
-          <FormField label="Public Key">
-            <textarea
-              className="input font-mono text-xs"
-              rows={5}
-              readOnly
-              value={publicKey}
-              style={{ resize: 'none' }}
-            />
-          </FormField>
-
-          <button className="btn btn-primary w-full" onClick={handleCopyPublicKey}>
-            <Icon icon={Copy} size={14} />
-            {copied ? 'Copied!' : 'Copy to Clipboard'}
-          </button>
-        </>
-      )}
-    </div>
-  );
-
-  const renderError = () => (
-    <div className="flex flex-col gap-4">
-      <div
-        className="flex items-center gap-2 px-3 py-2 rounded-md"
-        style={{ backgroundColor: 'rgba(247, 118, 142, 0.1)', border: '1px solid rgba(247, 118, 142, 0.3)' }}
-      >
-        <Icon icon={CircleX} size={16} color="var(--color-danger)" />
-        <span className="text-xs" style={{ color: 'var(--color-danger)' }}>
-          {errorMsg}
-        </span>
-      </div>
-    </div>
-  );
-
-  const canImport =
-    name.trim() && (mode === 'file' ? !!selectedFilePath : !!clipboardContent.trim());
-
-  const footer = (() => {
-    switch (stage) {
-      case 'form':
-        return (
-          <>
-            <button className="btn btn-ghost" onClick={handleClose}>
-              Cancel
-            </button>
-            <button
-              className="btn btn-primary"
-              onClick={handleImport}
-              disabled={!canImport}
-            >
-              Import
-            </button>
-          </>
-        );
-      case 'success':
-        return (
-          <button className="btn btn-primary" onClick={handleClose}>
-            Done
-          </button>
-        );
-      case 'error':
-        return (
-          <>
-            <button className="btn btn-ghost" onClick={handleClose}>
-              Close
-            </button>
-            <button className="btn btn-primary" onClick={() => setStage('form')}>
-              Try Again
-            </button>
-          </>
-        );
-      default:
-        return null;
-    }
-  })();
+  // Closing is blocked while the import runs.
+  const close = () => {
+    if (!importing) onClose();
+  };
 
   return (
-    <Modal
-      open={open}
-      onClose={stage === 'importing' ? () => {} : handleClose}
+    <Dialog
+      open
+      onClose={close}
       title="Import SSH Key"
-      footer={footer}
+      dismissOnBackdrop={false}
+      footer={
+        stage === 'success' ? (
+          <Button variant="primary" onClick={onClose}>
+            Done
+          </Button>
+        ) : (
+          <>
+            <Button variant="ghost" onClick={close} disabled={importing}>
+              Cancel
+            </Button>
+            <Button type="submit" form={formId} variant="primary" loading={importing}>
+              Import Key
+            </Button>
+          </>
+        )
+      }
     >
-      {stage === 'form' && renderForm()}
-      {stage === 'importing' && renderImporting()}
-      {stage === 'success' && renderSuccess()}
-      {stage === 'error' && renderError()}
-    </Modal>
+      {stage === 'success' ? (
+        <div className="flex flex-col gap-4">
+          <p role="status" className="flex items-start gap-2 rounded-md bg-success-soft px-3 py-2 text-body-sm text-success">
+            <Icon icon={CircleCheck} className="mt-0.5" />
+            SSH key “{name.trim()}” imported
+          </p>
+          {publicKey && (
+            <>
+              <Field label="Public key" hint="Add it to ~/.ssh/authorized_keys on the servers you want to sign in to.">
+                <Textarea code readOnly rows={4} value={publicKey} className="resize-none break-all" />
+              </Field>
+              <Button icon={copied ? Check : Copy} onClick={() => void handleCopyPublicKey()} className="self-start">
+                {copied ? 'Copied' : 'Copy Public Key'}
+              </Button>
+            </>
+          )}
+        </div>
+      ) : (
+        <form
+          id={formId}
+          ref={formRef}
+          noValidate
+          className="flex flex-col gap-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!importing) void handleImport();
+          }}
+        >
+          {errorMsg && (
+            <p role="alert" className="flex items-start gap-2 rounded-md bg-danger-soft px-3 py-2 text-body-sm text-danger">
+              <Icon icon={CircleAlert} className="mt-0.5" />
+              <span className="min-w-0 break-words">{errorMsg}</span>
+            </p>
+          )}
+
+          {/* disabled on the fieldset locks every field while the key is imported */}
+          <fieldset disabled={importing} className="flex min-w-0 flex-col gap-4">
+            <RadioGroup
+              label="Import from"
+              showLabel
+              value={mode}
+              onChange={(m) => {
+                setMode(m);
+                setErrors((prev) => ({ ...prev, file: undefined, content: undefined }));
+              }}
+              options={MODE_OPTIONS}
+            />
+
+            {mode === 'file' ? (
+              <div role="group" aria-labelledby={fileLabelId} className="flex flex-col gap-1.5">
+                <span id={fileLabelId} className="text-body-sm font-medium text-fg-secondary">
+                  Key file
+                </span>
+                <div className="flex min-w-0 items-center gap-3">
+                  <Button
+                    icon={FolderOpen}
+                    onClick={() => void handleSelectFile()}
+                    aria-invalid={errors.file ? true : undefined}
+                    aria-describedby={errors.file ? fileMessageId : undefined}
+                    className={cx(errors.file && 'border-danger')}
+                  >
+                    Choose File…
+                  </Button>
+                  <span
+                    className={cx(
+                      'min-w-0 truncate text-body-sm',
+                      selectedFileName ? 'font-code text-fg' : 'text-fg-muted',
+                    )}
+                    title={selectedFilePath || undefined}
+                  >
+                    {selectedFileName || 'No file chosen'}
+                  </span>
+                </div>
+                {errors.file ? (
+                  <p id={fileMessageId} className="text-caption text-danger">
+                    {errors.file}
+                  </p>
+                ) : (
+                  <p className="text-caption text-fg-muted">A .pem, .key or .ppk file, or id_rsa, id_ed25519 and similar.</p>
+                )}
+              </div>
+            ) : (
+              <Field label="Private key" error={errors.content}>
+                <Textarea
+                  code
+                  rows={6}
+                  placeholder="Paste your private key here (-----BEGIN OPENSSH PRIVATE KEY-----)"
+                  value={clipboardContent}
+                  onChange={(e) => handleClipboardContentChange(e.target.value)}
+                  spellCheck={false}
+                  className="break-all"
+                />
+              </Field>
+            )}
+
+            <Field label="Key name" required error={errors.name}>
+              <Input
+                placeholder="e.g. Production Server Key"
+                value={name}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  clearError('name');
+                }}
+              />
+            </Field>
+
+            {needsPassphrase ? (
+              <Field label="Passphrase" hint="Needed if the key is encrypted.">
+                <PasswordInput
+                  placeholder="Enter key passphrase"
+                  value={passphrase}
+                  onChange={(e) => setPassphrase(e.target.value)}
+                />
+              </Field>
+            ) : (
+              <Button variant="ghost" size="sm" onClick={() => setNeedsPassphrase(true)} className="-ml-2 self-start">
+                Key has a passphrase?
+              </Button>
+            )}
+
+            <p className="text-caption text-fg-muted">Supports OpenSSH, PEM/PKCS#8, and PuTTY PPK formats.</p>
+          </fieldset>
+        </form>
+      )}
+    </Dialog>
   );
-};
+}

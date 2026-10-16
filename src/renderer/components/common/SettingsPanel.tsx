@@ -1,9 +1,22 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
+import {
+  Cloud,
+  FolderOpen,
+  FolderSync,
+  Globe,
+  Info,
+  Palette,
+  RefreshCw,
+  SlidersHorizontal,
+  SquareTerminal,
+  type LucideIcon,
+} from 'lucide-react';
 import type { NexusTheme } from '../../../shared/types';
 import { BUNDLED_THEMES } from '../../styles/themes';
 import { useUIStore } from '../../stores/ui-store';
 import { useUpdateStore } from '../../stores/update-store';
-import { FormField } from './FormField';
+import { Button, Card, Input, RadioGroup, Select, Switch, cx, type RadioOption } from '../ui';
+import { NexusLogo } from '../vault/LockLayout';
 import { ThemeCard } from './ThemeCard';
 import { SyncSettingsView } from '../sync/SyncSettingsView';
 import {
@@ -16,33 +29,49 @@ import {
   APP_NAME,
   UPDATE_CHECK_SETTING,
 } from '../../../shared/constants';
-import { Globe, RefreshCw } from 'lucide-react';
 import { Icon } from './Icon';
 
 // ============================================================
-// SettingsPanel — Full settings panel with sections
+// SettingsPanel — the Settings view: section navigation on the left, the section on the right
+// (#2367). Every setting saves as soon as it changes.
 // ============================================================
 
 type SettingsSection = 'general' | 'appearance' | 'terminal' | 'sftp' | 'sync' | 'about';
 
-const SECTIONS: { id: SettingsSection; label: string }[] = [
-  { id: 'general', label: 'General' },
-  { id: 'appearance', label: 'Appearance' },
-  { id: 'terminal', label: 'Terminal' },
-  { id: 'sftp', label: 'SFTP' },
-  { id: 'sync', label: 'Vault Sync' },
-  { id: 'about', label: 'About' },
+const SECTIONS: { id: SettingsSection; label: string; icon: LucideIcon; description: string }[] = [
+  {
+    id: 'general',
+    label: 'General',
+    icon: SlidersHorizontal,
+    description: 'Security timeouts, where vaults are stored, and updates.',
+  },
+  { id: 'appearance', label: 'Appearance', icon: Palette, description: 'Theme and interface size.' },
+  {
+    id: 'terminal',
+    label: 'Terminal',
+    icon: SquareTerminal,
+    description: 'How terminal sessions look and behave.',
+  },
+  { id: 'sftp', label: 'SFTP', icon: FolderSync, description: 'File browser and transfer defaults.' },
+  {
+    id: 'sync',
+    label: 'Vault Sync',
+    icon: Cloud,
+    description:
+      'Sync your encrypted vault file to a remote backend (SFTP, S3, or a local folder watched by ' +
+      'Dropbox / OneDrive / etc). The vault file is already encrypted — the backend only ever sees ' +
+      'an opaque blob.',
+  },
+  { id: 'about', label: 'About', icon: Info, description: 'Version, links and updates.' },
 ];
 
-const TERMINAL_FONTS = [
-  'JetBrains Mono',
-  'Fira Code',
-  'Cascadia Code',
-  'Consolas',
-  'monospace',
-];
+const TERMINAL_FONTS = ['JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', 'monospace'].map(
+  (f) => ({ value: f, label: f }),
+);
 
-const CURSOR_STYLES = [
+type CursorStyle = 'block' | 'underline' | 'bar';
+
+const CURSOR_STYLES: RadioOption<CursorStyle>[] = [
   { value: 'block', label: 'Block' },
   { value: 'underline', label: 'Underline' },
   { value: 'bar', label: 'Bar' },
@@ -55,7 +84,7 @@ interface SettingsValues {
   terminalFont: string;
   terminalFontSize: number;
   scrollbackLines: number;
-  cursorStyle: string;
+  cursorStyle: CursorStyle;
   cursorBlink: boolean;
   gpuAcceleration: boolean;
   sftpConcurrency: number;
@@ -80,60 +109,18 @@ const DEFAULT_SETTINGS: SettingsValues = {
   checkForUpdates: true,
 };
 
+// Keys that live in app-level (unencrypted, cross-vault) settings; the rest are saved in the vault.
+const APP_LEVEL_KEYS: Array<keyof SettingsValues> = ['uiFontSize', UPDATE_CHECK_SETTING];
+
 /** Apply the UI font size to the document root so Tailwind rem values scale. */
 function applyUIFontSize(size: number): void {
   document.documentElement.style.fontSize = `${size}px`;
 }
 
-// Toggle switch component
-const Toggle: React.FC<{
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-  disabled?: boolean;
-}> = ({ checked, onChange, disabled }) => (
-  <button
-    type="button"
-    role="switch"
-    aria-checked={checked}
-    disabled={disabled}
-    onClick={() => onChange(!checked)}
-    className="relative w-9 h-5 rounded-full transition-colors flex-shrink-0"
-    style={{
-      backgroundColor: checked ? 'var(--color-accent)' : 'var(--color-bg-tertiary)',
-      opacity: disabled ? 0.5 : 1,
-      cursor: disabled ? 'not-allowed' : 'pointer',
-    }}
-  >
-    <span
-      className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform"
-      style={{
-        left: '2px',
-        transform: checked ? 'translateX(16px)' : 'translateX(0)',
-      }}
-    />
-  </button>
-);
-
-// Setting row with label, description, and control
-const SettingRow: React.FC<{
-  label: string;
-  description?: string;
-  children: React.ReactNode;
-}> = ({ label, description, children }) => (
-  <div className="flex items-center justify-between gap-4 py-2.5">
-    <div className="flex-1 min-w-0">
-      <span className="text-xs font-medium" style={{ color: 'var(--color-text-primary)' }}>
-        {label}
-      </span>
-      {description && (
-        <p className="text-[11px] mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-          {description}
-        </p>
-      )}
-    </div>
-    <div className="flex-shrink-0">{children}</div>
-  </div>
-);
+/** Clamp a number input's text to [min, max], or `fallback` when it isn't a number. */
+function clampInt(text: string, min: number, max: number, fallback: number): number {
+  return Math.min(max, Math.max(min, parseInt(text) || fallback));
+}
 
 export const SettingsPanel: React.FC = () => {
   const [activeSection, setActiveSection] = useState<SettingsSection>('general');
@@ -146,9 +133,13 @@ export const SettingsPanel: React.FC = () => {
   useEffect(() => {
     (async () => {
       try {
-        const [vaultSettings, appSettings] = await Promise.all([
+        const [vaultSettings, appSettings, cursorStyle, cursorBlink] = await Promise.all([
           (window.nexus.settings.getAll() as Promise<Partial<SettingsValues>>).catch(() => null),
           window.nexus.appSettings.getAll().catch(() => null),
+          // getAll only returns the keys main has defaults for, which don't include the cursor
+          // settings, so they are read one by one (they were saved but never shown again).
+          window.nexus.settings.get('cursorStyle').catch(() => null),
+          window.nexus.settings.get('cursorBlink').catch(() => null),
         ]);
 
         setSettings((prev) => ({
@@ -159,12 +150,15 @@ export const SettingsPanel: React.FC = () => {
           terminalFont: vaultSettings?.terminalFont ?? prev.terminalFont,
           terminalFontSize: vaultSettings?.terminalFontSize ?? prev.terminalFontSize,
           scrollbackLines: vaultSettings?.scrollbackLines ?? prev.scrollbackLines,
+          cursorStyle: CURSOR_STYLES.some((c) => c.value === cursorStyle)
+            ? (cursorStyle as CursorStyle)
+            : prev.cursorStyle,
+          cursorBlink: typeof cursorBlink === 'boolean' ? cursorBlink : prev.cursorBlink,
           gpuAcceleration: vaultSettings?.gpuAcceleration ?? prev.gpuAcceleration,
           sftpConcurrency: vaultSettings?.sftpConcurrency ?? prev.sftpConcurrency,
           showHiddenFiles: vaultSettings?.showHiddenFiles ?? prev.showHiddenFiles,
           // UI-only preference lives in app-level settings
-          uiFontSize:
-            (appSettings?.uiFontSize as number | undefined) ?? prev.uiFontSize,
+          uiFontSize: (appSettings?.uiFontSize as number | undefined) ?? prev.uiFontSize,
           checkForUpdates: appSettings?.[UPDATE_CHECK_SETTING] !== false,
         }));
 
@@ -176,9 +170,6 @@ export const SettingsPanel: React.FC = () => {
       }
     })();
   }, []);
-
-  // Keys that live in app-level (unencrypted, cross-vault) settings
-  const APP_LEVEL_KEYS: Array<keyof SettingsValues> = ['uiFontSize', UPDATE_CHECK_SETTING];
 
   const updateSetting = useCallback(
     async <K extends keyof SettingsValues>(key: K, value: SettingsValues[K]) => {
@@ -253,404 +244,307 @@ export const SettingsPanel: React.FC = () => {
     }
   }, [addNotification]);
 
+  const section = SECTIONS.find((s) => s.id === activeSection) ?? SECTIONS[0];
+  const titleId = useId();
+
   return (
-    <div className="flex h-full" style={{ backgroundColor: 'var(--color-bg-primary)' }}>
+    <div className="flex h-full min-h-0 min-w-0 flex-1 bg-surface">
       {/* Section navigation */}
-      <div
-        className="flex flex-col w-44 flex-shrink-0 border-r py-3"
-        style={{
-          borderColor: 'var(--color-border)',
-          backgroundColor: 'var(--color-bg-secondary)',
-        }}
-      >
-        <h2
-          className="text-sm font-semibold px-4 mb-3"
-          style={{ color: 'var(--color-text-primary)' }}
-        >
-          Settings
-        </h2>
-        {SECTIONS.map((section) => (
-          <button
-            key={section.id}
-            type="button"
-            className="text-left px-4 py-1.5 text-xs transition-colors"
-            style={{
-              color:
-                activeSection === section.id
-                  ? 'var(--color-accent)'
-                  : 'var(--color-text-secondary)',
-              backgroundColor:
-                activeSection === section.id
-                  ? 'var(--color-accent-muted)'
-                  : 'transparent',
-            }}
-            onClick={() => setActiveSection(section.id)}
-          >
-            {section.label}
-          </button>
-        ))}
+      <div className="flex w-40 shrink-0 flex-col gap-2 border-r border-line p-2">
+        <h2 className="truncate px-2 pt-1 text-heading-sm font-semibold text-fg">Settings</h2>
+        <nav aria-label="Settings sections" className="flex flex-col gap-0.5">
+          {SECTIONS.map((s) => {
+            const active = s.id === activeSection;
+            return (
+              <button
+                key={s.id}
+                type="button"
+                aria-current={active ? 'page' : undefined}
+                onClick={() => setActiveSection(s.id)}
+                className={cx(
+                  'flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-body font-medium',
+                  'transition-colors duration-(--duration-fast) ease-standard focus-ring-inset',
+                  active
+                    ? 'bg-accent-soft text-accent'
+                    : 'text-fg-secondary hover:bg-surface-hover hover:text-fg',
+                )}
+              >
+                <Icon icon={s.icon} size={16} />
+                <span className="truncate">{s.label}</span>
+              </button>
+            );
+          })}
+        </nav>
       </div>
 
-      {/* Settings content */}
-      <div className="flex-1 overflow-y-auto scrollbar-thin px-6 py-4">
-        {/* General */}
-        {activeSection === 'general' && (
-          <div className="flex flex-col gap-1 max-w-xl">
-            <SectionHeader title="General" />
-
-            <SettingRow
-              label="Auto-lock timeout"
-              description="Lock the vault after inactivity. Set to 0 to disable."
-            >
-              <div className="flex items-center gap-1.5">
-                <input
-                  type="number"
-                  className="input w-20 text-right text-xs"
-                  min={0}
-                  value={settings.autoLockTimeout}
-                  onChange={(e) =>
-                    updateSetting('autoLockTimeout', Math.max(0, parseInt(e.target.value) || 0))
-                  }
-                />
-                <span className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
-                  min
-                </span>
-              </div>
-            </SettingRow>
-
-            <SettingRow
-              label="Clipboard clear timeout"
-              description="Automatically clear copied passwords from clipboard. Set to 0 to disable."
-            >
-              <div className="flex items-center gap-1.5">
-                <input
-                  type="number"
-                  className="input w-20 text-right text-xs"
-                  min={0}
-                  value={settings.clipboardClearTimeout}
-                  onChange={(e) =>
-                    updateSetting(
-                      'clipboardClearTimeout',
-                      Math.max(0, parseInt(e.target.value) || 0),
-                    )
-                  }
-                />
-                <span className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
-                  sec
-                </span>
-              </div>
-            </SettingRow>
-
-            <SettingRow
-              label="Default vault directory"
-              description="Where vault database files are stored. Changing this only affects NEW vaults — move existing .db files yourself if needed."
-            >
-              <div className="flex items-center gap-1.5">
-                <span
-                  className="text-[11px] font-mono truncate max-w-56"
-                  style={{ color: 'var(--color-text-muted)' }}
-                  title={settings.defaultVaultPath || 'Default'}
-                >
-                  {settings.defaultVaultPath || 'Default'}
-                </span>
-                <button
-                  type="button"
-                  className="btn btn-ghost text-[11px] py-1 px-2"
-                  onClick={() => {
-                    window.nexus.fs.openVaultDir().catch(() => {});
-                  }}
-                  title="Open in file explorer"
-                >
-                  Open
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-ghost text-[11px] py-1 px-2"
-                  onClick={handleBrowseVaultDir}
-                  title="Choose a different directory"
-                >
-                  Change...
-                </button>
-              </div>
-            </SettingRow>
-
-            <SettingRow
-              label="Check for updates automatically"
-              description="Look for a new version at launch and every few hours. On Windows it downloads in the background and asks before restarting; on macOS it links to the downloads page."
-            >
-              <Toggle
-                checked={settings.checkForUpdates}
-                onChange={(v) => updateSetting('checkForUpdates', v)}
-              />
-            </SettingRow>
+      {/* The selected section */}
+      <div className="min-w-0 flex-1 overflow-y-auto scrollbar-thin">
+        <section
+          aria-labelledby={titleId}
+          className="@container mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-6"
+        >
+          <div className="flex flex-col gap-1">
+            <h3 id={titleId} className="text-heading font-semibold text-fg">
+              {section.label}
+            </h3>
+            <p className="text-body text-fg-muted">{section.description}</p>
           </div>
-        )}
 
-        {/* Appearance */}
-        {activeSection === 'appearance' && (
-          <div className="flex flex-col gap-4 max-w-xl">
-            <SectionHeader title="Appearance" />
-
-            <div className="flex flex-col gap-2">
-              <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-                Theme
-              </span>
-              <div className="grid grid-cols-4 gap-2">
-                {BUNDLED_THEMES.map((t) => (
-                  <ThemeCard
-                    key={t.id}
-                    theme={t}
-                    selected={theme.id === t.id}
-                    onClick={handleThemeSelect}
-                  />
-                ))}
-              </div>
-            </div>
-
-            <SettingRow
-              label="UI font size"
-              description="Base font size for the application interface."
-            >
-              <div className="flex items-center gap-1.5">
-                <input
-                  type="number"
-                  className="input w-16 text-right text-xs"
-                  min={10}
-                  max={20}
-                  value={settings.uiFontSize}
-                  onChange={(e) => {
-                    const val = Math.min(20, Math.max(10, parseInt(e.target.value) || 13));
-                    updateSetting('uiFontSize', val);
-                  }}
-                />
-                <span className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
-                  px
-                </span>
-              </div>
-            </SettingRow>
-          </div>
-        )}
-
-        {/* Terminal */}
-        {activeSection === 'terminal' && (
-          <div className="flex flex-col gap-1 max-w-xl">
-            <SectionHeader title="Terminal" />
-
-            <SettingRow label="Font family">
-              <select
-                className="input w-44 text-xs"
-                value={settings.terminalFont}
-                onChange={(e) => updateSetting('terminalFont', e.target.value)}
-              >
-                {TERMINAL_FONTS.map((f) => (
-                  <option key={f} value={f}>
-                    {f}
-                  </option>
-                ))}
-              </select>
-            </SettingRow>
-
-            <SettingRow label="Font size" description="Terminal font size in pixels (8-32).">
-              <input
-                type="number"
-                className="input w-20 text-right text-xs"
-                min={8}
-                max={32}
-                value={settings.terminalFontSize}
-                onChange={(e) => {
-                  const val = Math.min(32, Math.max(8, parseInt(e.target.value) || DEFAULT_FONT_SIZE));
-                  updateSetting('terminalFontSize', val);
-                }}
-              />
-            </SettingRow>
-
-            <SettingRow label="Scrollback lines" description="Number of lines kept in history (1,000 - 100,000).">
-              <input
-                type="number"
-                className="input w-24 text-right text-xs"
-                min={1000}
-                max={100000}
-                step={1000}
-                value={settings.scrollbackLines}
-                onChange={(e) => {
-                  const val = Math.min(100000, Math.max(1000, parseInt(e.target.value) || DEFAULT_SCROLLBACK));
-                  updateSetting('scrollbackLines', val);
-                }}
-              />
-            </SettingRow>
-
-            <SettingRow label="Cursor style">
-              <div className="flex items-center gap-2">
-                {CURSOR_STYLES.map((cs) => (
-                  <label
-                    key={cs.value}
-                    className="flex items-center gap-1 cursor-pointer"
-                  >
-                    <input
-                      type="radio"
-                      name="cursorStyle"
-                      value={cs.value}
-                      checked={settings.cursorStyle === cs.value}
-                      onChange={() => updateSetting('cursorStyle', cs.value)}
-                      className="sr-only"
+          {activeSection === 'general' && (
+            <>
+              <SettingsGroup title="Security">
+                <SettingRow
+                  label="Auto-lock timeout"
+                  description="Lock the vault after this much inactivity. 0 turns it off."
+                >
+                  {(ids) => (
+                    <NumberInput
+                      ids={ids}
+                      unit="min"
+                      min={0}
+                      value={settings.autoLockTimeout}
+                      onChange={(text) => updateSetting('autoLockTimeout', Math.max(0, parseInt(text) || 0))}
                     />
-                    <span
-                      className="w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center"
-                      style={{
-                        borderColor:
-                          settings.cursorStyle === cs.value
-                            ? 'var(--color-accent)'
-                            : 'var(--color-border)',
-                      }}
-                    >
-                      {settings.cursorStyle === cs.value && (
-                        <span
-                          className="w-1.5 h-1.5 rounded-full"
-                          style={{ backgroundColor: 'var(--color-accent)' }}
-                        />
-                      )}
-                    </span>
-                    <span
-                      className="text-[11px]"
-                      style={{
-                        color:
-                          settings.cursorStyle === cs.value
-                            ? 'var(--color-text-primary)'
-                            : 'var(--color-text-muted)',
-                      }}
-                    >
-                      {cs.label}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </SettingRow>
-
-            <SettingRow label="Cursor blink" description="Enable blinking cursor in terminal.">
-              <Toggle
-                checked={settings.cursorBlink}
-                onChange={(v) => updateSetting('cursorBlink', v)}
-              />
-            </SettingRow>
-
-            <SettingRow
-              label="GPU acceleration"
-              description="Use WebGL renderer for better performance."
-            >
-              <Toggle
-                checked={settings.gpuAcceleration}
-                onChange={(v) => updateSetting('gpuAcceleration', v)}
-              />
-            </SettingRow>
-          </div>
-        )}
-
-        {/* SFTP */}
-        {activeSection === 'sftp' && (
-          <div className="flex flex-col gap-1 max-w-xl">
-            <SectionHeader title="SFTP" />
-
-            <SettingRow
-              label="Default concurrent transfers"
-              description="Number of simultaneous file transfers (1-10)."
-            >
-              <input
-                type="number"
-                className="input w-20 text-right text-xs"
-                min={1}
-                max={10}
-                value={settings.sftpConcurrency}
-                onChange={(e) => {
-                  const val = Math.min(10, Math.max(1, parseInt(e.target.value) || DEFAULT_SFTP_CONCURRENCY));
-                  updateSetting('sftpConcurrency', val);
-                }}
-              />
-            </SettingRow>
-
-            <SettingRow
-              label="Show hidden files by default"
-              description="Display dotfiles and hidden files in the file browser."
-            >
-              <Toggle
-                checked={settings.showHiddenFiles}
-                onChange={(v) => updateSetting('showHiddenFiles', v)}
-              />
-            </SettingRow>
-          </div>
-        )}
-
-        {/* Vault Sync */}
-        {activeSection === 'sync' && (
-          <div className="flex flex-col gap-4">
-            <SectionHeader title="Vault Sync" />
-            <p className="text-xs text-[var(--color-text-muted)]">
-              Sync your encrypted vault file to a remote backend (SFTP, S3,
-              or a local folder watched by Dropbox / OneDrive / etc). The
-              vault file is already encrypted — the backend only ever sees
-              an opaque blob.
-            </p>
-            <SyncSettingsView />
-          </div>
-        )}
-
-        {/* About */}
-        {activeSection === 'about' && (
-          <div className="flex flex-col gap-4 max-w-xl">
-            <SectionHeader title="About" />
-
-            <div className="flex flex-col gap-3">
-              {/* App identity */}
-              <div
-                className="flex items-center gap-4 p-4 rounded-lg"
-                style={{
-                  backgroundColor: 'var(--color-bg-tertiary)',
-                  border: '1px solid var(--color-border)',
-                }}
-              >
-                <div
-                  className="w-12 h-12 rounded-xl flex items-center justify-center font-bold text-lg"
-                  style={{
-                    backgroundColor: 'var(--color-accent-muted)',
-                    color: 'var(--color-accent)',
-                  }}
+                  )}
+                </SettingRow>
+                <SettingRow
+                  label="Clipboard clear timeout"
+                  description="Clear copied passwords from the clipboard after this long. 0 turns it off."
                 >
-                  N
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold" style={{ color: 'var(--color-text-primary)' }}>
+                  {(ids) => (
+                    <NumberInput
+                      ids={ids}
+                      unit="sec"
+                      min={0}
+                      value={settings.clipboardClearTimeout}
+                      onChange={(text) =>
+                        updateSetting('clipboardClearTimeout', Math.max(0, parseInt(text) || 0))
+                      }
+                    />
+                  )}
+                </SettingRow>
+              </SettingsGroup>
+
+              <SettingsGroup title="Storage">
+                <SettingRow
+                  label="Default vault directory"
+                  description={
+                    <>
+                      Where vault database files are stored. Changing it only affects new vaults: move
+                      existing .db files yourself if needed.
+                      <span
+                        className="mt-1 block truncate font-code text-body-sm text-fg-secondary"
+                        title={settings.defaultVaultPath || 'Default'}
+                      >
+                        {settings.defaultVaultPath || 'Default'}
+                      </span>
+                    </>
+                  }
+                >
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon={FolderOpen}
+                    title="Open in file explorer"
+                    onClick={() => {
+                      window.nexus.fs.openVaultDir().catch(() => {});
+                    }}
+                  >
+                    Open
+                  </Button>
+                  <Button size="sm" title="Choose a different directory" onClick={handleBrowseVaultDir}>
+                    Change…
+                  </Button>
+                </SettingRow>
+              </SettingsGroup>
+
+              <SettingsGroup title="Updates">
+                <SettingRow
+                  label="Check for updates automatically"
+                  description="Look for a new version at launch and every few hours. On Windows it downloads in the background and asks before restarting; on macOS it links to the downloads page."
+                >
+                  {(ids) => (
+                    <Switch
+                      id={ids.id}
+                      aria-describedby={ids.describedBy}
+                      checked={settings.checkForUpdates}
+                      onChange={(v) => updateSetting('checkForUpdates', v)}
+                    />
+                  )}
+                </SettingRow>
+              </SettingsGroup>
+            </>
+          )}
+
+          {activeSection === 'appearance' && (
+            <>
+              <ThemePicker value={theme.id} onSelect={handleThemeSelect} />
+              <SettingsGroup title="Interface">
+                <SettingRow label="UI font size" description="Base size for the app's text (10–20 px).">
+                  {(ids) => (
+                    <NumberInput
+                      ids={ids}
+                      unit="px"
+                      min={10}
+                      max={20}
+                      value={settings.uiFontSize}
+                      onChange={(text) => updateSetting('uiFontSize', clampInt(text, 10, 20, 13))}
+                    />
+                  )}
+                </SettingRow>
+              </SettingsGroup>
+            </>
+          )}
+
+          {activeSection === 'terminal' && (
+            <>
+              <SettingsGroup title="Text">
+                <SettingRow label="Font family">
+                  {(ids) => (
+                    <div className="w-48">
+                      <Select
+                        id={ids.id}
+                        options={TERMINAL_FONTS}
+                        value={settings.terminalFont}
+                        onChange={(e) => updateSetting('terminalFont', e.target.value)}
+                      />
+                    </div>
+                  )}
+                </SettingRow>
+                <SettingRow label="Font size" description="Terminal text size in pixels (8–32).">
+                  {(ids) => (
+                    <NumberInput
+                      ids={ids}
+                      unit="px"
+                      min={8}
+                      max={32}
+                      value={settings.terminalFontSize}
+                      onChange={(text) =>
+                        updateSetting('terminalFontSize', clampInt(text, 8, 32, DEFAULT_FONT_SIZE))
+                      }
+                    />
+                  )}
+                </SettingRow>
+                <SettingRow label="Scrollback lines" description="Lines kept in history (1,000–100,000).">
+                  {(ids) => (
+                    <NumberInput
+                      ids={ids}
+                      wide
+                      min={1000}
+                      max={100000}
+                      step={1000}
+                      value={settings.scrollbackLines}
+                      onChange={(text) =>
+                        updateSetting('scrollbackLines', clampInt(text, 1000, 100000, DEFAULT_SCROLLBACK))
+                      }
+                    />
+                  )}
+                </SettingRow>
+              </SettingsGroup>
+
+              <SettingsGroup title="Cursor">
+                <SettingRow label="Cursor style">
+                  <RadioGroup
+                    label="Cursor style"
+                    options={CURSOR_STYLES}
+                    value={settings.cursorStyle}
+                    onChange={(v) => updateSetting('cursorStyle', v)}
+                  />
+                </SettingRow>
+                <SettingRow label="Cursor blink" description="Blink the cursor in terminal sessions.">
+                  {(ids) => (
+                    <Switch
+                      id={ids.id}
+                      aria-describedby={ids.describedBy}
+                      checked={settings.cursorBlink}
+                      onChange={(v) => updateSetting('cursorBlink', v)}
+                    />
+                  )}
+                </SettingRow>
+              </SettingsGroup>
+
+              <SettingsGroup title="Rendering">
+                <SettingRow
+                  label="GPU acceleration"
+                  description="Draw terminals with WebGL for better performance."
+                >
+                  {(ids) => (
+                    <Switch
+                      id={ids.id}
+                      aria-describedby={ids.describedBy}
+                      checked={settings.gpuAcceleration}
+                      onChange={(v) => updateSetting('gpuAcceleration', v)}
+                    />
+                  )}
+                </SettingRow>
+              </SettingsGroup>
+            </>
+          )}
+
+          {activeSection === 'sftp' && (
+            <SettingsGroup>
+              <SettingRow
+                label="Default concurrent transfers"
+                description="Files transferred at the same time (1–10)."
+              >
+                {(ids) => (
+                  <NumberInput
+                    ids={ids}
+                    min={1}
+                    max={10}
+                    value={settings.sftpConcurrency}
+                    onChange={(text) =>
+                      updateSetting('sftpConcurrency', clampInt(text, 1, 10, DEFAULT_SFTP_CONCURRENCY))
+                    }
+                  />
+                )}
+              </SettingRow>
+              <SettingRow
+                label="Show hidden files by default"
+                description="Show dotfiles and hidden files in the file browser."
+              >
+                {(ids) => (
+                  <Switch
+                    id={ids.id}
+                    aria-describedby={ids.describedBy}
+                    checked={settings.showHiddenFiles}
+                    onChange={(v) => updateSetting('showHiddenFiles', v)}
+                  />
+                )}
+              </SettingRow>
+            </SettingsGroup>
+          )}
+
+          {activeSection === 'sync' && <SyncSettingsView />}
+
+          {activeSection === 'about' && (
+            <Card padding="lg" as="div" className="flex flex-col gap-4">
+              <div className="flex items-center gap-4">
+                <NexusLogo />
+                <div className="min-w-0">
+                  <p className="text-body-lg font-semibold text-fg">
                     {APP_NAME} v{__APP_VERSION__}
-                  </h3>
-                  <p className="text-[11px] mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                    Punter Digital Limited
                   </p>
+                  <p className="text-body-sm text-fg-muted">Punter Digital Limited</p>
                 </div>
               </div>
 
-              {/* Description */}
-              <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-                A modern, encrypted SSH client with vault-based credential management,
-                multi-session terminals, SFTP file browser, and cross-device sync.
+              <p className="text-body text-fg-secondary">
+                A modern, encrypted SSH client with vault-based credential management, multi-session
+                terminals, SFTP file browser, and cross-device sync.
               </p>
 
-              {/* Links */}
-              <div className="flex flex-col gap-1.5">
+              {/* These links don't open anything yet: the preload has no openExternal. */}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                 <a
                   href="#"
                   onClick={(e) => {
                     e.preventDefault();
                     // window.nexus.shell.openExternal('https://github.com/punter-digital/nexus');
                   }}
-                  className="text-xs flex items-center gap-1.5 py-1 transition-colors"
-                  style={{ color: 'var(--color-accent)' }}
+                  className="inline-flex items-center gap-1.5 rounded-sm text-body text-accent hover:underline focus-ring"
                 >
-                  <svg
-                    data-logo
-                    aria-hidden="true"
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                  >
+                  <svg data-logo aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
                   </svg>
                   GitHub Repository
@@ -661,37 +555,185 @@ export const SettingsPanel: React.FC = () => {
                     e.preventDefault();
                     // window.nexus.shell.openExternal('https://punterdigital.com');
                   }}
-                  className="text-xs flex items-center gap-1.5 py-1 transition-colors"
-                  style={{ color: 'var(--color-accent)' }}
+                  className="inline-flex items-center gap-1.5 rounded-sm text-body text-accent hover:underline focus-ring"
                 >
                   <Icon icon={Globe} size={14} />
                   Website
                 </a>
               </div>
 
-              {/* Update button */}
-              <button
-                className="btn btn-ghost text-xs self-start"
-                disabled={checking}
-                onClick={handleCheckForUpdates}
-              >
-                <Icon icon={RefreshCw} size={12} />
-                {checking ? 'Checking…' : 'Check for Updates'}
-              </button>
-            </div>
-          </div>
-        )}
+              <div className="border-t border-line pt-4">
+                <Button icon={RefreshCw} loading={checking} onClick={handleCheckForUpdates}>
+                  {checking ? 'Checking…' : 'Check for Updates'}
+                </Button>
+              </div>
+            </Card>
+          )}
+        </section>
       </div>
     </div>
   );
 };
 
-// Section header component
-const SectionHeader: React.FC<{ title: string }> = ({ title }) => (
-  <div className="mb-2">
-    <h3 className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
-      {title}
-    </h3>
-    <div className="h-px mt-2" style={{ backgroundColor: 'var(--color-border)' }} />
-  </div>
-);
+// ── Building blocks ──────────────────────────────────────────
+
+interface ControlIds {
+  /** Give the control this id: the row's label points at it. */
+  id: string;
+  /** The row's description, for the control's aria-describedby. */
+  describedBy?: string;
+}
+
+/** A titled group of setting rows in a card. */
+function SettingsGroup({ title, children }: { title?: string; children: React.ReactNode }) {
+  const id = useId();
+  return (
+    <section aria-labelledby={title ? id : undefined} className="flex flex-col gap-2">
+      {title && (
+        <h4 id={id} className="text-body-sm font-semibold text-fg-secondary">
+          {title}
+        </h4>
+      )}
+      <Card as="div" padding="none" className="divide-y divide-line">
+        {children}
+      </Card>
+    </section>
+  );
+}
+
+/**
+ * One setting: label and description on the left, the control on the right (stacked below when
+ * the section is narrow). Pass a function as children to get the ids that label the control;
+ * controls that name themselves (a RadioGroup, buttons) are passed as plain children.
+ */
+function SettingRow({
+  label,
+  description,
+  children,
+}: {
+  label: string;
+  description?: React.ReactNode;
+  children: React.ReactNode | ((ids: ControlIds) => React.ReactNode);
+}) {
+  const id = useId();
+  const descriptionId = `${id}-description`;
+  const labelled = typeof children === 'function';
+  const labelClass = 'block text-body font-medium text-fg';
+  return (
+    <div className="flex flex-col gap-2 px-4 py-3 @md:flex-row @md:items-center @md:justify-between @md:gap-6">
+      <div className="min-w-0 flex-1">
+        {labelled ? (
+          <label htmlFor={id} className={labelClass}>
+            {label}
+          </label>
+        ) : (
+          <span className={labelClass}>{label}</span>
+        )}
+        {description && (
+          <div id={descriptionId} className="mt-0.5 text-body-sm text-fg-muted">
+            {description}
+          </div>
+        )}
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        {labelled ? children({ id, describedBy: description ? descriptionId : undefined }) : children}
+      </div>
+    </div>
+  );
+}
+
+/** A number field with an optional unit after it (the unit is read out with the description). */
+function NumberInput({
+  ids,
+  unit,
+  wide = false,
+  value,
+  onChange,
+  ...limits
+}: {
+  ids: ControlIds;
+  unit?: string;
+  /** Room for six digits (scrollback). */
+  wide?: boolean;
+  value: number;
+  onChange: (text: string) => void;
+  min?: number;
+  max?: number;
+  step?: number;
+}) {
+  const unitId = `${ids.id}-unit`;
+  const describedBy = [ids.describedBy, unit && unitId].filter(Boolean).join(' ') || undefined;
+  return (
+    <>
+      <div className={wide ? 'w-28' : 'w-20'}>
+        <Input
+          type="number"
+          id={ids.id}
+          aria-describedby={describedBy}
+          className="text-right"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          {...limits}
+        />
+      </div>
+      {unit && (
+        <span id={unitId} className="text-body-sm text-fg-muted">
+          {unit}
+        </span>
+      )}
+    </>
+  );
+}
+
+/**
+ * The bundled themes as a radio group of preview cards (APG radio group: one tab stop, the arrow
+ * keys / Home / End move the selection, which applies the theme at once).
+ */
+function ThemePicker({ value, onSelect }: { value: string; onSelect: (theme: NexusTheme) => void }) {
+  const labelId = useId();
+  const listRef = useRef<HTMLDivElement>(null);
+  const selectedIndex = BUNDLED_THEMES.findIndex((t) => t.id === value);
+  // The tab stop: the selected theme, or the first one if the current theme isn't bundled.
+  const focusIndex = Math.max(0, selectedIndex);
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    const n = BUNDLED_THEMES.length;
+    const next =
+      e.key === 'ArrowRight' || e.key === 'ArrowDown' ? (focusIndex + 1) % n
+      : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? (focusIndex - 1 + n) % n
+      : e.key === 'Home' ? 0
+      : e.key === 'End' ? n - 1
+      : null;
+    if (next === null) return;
+    e.preventDefault();
+    const theme = BUNDLED_THEMES[next];
+    onSelect(theme);
+    listRef.current?.querySelector<HTMLElement>(`[data-theme-id="${theme.id}"]`)?.focus();
+  };
+
+  return (
+    <section className="flex flex-col gap-2">
+      <h4 id={labelId} className="text-body-sm font-semibold text-fg-secondary">
+        Theme
+      </h4>
+      <div
+        ref={listRef}
+        role="radiogroup"
+        aria-labelledby={labelId}
+        onKeyDown={onKeyDown}
+        className="grid grid-cols-2 gap-2 @md:grid-cols-3 @xl:grid-cols-4"
+      >
+        {BUNDLED_THEMES.map((t, i) => (
+          <ThemeCard
+            key={t.id}
+            data-theme-id={t.id}
+            theme={t}
+            selected={i === selectedIndex}
+            tabIndex={i === focusIndex ? 0 : -1}
+            onClick={onSelect}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}

@@ -1,14 +1,17 @@
-import React, { useState, useCallback } from 'react';
-import { Modal } from '../common/Modal';
-import { FormField } from '../common/FormField';
+import React, { useEffect, useId, useRef, useState } from 'react';
+import { CircleAlert, CircleCheck, Copy, Check } from 'lucide-react';
 import { useVaultStore } from '../../stores/vault-store';
 import { useUIStore } from '../../stores/ui-store';
-import type { KeyType, KeyGenerateOptions } from '../../../shared/types';
-import { CircleCheck, CircleX, Copy, Eye, EyeOff, LoaderCircle } from 'lucide-react';
 import { Icon } from '../common/Icon';
+import { Button, Dialog, Field, Input, PasswordInput, RadioGroup, Select, Textarea } from '../ui';
+import type { RadioOption, SelectOption } from '../ui';
+import type { KeyType, KeyGenerateOptions } from '../../../shared/types';
 
 // ============================================================
-// GenerateKeyDialog — Modal for generating a new SSH key
+// GenerateKeyDialog — generate a new SSH key pair (design system: #2367).
+// A ui/Dialog form: validates on submit (error under the field), shows a failure in a banner
+// above the form so the values can be fixed and tried again, and ends on the new public key.
+// Mounted only while open, so it always starts from an empty form.
 // ============================================================
 
 interface GenerateKeyDialogProps {
@@ -16,21 +19,47 @@ interface GenerateKeyDialogProps {
   onClose: () => void;
 }
 
-type Stage = 'form' | 'generating' | 'success' | 'error';
+type Stage = 'form' | 'generating' | 'success';
 
-const RSA_BIT_OPTIONS = [2048, 3072, 4096] as const;
-const ECDSA_BIT_OPTIONS = [256, 384, 521] as const;
+const KEY_TYPE_OPTIONS: RadioOption<KeyType>[] = [
+  { value: 'ed25519', label: 'Ed25519' },
+  { value: 'rsa', label: 'RSA' },
+  { value: 'ecdsa', label: 'ECDSA' },
+];
 
-export const GenerateKeyDialog: React.FC<GenerateKeyDialogProps> = ({ open, onClose }) => {
+const KEY_TYPE_HINTS: Record<KeyType, string> = {
+  ed25519: 'Recommended: small, fast and secure. Supported by OpenSSH 6.5 and later.',
+  rsa: 'For older servers that don’t support Ed25519.',
+  ecdsa: 'NIST curves, for servers that require them.',
+};
+
+const RSA_BIT_OPTIONS: SelectOption[] = [2048, 3072, 4096].map((b) => ({
+  value: String(b),
+  label: `${b} bits${b === 4096 ? ' (recommended)' : ''}`,
+}));
+
+const ECDSA_BIT_OPTIONS: SelectOption[] = [256, 384, 521].map((b) => ({
+  value: String(b),
+  label: `${b}${b === 256 ? ' (recommended)' : ''}`,
+}));
+
+export function GenerateKeyDialog(props: GenerateKeyDialogProps): React.ReactElement | null {
+  if (!props.open) return null;
+  return <GenerateKeyForm onClose={props.onClose} />;
+}
+
+function GenerateKeyForm({ onClose }: { onClose: () => void }): React.ReactElement {
   const addNotification = useUIStore((s) => s.addNotification);
+  const formId = useId();
+  const nameRef = useRef<HTMLInputElement>(null);
 
   // Form state
   const [name, setName] = useState('');
+  const [nameError, setNameError] = useState<string | undefined>();
   const [keyType, setKeyType] = useState<KeyType>('ed25519');
   const [rsaBits, setRsaBits] = useState<number>(4096);
   const [ecdsaBits, setEcdsaBits] = useState<number>(256);
   const [passphrase, setPassphrase] = useState('');
-  const [showPassphrase, setShowPassphrase] = useState(false);
   const [comment, setComment] = useState('');
 
   // Generation state
@@ -39,32 +68,25 @@ export const GenerateKeyDialog: React.FC<GenerateKeyDialogProps> = ({ open, onCl
   const [errorMsg, setErrorMsg] = useState('');
   const [copied, setCopied] = useState(false);
 
-  const resetForm = useCallback(() => {
-    setName('');
-    setKeyType('ed25519');
-    setRsaBits(4096);
-    setEcdsaBits(256);
-    setPassphrase('');
-    setShowPassphrase(false);
-    setComment('');
-    setStage('form');
-    setPublicKey('');
-    setErrorMsg('');
-    setCopied(false);
-  }, []);
+  const generating = stage === 'generating';
 
-  const handleClose = () => {
-    resetForm();
-    onClose();
-  };
+  // "Copied" goes back to "Copy" after 2 s (cleared if the dialog closes first).
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(t);
+  }, [copied]);
 
   const handleGenerate = async () => {
-    if (!name.trim()) return;
+    if (!name.trim()) {
+      setNameError('Key name is required');
+      nameRef.current?.focus();
+      return;
+    }
 
     const vaultId = useVaultStore.getState().selectedVaultId;
     if (!vaultId) {
       setErrorMsg('No vault is currently unlocked. Please unlock a vault first.');
-      setStage('error');
       return;
     }
 
@@ -79,6 +101,7 @@ export const GenerateKeyDialog: React.FC<GenerateKeyDialogProps> = ({ open, onCl
     if (keyType === 'rsa') opts.bits = rsaBits;
     if (keyType === 'ecdsa') opts.bits = ecdsaBits;
 
+    setErrorMsg('');
     setStage('generating');
     try {
       const result = (await window.nexus.keychain.generateKey(opts)) as { public_key?: string; publicKey?: string };
@@ -88,7 +111,7 @@ export const GenerateKeyDialog: React.FC<GenerateKeyDialogProps> = ({ open, onCl
       addNotification('success', `SSH key "${name}" generated successfully`);
     } catch (err) {
       setErrorMsg((err as Error).message);
-      setStage('error');
+      setStage('form');
     }
   };
 
@@ -96,238 +119,136 @@ export const GenerateKeyDialog: React.FC<GenerateKeyDialogProps> = ({ open, onCl
     try {
       await navigator.clipboard.writeText(publicKey);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
     } catch {
       addNotification('error', 'Failed to copy to clipboard');
     }
   };
 
-  const renderForm = () => (
-    <div className="flex flex-col gap-4">
-      <FormField label="Key Name" required>
-        <input
-          className="input"
-          type="text"
-          placeholder="e.g. My Server Key"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          autoFocus
-        />
-      </FormField>
-
-      <FormField label="Key Type">
-        <div className="flex gap-2">
-          {(['ed25519', 'rsa', 'ecdsa'] as KeyType[]).map((type) => (
-            <label
-              key={type}
-              className="flex items-center gap-2 px-3 py-2 rounded-md border cursor-pointer transition-colors"
-              style={{
-                borderColor: keyType === type ? 'var(--color-accent)' : 'var(--color-border)',
-                backgroundColor: keyType === type ? 'var(--color-accent-muted)' : 'var(--color-bg-tertiary)',
-              }}
-            >
-              <input
-                type="radio"
-                name="keyType"
-                value={type}
-                checked={keyType === type}
-                onChange={() => setKeyType(type)}
-                className="sr-only"
-              />
-              <span
-                className="text-xs font-medium"
-                style={{ color: keyType === type ? 'var(--color-accent)' : 'var(--color-text-secondary)' }}
-              >
-                {type === 'ed25519' ? 'Ed25519' : type === 'rsa' ? 'RSA' : 'ECDSA'}
-              </span>
-              {type === 'ed25519' && (
-                <span
-                  className="text-[10px] px-1.5 py-0.5 rounded-full"
-                  style={{ backgroundColor: 'rgba(158, 206, 106, 0.15)', color: 'var(--color-success)' }}
-                >
-                  Recommended
-                </span>
-              )}
-            </label>
-          ))}
-        </div>
-      </FormField>
-
-      {/* Conditional bit size */}
-      {keyType === 'rsa' && (
-        <FormField label="Bit Size">
-          <select
-            className="input"
-            value={rsaBits}
-            onChange={(e) => setRsaBits(Number(e.target.value))}
-          >
-            {RSA_BIT_OPTIONS.map((b) => (
-              <option key={b} value={b}>
-                {b} bits{b === 4096 ? ' (recommended)' : ''}
-              </option>
-            ))}
-          </select>
-        </FormField>
-      )}
-
-      {keyType === 'ecdsa' && (
-        <FormField label="Curve Size">
-          <select
-            className="input"
-            value={ecdsaBits}
-            onChange={(e) => setEcdsaBits(Number(e.target.value))}
-          >
-            {ECDSA_BIT_OPTIONS.map((b) => (
-              <option key={b} value={b}>
-                {b}{b === 256 ? ' (recommended)' : ''}
-              </option>
-            ))}
-          </select>
-        </FormField>
-      )}
-
-      <FormField label="Passphrase" helperText="Optional. Encrypts the private key at rest.">
-        <div className="relative">
-          <input
-            className="input pr-10"
-            type={showPassphrase ? 'text' : 'password'}
-            placeholder="Leave empty for no passphrase"
-            value={passphrase}
-            onChange={(e) => setPassphrase(e.target.value)}
-          />
-          <button
-            type="button"
-            className="absolute right-2 top-1/2 -translate-y-1/2 btn-ghost p-1 rounded"
-            onClick={() => setShowPassphrase(!showPassphrase)}
-            title={showPassphrase ? 'Hide passphrase' : 'Show passphrase'}
-          >
-            {showPassphrase ? (
-              <Icon icon={EyeOff} size={14} color="var(--color-text-muted)" />
-            ) : (
-              <Icon icon={Eye} size={14} color="var(--color-text-muted)" />
-            )}
-          </button>
-        </div>
-      </FormField>
-
-      <FormField label="Comment" helperText="Optional. Defaults to user@hostname if empty.">
-        <input
-          className="input"
-          type="text"
-          placeholder="user@hostname"
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-        />
-      </FormField>
-    </div>
-  );
-
-  const renderGenerating = () => (
-    <div className="flex flex-col items-center justify-center py-10 gap-3">
-      <Icon icon={LoaderCircle} size={32} color="var(--color-accent)" className="animate-spin" />
-      <span className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-        Generating key...
-      </span>
-    </div>
-  );
-
-  const renderSuccess = () => (
-    <div className="flex flex-col gap-4">
-      <div
-        className="flex items-center gap-2 px-3 py-2 rounded-md"
-        style={{ backgroundColor: 'rgba(158, 206, 106, 0.1)', border: '1px solid rgba(158, 206, 106, 0.3)' }}
-      >
-        <Icon icon={CircleCheck} size={16} color="var(--color-success)" />
-        <span className="text-xs" style={{ color: 'var(--color-success)' }}>
-          SSH key generated successfully
-        </span>
-      </div>
-
-      <FormField label="Public Key">
-        <textarea
-          className="input font-mono text-xs"
-          rows={5}
-          readOnly
-          value={publicKey}
-          style={{ resize: 'none' }}
-        />
-      </FormField>
-
-      <button className="btn btn-primary w-full" onClick={handleCopyPublicKey}>
-        <Icon icon={Copy} size={14} />
-        {copied ? 'Copied!' : 'Copy to Clipboard'}
-      </button>
-
-      <p className="text-xs text-center" style={{ color: 'var(--color-text-muted)' }}>
-        The public key has been copied. Add it to your servers' authorized_keys file.
-      </p>
-    </div>
-  );
-
-  const renderError = () => (
-    <div className="flex flex-col items-center gap-4 py-6">
-      <div
-        className="flex items-center gap-2 px-3 py-2 rounded-md w-full"
-        style={{ backgroundColor: 'rgba(247, 118, 142, 0.1)', border: '1px solid rgba(247, 118, 142, 0.3)' }}
-      >
-        <Icon icon={CircleX} size={16} color="var(--color-danger)" />
-        <span className="text-xs" style={{ color: 'var(--color-danger)' }}>
-          {errorMsg}
-        </span>
-      </div>
-    </div>
-  );
-
-  const footer = (() => {
-    switch (stage) {
-      case 'form':
-        return (
-          <>
-            <button className="btn btn-ghost" onClick={handleClose}>
-              Cancel
-            </button>
-            <button
-              className="btn btn-primary"
-              onClick={handleGenerate}
-              disabled={!name.trim()}
-            >
-              Generate
-            </button>
-          </>
-        );
-      case 'success':
-        return (
-          <button className="btn btn-primary" onClick={handleClose}>
-            Done
-          </button>
-        );
-      case 'error':
-        return (
-          <>
-            <button className="btn btn-ghost" onClick={handleClose}>
-              Close
-            </button>
-            <button className="btn btn-primary" onClick={() => setStage('form')}>
-              Try Again
-            </button>
-          </>
-        );
-      default:
-        return null;
-    }
-  })();
+  // Closing is blocked while ssh-keygen runs.
+  const close = () => {
+    if (!generating) onClose();
+  };
 
   return (
-    <Modal
-      open={open}
-      onClose={stage === 'generating' ? () => {} : handleClose}
+    <Dialog
+      open
+      onClose={close}
       title="Generate SSH Key"
-      footer={footer}
+      dismissOnBackdrop={false}
+      footer={
+        stage === 'success' ? (
+          <Button variant="primary" onClick={onClose}>
+            Done
+          </Button>
+        ) : (
+          <>
+            <Button variant="ghost" onClick={close} disabled={generating}>
+              Cancel
+            </Button>
+            <Button type="submit" form={formId} variant="primary" loading={generating}>
+              Generate Key
+            </Button>
+          </>
+        )
+      }
     >
-      {stage === 'form' && renderForm()}
-      {stage === 'generating' && renderGenerating()}
-      {stage === 'success' && renderSuccess()}
-      {stage === 'error' && renderError()}
-    </Modal>
+      {stage === 'success' ? (
+        <div className="flex flex-col gap-4">
+          <p role="status" className="flex items-start gap-2 rounded-md bg-success-soft px-3 py-2 text-body-sm text-success">
+            <Icon icon={CircleCheck} className="mt-0.5" />
+            SSH key “{name.trim()}” generated
+          </p>
+          <Field label="Public key" hint="Add it to ~/.ssh/authorized_keys on the servers you want to sign in to.">
+            <Textarea code readOnly rows={4} value={publicKey} className="resize-none break-all" />
+          </Field>
+          <Button icon={copied ? Check : Copy} onClick={() => void handleCopyPublicKey()} className="self-start">
+            {copied ? 'Copied' : 'Copy Public Key'}
+          </Button>
+        </div>
+      ) : (
+        <form
+          id={formId}
+          noValidate
+          className="flex flex-col gap-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!generating) void handleGenerate();
+          }}
+        >
+          {errorMsg && (
+            <p role="alert" className="flex items-start gap-2 rounded-md bg-danger-soft px-3 py-2 text-body-sm text-danger">
+              <Icon icon={CircleAlert} className="mt-0.5" />
+              <span className="min-w-0 break-words">{errorMsg}</span>
+            </p>
+          )}
+
+          {/* disabled on the fieldset locks every field while the key is generated */}
+          <fieldset disabled={generating} className="flex min-w-0 flex-col gap-4">
+            <Field label="Key name" required error={nameError}>
+              <Input
+                ref={nameRef}
+                placeholder="e.g. My Server Key"
+                value={name}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  if (nameError) setNameError(undefined);
+                }}
+                autoFocus
+              />
+            </Field>
+
+            <div className="flex flex-col gap-1.5">
+              <RadioGroup
+                label="Key type"
+                showLabel
+                value={keyType}
+                onChange={setKeyType}
+                options={KEY_TYPE_OPTIONS}
+              />
+              <p className="text-caption text-fg-muted">{KEY_TYPE_HINTS[keyType]}</p>
+            </div>
+
+            {keyType === 'rsa' && (
+              <Field label="Bit size">
+                <Select
+                  value={String(rsaBits)}
+                  onChange={(e) => setRsaBits(Number(e.target.value))}
+                  options={RSA_BIT_OPTIONS}
+                />
+              </Field>
+            )}
+
+            {keyType === 'ecdsa' && (
+              <Field label="Curve size">
+                <Select
+                  value={String(ecdsaBits)}
+                  onChange={(e) => setEcdsaBits(Number(e.target.value))}
+                  options={ECDSA_BIT_OPTIONS}
+                />
+              </Field>
+            )}
+
+            <Field label="Passphrase" hint="Optional. Encrypts the private key at rest.">
+              <PasswordInput
+                placeholder="Leave empty for no passphrase"
+                value={passphrase}
+                onChange={(e) => setPassphrase(e.target.value)}
+              />
+            </Field>
+
+            <Field label="Comment" hint="Optional. Added to the end of the public key, e.g. user@hostname.">
+              <Input
+                code
+                placeholder="user@hostname"
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                spellCheck={false}
+                autoCapitalize="off"
+              />
+            </Field>
+          </fieldset>
+        </form>
+      )}
+    </Dialog>
   );
-};
+}

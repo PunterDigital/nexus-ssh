@@ -92,9 +92,7 @@ test('update checks: notify card, Later, manual check, the setting, and Restart 
 
   // Turn automatic checks off (General) — saved app-wide, outside the vault.
   await page.getByRole('button', { name: 'General', exact: true }).click();
-  const toggle = page
-    .locator('div.justify-between', { has: page.getByText('Check for updates automatically') })
-    .getByRole('switch');
+  const toggle = page.getByRole('switch', { name: 'Check for updates automatically' });
   await expect(toggle).toHaveAttribute('aria-checked', 'true');
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-checked', 'false');

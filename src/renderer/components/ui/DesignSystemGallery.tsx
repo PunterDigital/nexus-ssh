@@ -105,7 +105,7 @@ export function DesignSystemGallery() {
   const [autoSync, setAutoSync] = useState(true);
   const [cursor, setCursor] = useState('block');
   const [conflict, setConflict] = useState('ask');
-  const [hiddenFiles, setHiddenFiles] = useState(false);
+  const [keepTimes, setKeepTimes] = useState(false);
 
   useEffect(() => {
     applyTheme(getThemeById(themeId));
@@ -281,10 +281,10 @@ export function DesignSystemGallery() {
               <Switch checked={false} onChange={() => undefined} disabled />
             </Field>
             <Checkbox
-              label="Show hidden files"
+              label="Preserve timestamps"
               description="Checkbox: a choice saved with a form."
-              checked={hiddenFiles}
-              onChange={(e) => setHiddenFiles(e.target.checked)}
+              checked={keepTimes}
+              onChange={(e) => setKeepTimes(e.target.checked)}
             />
             <RadioGroup
               label="Cursor style"

@@ -42,7 +42,7 @@ export function RadioGroup<T extends string = string>({
     <div
       role="radiogroup"
       aria-labelledby={labelId}
-      className={cx('flex flex-col gap-1.5', className)}
+      className={cx('relative flex flex-col gap-1.5', className)}
     >
       <span id={labelId} className={showLabel ? 'text-body-sm font-medium text-fg-secondary' : 'sr-only'}>
         {label}

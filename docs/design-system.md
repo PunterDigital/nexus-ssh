@@ -134,6 +134,9 @@ Import from `components/ui`. Each one is in the gallery in every state.
 | `PasswordInput` | Secrets (master password, host passwords) | Input + a focusable show / hide toggle ("Show password", `aria-pressed`). `autoComplete` defaults to off |
 | `Textarea` | Multi-line text (notes, commands) | Styled like Input, wired by `Field`; `code` for monospace |
 | `Select` | Choosing one option | Native `<select>` styled like Input (free keyboard and screen-reader support) |
+| `Switch` | An on/off setting that applies immediately | APG switch (`role="switch"`, `aria-checked`); Space / Enter toggles. Inside a `Field` the label names it, otherwise pass `label` |
+| `Checkbox` | An on/off choice saved with a form (or one of several) | Native checkbox with a clickable label and optional `description` |
+| `RadioGroup` | One of 2–5 options that are all worth seeing | Native radios: one tab stop, arrows move the selection. `segmented` (a row of short labels) or `list` (rows with a description). More options → `Select` |
 | `Card` | A group of related content | Optional `title`, `description`, `actions`; `padding` |
 | `Dialog` | Modal tasks and confirmations | Focus moves in and is trapped, Escape closes, focus returns to the opener. `footer` buttons right-aligned, primary last. `dismissOnBackdrop={false}` for forms |
 | `Tabs` | Switching panels in one view | APG tabs: one tab stop, arrows / Home / End, disabled tabs skipped |

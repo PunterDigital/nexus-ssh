@@ -1,7 +1,10 @@
 import React from 'react';
+import { ArrowDown, ArrowUp, CircleCheck, CircleX, History, TriangleAlert, type LucideIcon } from 'lucide-react';
+import { Icon } from '../common/Icon';
+import { EmptyState, cx } from '../ui';
 
 // ============================================================
-// SyncHistoryLog — Scrollable list of sync events
+// SyncHistoryLog — the latest sync events, newest first (design system: #2367)
 // ============================================================
 
 export interface SyncEvent {
@@ -31,97 +34,67 @@ function formatTimestamp(ts: string): string {
   }
 }
 
-const DIRECTION_ICONS: Record<SyncEvent['direction'], { arrow: string; label: string }> = {
-  push: { arrow: '\u2191', label: 'Push' },
-  pull: { arrow: '\u2193', label: 'Pull' },
+const DIRECTION: Record<SyncEvent['direction'], { icon: LucideIcon; label: string }> = {
+  push: { icon: ArrowUp, label: 'Push' },
+  pull: { icon: ArrowDown, label: 'Pull' },
 };
 
-const OUTCOME_STYLES: Record<SyncEvent['outcome'], { symbol: string; color: string; bgColor: string; label: string }> = {
-  success: {
-    symbol: '\u2713',
-    color: 'var(--color-success)',
-    bgColor: 'rgba(158, 206, 106, 0.15)',
-    label: 'Success',
-  },
-  conflict: {
-    symbol: '\u26A0',
-    color: 'var(--color-warning)',
-    bgColor: 'rgba(224, 175, 104, 0.15)',
-    label: 'Conflict',
-  },
-  error: {
-    symbol: '\u2717',
-    color: 'var(--color-danger)',
-    bgColor: 'rgba(247, 118, 142, 0.15)',
-    label: 'Error',
-  },
+const OUTCOME: Record<SyncEvent['outcome'], { icon: LucideIcon; label: string; className: string }> = {
+  success: { icon: CircleCheck, label: 'Success', className: 'bg-success-soft text-success' },
+  conflict: { icon: TriangleAlert, label: 'Conflict', className: 'bg-warning-soft text-warning' },
+  error: { icon: CircleX, label: 'Error', className: 'bg-danger-soft text-danger' },
 };
 
 export const SyncHistoryLog: React.FC<SyncHistoryLogProps> = ({ events }) => {
   if (events.length === 0) {
     return (
-      <div className="flex items-center justify-center py-8">
-        <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-          No sync history yet.
-        </span>
-      </div>
+      <EmptyState
+        icon={History}
+        title="No syncs yet"
+        description="Each push and pull of this vault is listed here, with what happened."
+      />
     );
   }
 
   return (
-    <div
-      className="flex flex-col gap-1 max-h-80 overflow-y-auto scrollbar-thin rounded-md border"
-      style={{ borderColor: 'var(--color-border)' }}
-    >
+    <ul aria-label="Sync history" className="scrollbar-thin flex max-h-80 flex-col overflow-y-auto">
       {events.map((event) => {
-        const dir = DIRECTION_ICONS[event.direction];
-        const outcome = OUTCOME_STYLES[event.outcome];
-
+        const dir = DIRECTION[event.direction];
+        const outcome = OUTCOME[event.outcome];
         return (
-          <div
+          <li
             key={event.id}
-            className="flex items-center gap-3 px-3 py-2 text-xs"
-            style={{
-              backgroundColor: 'var(--color-bg-secondary)',
-              borderBottom: '1px solid var(--color-border)',
-            }}
+            className="relative flex items-center gap-3 border-b border-line px-3 py-2 last:border-b-0"
           >
-            {/* Timestamp */}
             <span
-              className="font-mono shrink-0 w-36"
-              style={{ color: 'var(--color-text-muted)' }}
-            >
-              {formatTimestamp(event.timestamp)}
-            </span>
-
-            {/* Direction */}
-            <span
-              className="shrink-0 w-5 text-center font-bold"
-              style={{ color: 'var(--color-accent)' }}
+              className="flex size-6 shrink-0 items-center justify-center rounded-md bg-surface-sunken text-fg-secondary"
               title={dir.label}
             >
-              {dir.arrow}
+              <Icon icon={dir.icon} size={14} />
+              <span className="sr-only">{dir.label}</span>
             </span>
 
-            {/* Outcome badge */}
-            <span
-              className="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-semibold"
-              style={{ backgroundColor: outcome.bgColor, color: outcome.color }}
-            >
-              {outcome.symbol} {outcome.label}
-            </span>
+            <div className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate text-body-sm text-fg" title={event.details}>
+                {event.details}
+              </span>
+              <time dateTime={event.timestamp} className="text-caption text-fg-muted">
+                {formatTimestamp(event.timestamp)}
+              </time>
+            </div>
 
-            {/* Details */}
             <span
-              className="truncate flex-1"
-              style={{ color: 'var(--color-text-secondary)' }}
-              title={event.details}
+              className={cx(
+                'inline-flex shrink-0 items-center gap-1 rounded-sm px-1.5 py-0.5 text-caption font-medium',
+                outcome.className,
+              )}
             >
-              {event.details}
+              <Icon icon={outcome.icon} size={12} />
+              {outcome.label}
             </span>
-          </div>
+          </li>
         );
       })}
-    </div>
+    </ul>
   );
 };

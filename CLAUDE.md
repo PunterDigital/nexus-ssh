@@ -64,7 +64,8 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   Tokens in `src/renderer/styles/tokens.css` (Tailwind 4 `@theme`: `bg-surface-raised`,
   `text-fg-muted`, `border-line-strong`, `text-body`, `shadow-popover`, …; spacing is Tailwind's
   4 px scale). Primitives in `src/renderer/components/ui` (Button, IconButton, Field, Input,
-  PasswordInput, Textarea, Select, Card, Dialog, Tabs, Toolbar, Menu, EmptyState). Themes change colours only: they set
+  PasswordInput, Textarea, Select, Switch, Checkbox, RadioGroup, Card, Dialog, Tabs, Toolbar, Menu,
+  EmptyState). Themes change colours only: they set
   the raw `--color-*` palette in `applyTheme()`, which also computes `--color-accent-fg` /
   `--color-danger-fg` for readable text on fills. ESLint bans hex, arbitrary values and inline
   styles in `components/ui/**`; add redesigned screen folders to that block. Gallery: URL hash
@@ -85,6 +86,17 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   that mount only while open, validate on submit (errors under the field) and save host tags.
   The one inline style is `ColourMark` (a host colour is user data). `VaultTree`, `TreeNode`,
   `TagManager` and `IdentityForm` are not imported anywhere (only re-exported) and were left as is.
+- Settings, sync, keychain (#2367 part 1): `SettingsPanel` has a vertical section nav
+  (`<nav aria-label="Settings sections">`, buttons with `aria-current`), `SettingRow`s in titled
+  Cards, and stacks controls under labels in narrow containers (`@container`). The theme picker is a
+  `radiogroup` of `ThemeCard` radios (roving tabindex); its preview sets the theme's palette as
+  `--preview-*` custom properties (the one inline style: theme colours are data). Main's
+  `getAllSettings()` doesn't return `cursorStyle`/`cursorBlink`, so the panel reads them with
+  `settings.get`. `SyncSettingsView` auto-saves 400 ms after an edit; Push/Pull/unmount flush a
+  pending save first. Keychain: `KeychainView` list + per-key Menu, delete via a Dialog. Snippets and
+  SFTP are part 2 (still on the old `FormField`/`Modal`/inline styles).
+- `sr-only` is `position: absolute`: give its parent `relative`, or inside a scroll container it
+  escapes to the nearest positioned ancestor outside and makes the whole page scroll (#2367).
 - Icons (#2374): Lucide only (`lucide-react`), always through `<Icon icon={Terminal} size={14} />`
   (`components/common/Icon.tsx`: default 14 px, stroke 2, `aria-hidden`). No hand-drawn `<svg>` icons
   and no emoji as icons. A brand logo Lucide doesn't ship (the GitHub mark) stays an `<svg data-logo>`.

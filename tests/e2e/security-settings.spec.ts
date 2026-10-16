@@ -39,9 +39,6 @@ test('a changed clipboard timeout applies at once and again after an unlock', as
 
   // Default is 30s; set it to 1s in Settings.
   await page.getByTitle('Settings').click();
-  const row = page.locator('div.justify-between', {
-    has: page.getByText('Clipboard clear timeout', { exact: true }),
-  });
   // The main process sends settings:changed only after it has saved and applied the value, so
   // wait for that instead of the input (which updates before the save lands).
   const applied = page.evaluate(
@@ -55,7 +52,7 @@ test('a changed clipboard timeout applies at once and again after an unlock', as
         });
       }),
   );
-  await row.getByRole('spinbutton').fill('1');
+  await page.getByRole('spinbutton', { name: 'Clipboard clear timeout' }).fill('1');
   await applied;
 
   await page.evaluate((s) => window.nexus.clipboard.copySecure(s), SECRET);
