@@ -184,4 +184,4 @@ Measured with `styles/contrast.ts` against each theme's own surfaces:
 Bold = below WCAG AA 4.5:1. Primary text passes everywhere and the primitives' text on accent /
 danger fills is computed, so it passes too. Muted text fails on raised surfaces (inputs, cards)
 in every theme and on the base surface in four, and plain `border` is 1.2–1.6:1 (so controls
-use `line-strong`). Fixing the palettes is a theme colour change, tracked on its own card.
+use `line-strong`). Fixing the palettes is a theme colour change: #2645.
