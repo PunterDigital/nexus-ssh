@@ -1,11 +1,13 @@
 @import 'tailwindcss';
+@import './tokens.css';
 
 /*
  * Nexus SSH Client — Global Styles & Theme System
  *
  * Theme CSS custom properties are set on :root and updated dynamically
  * by applyTheme() when the user switches themes.
- * Default values below match the Tokyo Night theme.
+ * Default values below match the Tokyo Night theme. Design tokens (spacing, type,
+ * semantic colours, …) live in tokens.css; see docs/design-system.md.
  */
 
 :root {
@@ -20,19 +22,13 @@
   --color-text-secondary: #cbd7ff;
   --color-text-muted: #9da3bc;
 
-  /* ── Accent ──────────────────────────────────────────── */
-  --color-accent: #7aa2f7;
+  /* ── Accent (--color-accent default: tokens.css) ───────── */
   --color-accent-hover: #7aa2f7;
   --color-accent-muted: rgba(122, 162, 247, 0.15);
 
   /* ── Border ──────────────────────────────────────────── */
   --color-border: #292e42;
   --color-border-focus: #7aa2f7;
-
-  /* ── Semantic colours ────────────────────────────────── */
-  --color-danger: #f7768e;
-  --color-success: #9ece6a;
-  --color-warning: #e0af68;
 
   /* ── Sidebar ─────────────────────────────────────────── */
   --sidebar-width: 260px;
