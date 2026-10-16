@@ -258,8 +258,6 @@ const nexusAPI = {
       call('snippets:update', id, snippet),
     delete: (id: string) =>
       call('snippets:delete', id),
-    execute: (sessionId: string, snippetId: string) =>
-      call('snippets:execute', sessionId, snippetId),
   },
 
   // ── Settings ───────────────────────────────────────────────

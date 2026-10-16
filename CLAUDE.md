@@ -108,7 +108,10 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   `variables.ts` + unit tests, `useSnippetTarget`). One run dialog for the panel and the sidebar's
   "Run Snippet": built-ins ({{hostname}}, {{username}}, {{port}}) are filled from the session, every
   variable needs a value, substitution is one pass, and it only runs into a connected terminal tab.
-  "Run on connect" is stored but nothing runs it yet (card #2673).
+  "Run on connect" (#2673): `terminal-store.connectSession` types those snippets once `ssh.connect`
+  resolves (the shell is open), in name order, built-ins filled (`lib/snippet-auto-run.ts`, unit-tested);
+  any that need a typed value are skipped and named in one warning toast. Not for SFTP tabs; a reused
+  open tab doesn't rerun them, a new connection does.
 - Terminal settings (#2662): `lib/terminal-options.ts` turns the vault's Settings → Terminal values
   into xterm options (validated, clamped). A module cache holds the current values: `useTerminalPrefsCache`
   (App) loads it on unlock and follows `settings:changed`, `terminal-store.reset()` clears it.

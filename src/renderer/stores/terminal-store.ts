@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { SSHSession } from '../../shared/types';
 import { setCachedTerminalPrefs } from '../lib/terminal-options';
+import { planAutoRun, skippedMessage } from '../lib/snippet-auto-run';
 
 // ============================================================
 // Terminal Store — manages SSH sessions and terminal tabs
@@ -44,6 +45,30 @@ export interface TerminalActions {
 
   // Reset
   reset: () => void;
+}
+
+/**
+ * Types the vault's "Run on connect" snippets into a terminal that just connected (#2673), and
+ * names any it had to skip in a toast. Only terminal tabs: SFTP sessions have no shell.
+ */
+async function runOnConnectSnippets(sessionId: string, hostId: string, hostLabel: string): Promise<void> {
+  const { useVaultStore } = await import('./vault-store');
+  const { snippets, hosts, groups } = useVaultStore.getState();
+  const host = hosts.find((h) => h.id === hostId);
+  // A host without a username connects with its group's default one.
+  const group = host?.group_id ? groups.find((g) => g.id === host.group_id) : undefined;
+  const plan = planAutoRun(snippets, {
+    hostname: host?.hostname,
+    username: host?.username || group?.default_username || undefined,
+    port: host?.port,
+  });
+  // One at a time, so the lines reach the shell in order.
+  for (const line of plan.lines) await window.nexus.ssh.write(sessionId, `${line}\n`);
+  const skipped = skippedMessage(plan.skipped, hostLabel);
+  if (skipped) {
+    const { useUIStore } = await import('./ui-store');
+    useUIStore.getState().addNotification('warning', skipped);
+  }
 }
 
 let tabIdCounter = 0;
@@ -132,6 +157,10 @@ export const useTerminalStore = create<TerminalState & TerminalActions>()((set, 
           activeSessionId:
             state.activeSessionId === tempId ? realSessionId : state.activeSessionId,
         }));
+        // The shell is open once ssh.connect resolves: type the "Run on connect" snippets.
+        await runOnConnectSnippets(realSessionId, hostId, label).catch((err) =>
+          console.error('[store] run-on-connect snippets failed:', err),
+        );
       } catch (err) {
         set((state) => ({
           sessions: state.sessions.map((s) =>

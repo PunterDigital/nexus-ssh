@@ -24,6 +24,8 @@ const GREET_COMMAND = 'echo {{custom:Greeting}}';
 const HOST_ECHO = 'E2E Host Echo';
 const HOST_ECHO_COMMAND = 'echo host-{{hostname}}\necho second-line';
 const SERVER_LABEL = 'E2E Snippet Server';
+const AUTO_RUN = 'E2E Auto Run';
+const AUTO_RUN_COMMAND = 'echo auto-{{username}}-{{port}}';
 const executablePath = process.env.NEXUS_E2E_EXECUTABLE;
 
 // One app and vault for the whole file; each test builds on the previous one.
@@ -338,6 +340,11 @@ test('running snippets types the resolved command into the active terminal', asy
     .getByRole('button', { name: 'Accept Once' })
     .click({ timeout: 5_000 })
     .catch(() => {});
+  // GREET runs on connect but needs a value, so it is skipped and named, never typed (#2673).
+  await expect(
+    page.getByRole('status').filter({ hasText: `Didn't auto-run "${GREET}" on ${SERVER_LABEL}` }),
+  ).toBeVisible({ timeout: 30_000 });
+  expect(server.commands.join('\n')).not.toContain('{{');
 
   // Custom variable: asked for, required, previewed, then typed into the terminal.
   await nav('Snippets').click();
@@ -402,6 +409,47 @@ test('deleting a snippet asks first; Cancel keeps it, Delete Snippet removes it'
   await expect(page.getByRole('status').filter({ hasText: `Snippet "${HOST_ECHO}" deleted` })).toBeVisible();
   await expect(snippetItem(HOST_ECHO)).toHaveCount(0);
   await expect(main().getByText('2 snippets')).toBeVisible();
+});
+
+test('"Run on connect" snippets are typed into a terminal when it connects', async () => {
+  // #2673: a snippet with only built-in variables runs unattended, filled from the session.
+  await main().getByRole('button', { name: 'New Snippet' }).click();
+  const dialog = page.getByRole('dialog', { name: 'New Snippet' });
+  await dialog.getByPlaceholder('e.g. Deploy to Production').fill(AUTO_RUN);
+  await dialog.getByRole('textbox', { name: 'Command' }).fill(AUTO_RUN_COMMAND);
+  await dialog.getByRole('checkbox', { name: /Run on connect/ }).check();
+  await dialog.getByRole('button', { name: 'Create Snippet', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(snippetItem(AUTO_RUN)).toContainText('Auto-run');
+
+  const expected = `echo auto-${server.username}-${server.port}`;
+  const ranCount = () => server.commands.filter((c) => c === expected).length;
+  // Saving it doesn't type it into the terminal that is already open.
+  expect(ranCount()).toBe(0);
+
+  // Close the terminal and connect again: the new shell runs it once.
+  await page.getByRole('button', { name: `Close ${SERVER_LABEL}` }).click();
+  await expect(page.getByRole('tab', { name: new RegExp(SERVER_LABEL) })).toHaveCount(0);
+  await nav('Hosts').click();
+  await page.getByRole('button', { name: new RegExp(SERVER_LABEL) }).first().click();
+  await page
+    .getByRole('button', { name: 'Accept Once' })
+    .click({ timeout: 5_000 })
+    .catch(() => {});
+  await expect.poll(ranCount, { timeout: 30_000 }).toBe(1);
+  // The snippet that needs a value is still skipped and named; the auto-run one isn't.
+  const skipped = page
+    .getByRole('status')
+    .filter({ hasText: `Didn't auto-run "${GREET}" on ${SERVER_LABEL}` });
+  await expect(skipped).toBeVisible();
+  await expect(skipped).not.toContainText(AUTO_RUN);
+
+  // Opening the host again reuses the connected tab and doesn't run it again.
+  await nav('Hosts').click();
+  await page.getByRole('button', { name: new RegExp(SERVER_LABEL) }).first().click();
+  await page.waitForTimeout(500);
+  expect(ranCount()).toBe(1);
+  await nav('Snippets').click();
 });
 
 test('at 4K the list and dialogs still fit', async () => {
