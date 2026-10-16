@@ -67,7 +67,7 @@ export default [
   {
     // Design-system primitives (and, as screens are redesigned, new UI): tokens only.
     // See docs/design-system.md → "Rules".
-    files: ['src/renderer/components/ui/**/*.{ts,tsx}'],
+    files: ['src/renderer/components/ui/**/*.{ts,tsx}', 'src/renderer/components/shell/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-syntax': [
         'error',

@@ -1,7 +1,6 @@
 export { TerminalView } from './TerminalView';
 export { TerminalInstance } from './TerminalInstance';
 export type { TerminalInstanceProps } from './TerminalInstance';
-export { TabBar } from './TabBar';
 export { QuickConnect } from './QuickConnect';
 export { ConnectionStatus } from './ConnectionStatus';
 export type { ConnectionPhase } from './ConnectionStatus';

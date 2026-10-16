@@ -31,6 +31,8 @@ export interface MenuProps {
   align?: 'start' | 'end';
   /** Accessible name of the menu, if the trigger has no visible text. */
   label?: string;
+  /** Classes for the wrapper, e.g. `flex min-w-0 flex-1` to let a full-width trigger fill a row. */
+  className?: string;
 }
 
 /**
@@ -38,7 +40,7 @@ export interface MenuProps {
  * ArrowUp on the last; arrows, Home and End move; Enter selects; Escape closes and returns
  * focus to the trigger; Tab or a click outside closes it.
  */
-export function Menu({ trigger, items, align = 'start', label }: MenuProps) {
+export function Menu({ trigger, items, align = 'start', label, className }: MenuProps) {
   const id = useId();
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -87,7 +89,7 @@ export function Menu({ trigger, items, align = 'start', label }: MenuProps) {
   };
 
   return (
-    <div className="relative inline-flex">
+    <div className={cx('relative', className ?? 'inline-flex')}>
       {trigger({
         ref: triggerRef,
         'aria-haspopup': 'menu',
@@ -107,7 +109,7 @@ export function Menu({ trigger, items, align = 'start', label }: MenuProps) {
           aria-label={label}
           onKeyDown={onMenuKeyDown}
           className={cx(
-            'absolute top-full z-(--z-dropdown) mt-1 flex min-w-48 flex-col rounded-lg border border-line bg-surface-raised p-1 shadow-popover animate-fade-in',
+            'absolute top-full z-(--z-dropdown) mt-1 flex max-h-80 min-w-48 flex-col overflow-y-auto rounded-lg border border-line bg-surface-raised p-1 shadow-popover animate-fade-in',
             align === 'end' ? 'right-0' : 'left-0',
           )}
         >
@@ -128,7 +130,7 @@ export function Menu({ trigger, items, align = 'start', label }: MenuProps) {
                   item.onSelect();
                 }}
                 className={cx(
-                  'flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-body focus-ring-inset',
+                  'flex h-8 w-full shrink-0 items-center gap-2 rounded-md px-2 text-left text-body focus-ring-inset',
                   'focus:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50',
                   item.danger ? 'text-danger' : 'text-fg',
                 )}
