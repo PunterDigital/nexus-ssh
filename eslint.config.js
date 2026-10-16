@@ -67,7 +67,14 @@ export default [
   {
     // Design-system primitives (and, as screens are redesigned, new UI): tokens only.
     // See docs/design-system.md → "Rules".
-    files: ['src/renderer/components/ui/**/*.{ts,tsx}', 'src/renderer/components/shell/**/*.{ts,tsx}'],
+    files: [
+      'src/renderer/components/ui/**/*.{ts,tsx}',
+      'src/renderer/components/shell/**/*.{ts,tsx}',
+      // #2366 part 1; the rest of components/vault joins in part 2
+      'src/renderer/components/vault/LockScreen.tsx',
+      'src/renderer/components/vault/LockLayout.tsx',
+      'src/renderer/components/vault/CreateVaultDialog.tsx',
+    ],
     rules: {
       'no-restricted-syntax': [
         'error',
