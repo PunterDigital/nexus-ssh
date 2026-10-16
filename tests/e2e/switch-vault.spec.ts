@@ -92,7 +92,7 @@ test('switch between two vaults without restarting; each shows its own hosts', a
   await switchVault(page);
   const dialog = page.getByText('Your open session will be closed');
   await expect(dialog).toBeVisible();
-  await page.getByRole('button', { name: 'Cancel' }).click();
+  await page.getByRole('dialog', { name: 'Switch vault?' }).getByRole('button', { name: 'Cancel' }).click();
   await expect(dialog).toHaveCount(0);
   expect(server.openConnections()).toBeGreaterThan(0);
 

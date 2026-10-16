@@ -128,3 +128,9 @@
     outline-offset: -2px;
   }
 }
+
+/* Responsive card grid (host cards, …): as many 240 px+ columns as fit, one column when the
+   container is narrower than that. */
+@utility grid-cols-cards {
+  grid-template-columns: repeat(auto-fill, minmax(min(15rem, 100%), 1fr));
+}

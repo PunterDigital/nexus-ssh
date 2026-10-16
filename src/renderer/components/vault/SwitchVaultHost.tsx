@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useUIStore, useVaultStore, useTerminalStore, useSFTPStore } from '../../stores';
-import { Modal } from '../common/Modal';
+import { Button, Dialog } from '../ui';
 
 // ============================================================
 // SwitchVaultHost — carries out "Switch vault" (#2363)
@@ -46,42 +46,31 @@ export function SwitchVaultHost(): React.ReactElement | null {
 
   if (!requested || tabCount === 0) return null;
 
-  const footer = (
-    <>
-      <button
-        type="button"
-        onClick={cancelVaultSwitch}
-        disabled={switching}
-        className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-tertiary)]"
-      >
-        Cancel
-      </button>
-      <button
-        type="button"
-        onClick={() => void performSwitch()}
-        disabled={switching}
-        className="rounded-md bg-[var(--color-accent)] px-4 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
-      >
-        {switching ? 'Switching…' : 'Close Sessions and Switch'}
-      </button>
-    </>
-  );
-
   return (
-    <Modal
+    <Dialog
       open
       onClose={() => {
         if (!switching) cancelVaultSwitch();
       }}
       title="Switch vault?"
-      footer={footer}
-      maxWidth="max-w-md"
-    >
-      <p className="text-xs text-[var(--color-text-secondary)]">
-        {tabCount === 1 ? 'Your open session' : `Your ${tabCount} open sessions`} will be closed
-        and this vault will be locked. You can then open another vault.
-      </p>
-    </Modal>
+      size="sm"
+      description={
+        <>
+          {tabCount === 1 ? 'Your open session' : `Your ${tabCount} open sessions`} will be closed and this
+          vault will be locked. You can then open another vault.
+        </>
+      }
+      footer={
+        <>
+          <Button variant="ghost" onClick={cancelVaultSwitch} disabled={switching}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={() => void performSwitch()} loading={switching}>
+            Close Sessions and Switch
+          </Button>
+        </>
+      }
+    />
   );
 }
 
