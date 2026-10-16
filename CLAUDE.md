@@ -69,6 +69,12 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   `--color-danger-fg` for readable text on fills. ESLint bans hex, arbitrary values and inline
   styles in `components/ui/**`; add redesigned screen folders to that block. Gallery: URL hash
   `#design-system` (`main.tsx`), driven by `tests/e2e/design-system.spec.ts`.
+- App shell (#2365): `components/shell` (AppHeader + SessionTabs, Sidebar, StatusBar, `layout.ts`
+  rules). Views are switched from the sidebar nav (`<nav aria-label="Main">`); the header holds
+  only session tabs (`role="tab"` in the "Open sessions" tablist; close buttons are "Close <label>"),
+  Lock and Settings. Sidebar width/collapsed persist in app settings. The global `.input` class sets
+  `width: 100%` (unlayered, so it beats `w-*`): size inputs with a wrapper. One terminal tab per
+  host (`connectSession` reuses an open one), so E2E needing N tabs creates N hosts.
 - Icons (#2374): Lucide only (`lucide-react`), always through `<Icon icon={Terminal} size={14} />`
   (`components/common/Icon.tsx`: default 14 px, stroke 2, `aria-hidden`). No hand-drawn `<svg>` icons
   and no emoji as icons. A brand logo Lucide doesn't ship (the GitHub mark) stays an `<svg data-logo>`.

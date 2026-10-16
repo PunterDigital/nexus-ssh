@@ -167,6 +167,30 @@ Adding something: if a screen needs a variant or primitive that doesn't exist, a
 `components/ui` (with a gallery entry and, for interactive widgets, an E2E check), not a
 one-off in the screen.
 
+## App shell (#2365)
+
+`src/renderer/components/shell/` (lint-enforced like `components/ui`):
+
+- **Header** (`AppHeader`, 44 px): app name, the open sessions (`SessionTabs`), Lock and
+  Settings. Moving between views is the sidebar's job; the header is for sessions.
+- **Session tabs**: 176 px wide (112 px minimum), label truncated with the host in the
+  tooltip. When they don't fit the strip scrolls sideways (mouse wheel too), scroll buttons
+  and an "All sessions" menu appear, and the active tab is always scrolled into view. APG
+  tabs with manual activation: one tab stop, ←/→/Home/End move focus, Enter / Space opens
+  (opening a terminal moves focus into it), Delete or middle-click closes.
+- **Sidebar**: vault menu, main navigation (Hosts, SFTP, Keychain, Snippets), Run Snippet,
+  sync status. 176–360 px (default 224), resized by dragging its right edge or with the
+  arrow keys on it (Shift = 4x, Home / End), double-click resets. It never takes so much
+  that the main area drops below 560 px (`effectiveSidebarWidth` in `shell/layout.ts`).
+  Collapses to a 48 px icon rail. Width and collapsed state are app settings
+  (`sidebarWidth`, `sidebarCollapsed`), like the theme.
+- **Main area**: `<main>` is `min-w-0 min-h-0 flex-1`, so a view shrinks instead of pushing
+  the window wider. Views must fit 560 px wide: let toolbars wrap rather than squash.
+- **Status bar** (24 px): active connection, session count, version.
+- **Window**: minimum 900 x 600 (`WINDOW_MIN_*` in `shell/layout.ts`, checked against
+  `src/main/index.ts` by a unit test). `tests/e2e/app-shell.spec.ts` visits every view at
+  the minimum size and at 4K and fails on anything off-screen or cut off.
+
 ## Theme contrast audit (October 2026)
 
 Measured with `styles/contrast.ts` against each theme's own surfaces:

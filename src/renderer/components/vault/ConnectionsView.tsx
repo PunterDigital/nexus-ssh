@@ -108,19 +108,19 @@ export function ConnectionsView({ mode = 'ssh' }: ConnectionsViewProps = {}): Re
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden bg-[var(--color-bg-primary)]">
-      {/* Top bar */}
-      <div className="flex items-center gap-3 border-b border-[var(--color-border)] px-5 py-3">
-        <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">
+      {/* Top bar: wraps onto a second row in narrow windows instead of squashing (#2365) */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-[var(--color-border)] px-5 py-3">
+        <h2 className="shrink-0 whitespace-nowrap text-lg font-semibold text-[var(--color-text-primary)]">
           {mode === 'sftp' ? 'SFTP — Select Host' : 'Hosts'}
         </h2>
-        <span className="text-xs text-[var(--color-text-muted)]">
+        <span className="shrink-0 whitespace-nowrap text-xs text-[var(--color-text-muted)]">
           {filteredHosts.length} host{filteredHosts.length !== 1 ? 's' : ''}
         </span>
 
         {/* New Host button */}
         <button
           onClick={() => setShowNewHost(true)}
-          className="flex items-center gap-1.5 rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 active:scale-[0.97]"
+          className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 active:scale-[0.97]"
         >
           <Icon icon={Plus} size={12} />
           New Host
@@ -129,7 +129,7 @@ export function ConnectionsView({ mode = 'ssh' }: ConnectionsViewProps = {}): Re
         {/* New Group button */}
         <button
           onClick={() => setShowNewGroup(true)}
-          className="flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] active:scale-[0.97]"
+          className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] active:scale-[0.97]"
         >
           <Icon icon={FolderPlus} size={12} />
           New Group
@@ -137,58 +137,63 @@ export function ConnectionsView({ mode = 'ssh' }: ConnectionsViewProps = {}): Re
 
         <div className="flex-1" />
 
-        {/* Search */}
-        <div className="relative">
-          <Icon
-            icon={Search}
-            size={14}
-            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]"
-          />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search hosts..."
-            className="input h-8 w-56 text-xs"
-            style={{ paddingLeft: '30px' }}
-          />
-        </div>
+        {/* Search, sort and view toggle stay together. Widths go on wrappers: the global
+            .input class sets width: 100%, which beats Tailwind's w-* utilities. */}
+        <div className="flex shrink-0 items-center gap-3">
+          <div className="relative w-48">
+            <Icon
+              icon={Search}
+              size={14}
+              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]"
+            />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search hosts..."
+              className="input h-8 text-xs"
+              style={{ paddingLeft: '30px' }}
+            />
+          </div>
 
-        {/* Sort */}
-        <select
-          value={sortBy}
-          onChange={(e) => setSortBy(e.target.value as SortField)}
-          className="input h-8 w-32 text-xs"
-        >
-          <option value="label">Name</option>
-          <option value="hostname">Hostname</option>
-          <option value="last_connected">Recent</option>
-        </select>
+          {/* Sort */}
+          <div className="w-28">
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as SortField)}
+              className="input h-8 text-xs"
+            >
+              <option value="label">Name</option>
+              <option value="hostname">Hostname</option>
+              <option value="last_connected">Recent</option>
+            </select>
+          </div>
 
-        {/* View toggle */}
-        <div className="flex overflow-hidden rounded border border-[var(--color-border)]">
-          <button
-            onClick={() => setViewMode('grid')}
-            className={`px-2 py-1 transition-colors ${
-              viewMode === 'grid'
-                ? 'bg-[var(--color-accent)] text-white'
-                : 'text-[var(--color-text-muted)] hover:bg-[var(--color-bg-tertiary)]'
-            }`}
-            title="Grid view"
-          >
-            <GridIcon />
-          </button>
-          <button
-            onClick={() => setViewMode('list')}
-            className={`px-2 py-1 transition-colors ${
-              viewMode === 'list'
-                ? 'bg-[var(--color-accent)] text-white'
-                : 'text-[var(--color-text-muted)] hover:bg-[var(--color-bg-tertiary)]'
-            }`}
-            title="List view"
-          >
-            <ListIcon />
-          </button>
+          {/* View toggle */}
+          <div className="flex overflow-hidden rounded border border-[var(--color-border)]">
+            <button
+              onClick={() => setViewMode('grid')}
+              className={`px-2 py-1 transition-colors ${
+                viewMode === 'grid'
+                  ? 'bg-[var(--color-accent)] text-white'
+                  : 'text-[var(--color-text-muted)] hover:bg-[var(--color-bg-tertiary)]'
+              }`}
+              title="Grid view"
+            >
+              <GridIcon />
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={`px-2 py-1 transition-colors ${
+                viewMode === 'list'
+                  ? 'bg-[var(--color-accent)] text-white'
+                  : 'text-[var(--color-text-muted)] hover:bg-[var(--color-bg-tertiary)]'
+              }`}
+              title="List view"
+            >
+              <ListIcon />
+            </button>
+          </div>
         </div>
       </div>
 

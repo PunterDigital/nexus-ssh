@@ -1,10 +1,11 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useSyncStatus } from '../../hooks';
 import { Check, Minus, RefreshCw, X } from 'lucide-react';
 import { Icon } from '../common/Icon';
+import { cx } from '../ui';
 
 // ============================================================
-// SyncStatusBadge — shows current sync state
+// SyncStatusBadge — shows current sync state (sidebar footer; icon only on the rail)
 // ============================================================
 
 type SyncState = 'syncing' | 'synced' | 'error' | 'disabled';
@@ -13,6 +14,21 @@ interface SyncStatusData {
   state: SyncState;
   lastSyncAt?: string | null;
   error?: string | null;
+}
+
+/** The engine's status (sync:get-status / sync:status-update) → what the badge shows. */
+function toBadgeData(raw: unknown): SyncStatusData {
+  const s = (raw ?? {}) as {
+    state?: SyncState;
+    syncing?: boolean;
+    lastSyncAt?: string | null;
+    error?: string | null;
+    lastError?: string | null;
+  };
+  const error = s.error ?? s.lastError ?? null;
+  const state: SyncState =
+    s.state ?? (s.syncing ? 'syncing' : error ? 'error' : s.lastSyncAt ? 'synced' : 'disabled');
+  return { state, lastSyncAt: s.lastSyncAt ?? null, error };
 }
 
 function getRelativeTime(dateStr: string): string {
@@ -25,60 +41,69 @@ function getRelativeTime(dateStr: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-export const SyncStatusBadge: React.FC = () => {
-  const [syncData, setSyncData] = useState<SyncStatusData>({
-    state: 'disabled',
-  });
+const ICON = {
+  syncing: { icon: RefreshCw, className: 'animate-spin text-accent' },
+  synced: { icon: Check, className: 'text-success' },
+  error: { icon: X, className: 'text-danger' },
+  disabled: { icon: Minus, className: 'text-fg-muted' },
+} as const;
+
+export const SyncStatusBadge: React.FC<{ compact?: boolean }> = ({ compact = false }) => {
+  const [syncData, setSyncData] = useState<SyncStatusData>({ state: 'disabled' });
 
   const handleSyncStatus = useCallback((status: unknown) => {
-    const data = status as SyncStatusData;
-    setSyncData(data);
+    setSyncData(toBadgeData(status));
   }, []);
 
   useSyncStatus(handleSyncStatus);
 
+  // Start from the engine's current status rather than "off" until the next event.
+  useEffect(() => {
+    let cancelled = false;
+    window.nexus.sync
+      .getStatus()
+      .then((status: unknown) => {
+        if (!cancelled) setSyncData(toBadgeData(status));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const { state, lastSyncAt, error } = syncData;
+  const label =
+    state === 'syncing'
+      ? 'Syncing…'
+      : state === 'synced'
+        ? `Synced${lastSyncAt ? ` ${getRelativeTime(lastSyncAt)}` : ''}`
+        : state === 'error'
+          ? 'Sync failed'
+          : 'Sync off';
+  const tooltip = state === 'error' && error ? `${label}: ${error}` : label;
+  const { icon, className } = ICON[state];
 
-  const renderIcon = () => {
-    switch (state) {
-      case 'syncing':
-        return <Icon icon={RefreshCw} size={12} className="animate-spin text-[var(--color-accent)]" />;
-      case 'synced':
-        return <Icon icon={Check} size={12} color="var(--color-success)" />;
-      case 'error':
-        return <Icon icon={X} size={12} color="var(--color-danger)" />;
-      case 'disabled':
-      default:
-        return <Icon icon={Minus} size={12} color="var(--color-text-muted)" />;
-    }
-  };
-
-  const renderLabel = () => {
-    switch (state) {
-      case 'syncing':
-        return <span className="text-[var(--color-accent)]">Syncing...</span>;
-      case 'synced':
-        return (
-          <span className="text-[var(--color-text-muted)]">
-            Synced {lastSyncAt ? getRelativeTime(lastSyncAt) : ''}
-          </span>
-        );
-      case 'error':
-        return (
-          <span className="text-[var(--color-danger)]" title={error ?? undefined}>
-            Sync failed
-          </span>
-        );
-      case 'disabled':
-      default:
-        return <span className="text-[var(--color-text-muted)]">Sync off</span>;
-    }
-  };
+  if (compact) {
+    return (
+      <div title={tooltip} className="flex size-8 items-center justify-center">
+        <Icon icon={icon} size={14} className={className} />
+        <span className="sr-only">{tooltip}</span>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex items-center gap-2 px-3 py-2">
-      {renderIcon()}
-      <span className="text-xs">{renderLabel()}</span>
+    // Not role="status": E2E finds toasts by that role (ToastHost).
+    <div title={tooltip} className="flex h-9 items-center gap-2 px-3 text-body-sm">
+      <Icon icon={icon} size={14} className={cx('shrink-0', className)} />
+      <span
+        className={cx(
+          'truncate',
+          state === 'syncing' ? 'text-accent' : state === 'error' ? 'text-danger' : 'text-fg-muted',
+        )}
+      >
+        {label}
+      </span>
     </div>
   );
 };

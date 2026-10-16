@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { NexusTheme } from '../../shared/types';
 import { draculaTheme, applyTheme, getThemeById } from '../styles/themes';
+import { SIDEBAR_DEFAULT_WIDTH, clampSidebarWidth } from '../components/shell/layout';
 
 // ============================================================
 // UI Store — manages application UI state
@@ -36,10 +37,12 @@ export interface NotificationItem {
 }
 
 export interface UIActions {
-  // Sidebar
+  // Sidebar (width and collapsed state are saved in app settings, like the theme)
   toggleSidebar: () => void;
-  setSidebarWidth: (width: number) => void;
+  /** Set the width while dragging; pass persist to save it (on drag end / key press). */
+  setSidebarWidth: (width: number, persist?: boolean) => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
+  loadPersistedLayout: () => Promise<void>;
 
   // Views
   setView: (view: ViewType) => void;
@@ -76,7 +79,7 @@ export interface UIActions {
 let notifIdCounter = 0;
 
 const initialState: UIState = {
-  sidebarWidth: 260,
+  sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
   sidebarCollapsed: false,
   currentView: 'connections',
   lockScreenVisible: true,
@@ -93,12 +96,33 @@ export const useUIStore = create<UIState & UIActions>()((set, get) => ({
 
   // ── Sidebar ────────────────────────────────────────────────
 
-  toggleSidebar: () =>
-    set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
+  toggleSidebar: () => get().setSidebarCollapsed(!get().sidebarCollapsed),
 
-  setSidebarWidth: (width) => set({ sidebarWidth: width }),
+  setSidebarWidth: (width, persist = false) => {
+    const sidebarWidth = clampSidebarWidth(width);
+    set({ sidebarWidth });
+    if (persist) window.nexus.appSettings.set('sidebarWidth', sidebarWidth).catch(() => {});
+  },
 
-  setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
+  setSidebarCollapsed: (collapsed) => {
+    set({ sidebarCollapsed: collapsed });
+    window.nexus.appSettings.set('sidebarCollapsed', collapsed).catch(() => {});
+  },
+
+  loadPersistedLayout: async () => {
+    try {
+      const [width, collapsed] = await Promise.all([
+        window.nexus.appSettings.get('sidebarWidth'),
+        window.nexus.appSettings.get('sidebarCollapsed'),
+      ]);
+      set({
+        sidebarWidth: width == null ? SIDEBAR_DEFAULT_WIDTH : clampSidebarWidth(width),
+        sidebarCollapsed: collapsed === true,
+      });
+    } catch {
+      // Ignore: keep the defaults
+    }
+  },
 
   // ── Views ──────────────────────────────────────────────────
 
