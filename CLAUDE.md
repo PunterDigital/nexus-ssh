@@ -79,6 +79,12 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   scrolls when the window is short, card, logo, error). `Button` defaults to `secondary`: pass
   `variant="primary"` for the main action. PIN unlock is UI only (no `unlockWithPin` in main;
   `PinUnlockForm` is unreachable and `PinSetupDialog` unused): GroundStation card #2653.
+- Hosts view + forms (#2366 part 2): `ConnectionsView` (grid uses the `grid-cols-cards` utility in
+  tokens.css; the list is an `@container`), each host is a button (click connects, right-click
+  edits) plus a "More actions for <label>" `Menu`. `HostForm` / `GroupForm` are `ui/Dialog` forms
+  that mount only while open, validate on submit (errors under the field) and save host tags.
+  The one inline style is `ColourMark` (a host colour is user data). `VaultTree`, `TreeNode`,
+  `TagManager` and `IdentityForm` are not imported anywhere (only re-exported) and were left as is.
 - Icons (#2374): Lucide only (`lucide-react`), always through `<Icon icon={Terminal} size={14} />`
   (`components/common/Icon.tsx`: default 14 px, stroke 2, `aria-hidden`). No hand-drawn `<svg>` icons
   and no emoji as icons. A brand logo Lucide doesn't ship (the GitHub mark) stays an `<svg data-logo>`.

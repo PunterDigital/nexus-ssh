@@ -74,6 +74,12 @@ export default [
       'src/renderer/components/vault/LockScreen.tsx',
       'src/renderer/components/vault/LockLayout.tsx',
       'src/renderer/components/vault/CreateVaultDialog.tsx',
+      'src/renderer/components/vault/ConnectionsView.tsx',
+      'src/renderer/components/vault/ContextMenu.tsx',
+      'src/renderer/components/vault/SyncStatusBadge.tsx',
+      'src/renderer/components/vault/SwitchVaultHost.tsx',
+      'src/renderer/components/vault/HostForm.tsx',
+      'src/renderer/components/vault/GroupForm.tsx',
     ],
     rules: {
       'no-restricted-syntax': [

@@ -1,14 +1,19 @@
-import React, { useState, useMemo } from 'react';
-import { Modal } from '../common/Modal';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Check, ChevronDown, Circle, CircleAlert, CircleCheck, PlugZap } from 'lucide-react';
 import { ColourPicker } from '../common/ColourPicker';
+import { Icon } from '../common/Icon';
+import { Button, Dialog, Field, Input, PasswordInput, Select, Textarea, cx } from '../ui';
+import type { SelectOption } from '../ui';
 import { useVaultStore } from '../../stores/vault-store';
 import { useUIStore } from '../../stores/ui-store';
-import type { Host, OSType } from '../../../shared/types';
-import { ChevronDown } from 'lucide-react';
-import { Icon } from '../common/Icon';
+import type { Host, OSType, Tag } from '../../../shared/types';
 
 // ============================================================
-// HostForm — Single-column scrollable host create/edit form
+// HostForm — create / edit a host (design system: #2366)
+//
+// One scrolling form in a Dialog, in headed sections (Connection, Authentication, Details) with
+// the rarely used settings behind an "Advanced" disclosure. The Dialog body scrolls and its
+// footer (Test Connection, Cancel, Create Host / Save Changes) stays visible at 900 x 600.
 // ============================================================
 
 type AuthMethod = 'password' | 'identity' | 'key';
@@ -31,18 +36,18 @@ interface HostFormData {
   notes: string;
 }
 
-interface Errors {
-  [key: string]: string | undefined;
-}
+type Errors = Partial<Record<keyof HostFormData, string>>;
 
 export interface HostFormProps {
   open: boolean;
   onClose: () => void;
   host?: Host;
+  /** Tags already on the host. When editing without it, the form loads them itself. */
   hostTagIds?: string[];
 }
 
-const OS_TYPES: { value: OSType; label: string }[] = [
+const OS_OPTIONS: SelectOption[] = [
+  { value: '', label: 'Auto-detect' },
   { value: 'linux', label: 'Linux' },
   { value: 'windows', label: 'Windows' },
   { value: 'macos', label: 'macOS' },
@@ -50,17 +55,41 @@ const OS_TYPES: { value: OSType; label: string }[] = [
   { value: 'other', label: 'Other' },
 ];
 
-export const HostForm: React.FC<HostFormProps> = ({
-  open,
-  onClose,
-  host,
-  hostTagIds = [],
-}) => {
-  const { groups, identities, keys, tags, addHost, updateHost, addTag, selectedVaultId } =
-    useVaultStore();
-  const { addNotification } = useUIStore();
+const AUTH_OPTIONS: SelectOption[] = [
+  { value: 'password', label: 'Password' },
+  { value: 'identity', label: 'Identity' },
+  { value: 'key', label: 'SSH key' },
+];
+
+const ADVANCED_FIELDS: (keyof HostFormData)[] = ['osType', 'keepaliveInterval', 'compression'];
+
+/** Port as typed: whole number 1-65535. */
+const isValidPort = (value: string) => /^\d+$/.test(value) && Number(value) >= 1 && Number(value) <= 65535;
+
+/**
+ * Mounted only while open, so every time the dialog opens it starts from the host (or empty),
+ * not from whatever was typed the last time.
+ */
+export function HostForm(props: HostFormProps): React.ReactElement | null {
+  if (!props.open) return null;
+  return <HostFormDialog {...props} />;
+}
+
+function HostFormDialog({ onClose, host, hostTagIds }: HostFormProps): React.ReactElement {
+  const groups = useVaultStore((s) => s.groups);
+  const identities = useVaultStore((s) => s.identities);
+  const keys = useVaultStore((s) => s.keys);
+  const tags = useVaultStore((s) => s.tags);
+  const addHost = useVaultStore((s) => s.addHost);
+  const updateHost = useVaultStore((s) => s.updateHost);
+  const addTag = useVaultStore((s) => s.addTag);
+  const selectedVaultId = useVaultStore((s) => s.selectedVaultId);
+  const addNotification = useUIStore((s) => s.addNotification);
 
   const isEditing = !!host;
+  const formId = useId();
+  const formRef = useRef<HTMLFormElement>(null);
+  const bannerRef = useRef<HTMLDivElement>(null);
 
   const initialAuth: AuthMethod = host
     ? host.key_id
@@ -82,33 +111,63 @@ export const HostForm: React.FC<HostFormProps> = ({
     identityId: host?.identity_id ?? '',
     keyId: host?.key_id ?? '',
     groupId: host?.group_id ?? '',
-    tagIds: hostTagIds,
+    tagIds: hostTagIds ?? [],
     colour: host?.colour ?? null,
     osType: host?.os_type ?? '',
-    keepaliveInterval:
-      host?.keepalive_interval != null ? String(host.keepalive_interval) : '60',
+    keepaliveInterval: host?.keepalive_interval != null ? String(host.keepalive_interval) : '60',
     compression: host?.compression ?? false,
     notes: host?.notes ?? '',
   });
 
   const [errors, setErrors] = useState<Errors>({});
-  const [showPassword, setShowPassword] = useState(false);
-  const [testResult, setTestResult] = useState<string | null>(null);
+  // Bumped on each failed submit: focuses the first invalid field once it has rendered.
+  const [invalidSubmits, setInvalidSubmits] = useState(0);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [newTagName, setNewTagName] = useState('');
+  const tagsTouched = useRef(false);
+
+  // Editing: load the host's tags unless the caller passed them.
+  useEffect(() => {
+    if (!host || hostTagIds) return;
+    let cancelled = false;
+    window.nexus.tags
+      .getHostTags(host.id)
+      .then((current) => {
+        if (cancelled || tagsTouched.current) return;
+        setForm((prev) => ({ ...prev, tagIds: (current as Tag[]).map((t) => t.id) }));
+      })
+      .catch(() => {
+        // No tags shown; saving keeps whatever the user picks.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [host, hostTagIds]);
+
+  useEffect(() => {
+    if (invalidSubmits === 0) return;
+    formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+  }, [invalidSubmits]);
+
+  useEffect(() => {
+    if (testResult || saveError) bannerRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [testResult, saveError]);
 
   const selectedGroup = useMemo(
     () => groups.find((g) => g.id === form.groupId) ?? null,
     [groups, form.groupId],
   );
 
-  const inheritedPort = selectedGroup?.default_port;
-  const inheritedUsername = selectedGroup?.default_username;
-  const inheritedIdentityId = selectedGroup?.default_identity_id;
+  const inheritedPort = selectedGroup?.default_port ?? null;
+  const inheritedUsername = selectedGroup?.default_username ?? null;
+  const inheritedIdentityId = selectedGroup?.default_identity_id ?? null;
+  const inheritedFrom = selectedGroup ? `Inherited from ${selectedGroup.name}` : undefined;
 
-  const set = (key: keyof HostFormData, value: unknown) => {
+  const set = <K extends keyof HostFormData>(key: K, value: HostFormData[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
     if (errors[key]) setErrors((prev) => ({ ...prev, [key]: undefined }));
   };
@@ -116,50 +175,53 @@ export const HostForm: React.FC<HostFormProps> = ({
   const validate = (): boolean => {
     const e: Errors = {};
     if (!form.label.trim()) e.label = 'Label is required';
-    if (!form.hostname.trim()) e.hostname = 'Hostname is required';
+    const hostname = form.hostname.trim();
+    if (!hostname) e.hostname = 'Hostname is required';
+    else if (/\s/.test(hostname)) e.hostname = 'Hostname can’t contain spaces';
+    if (form.port.trim() && !isValidPort(form.port.trim())) {
+      e.port = 'Port must be between 1 and 65535';
+    }
     if (!form.username.trim() && !inheritedUsername) {
-      e.username = 'Username is required';
+      e.username = 'Username is required (or pick a group with a default username)';
     }
-    const portNum = form.port ? Number(form.port) : (inheritedPort ?? 22);
-    if (form.port && (isNaN(portNum) || portNum < 1 || portNum > 65535)) {
-      e.port = 'Port must be 1-65535';
-    }
-    const ka = Number(form.keepaliveInterval);
-    if (form.keepaliveInterval && (isNaN(ka) || ka < 0)) {
-      e.keepaliveInterval = 'Must be a non-negative number';
+    const keepalive = form.keepaliveInterval.trim();
+    if (keepalive && !/^\d+$/.test(keepalive)) {
+      e.keepaliveInterval = 'Keepalive interval must be a whole number of seconds (0 or more)';
     }
     setErrors(e);
-    return Object.keys(e).length === 0;
+    const fields = Object.keys(e) as (keyof HostFormData)[];
+    if (fields.length === 0) return true;
+    if (fields.some((f) => ADVANCED_FIELDS.includes(f))) setAdvancedOpen(true);
+    setInvalidSubmits((n) => n + 1);
+    return false;
   };
+
+  const portValue = () => (form.port.trim() ? Number(form.port.trim()) : (inheritedPort ?? 22));
 
   const handleTestConnection = async () => {
     if (!validate()) return;
     setTesting(true);
     setTestResult(null);
     try {
-      const portVal = form.port ? Number(form.port) : (inheritedPort ?? 22);
-      const usernameVal = form.username || inheritedUsername || 'root';
-
       // Resolve the key (if any) that should be used for this test
       let keyId: string | undefined;
       if (form.authMethod === 'key') {
         keyId = form.keyId || undefined;
       } else if (form.authMethod === 'identity') {
         const identityId = form.identityId || inheritedIdentityId || undefined;
-        const identity = identities.find((i) => i.id === identityId);
-        keyId = identity?.key_id ?? undefined;
+        keyId = identities.find((i) => i.id === identityId)?.key_id ?? undefined;
       }
 
       await window.nexus.ssh.testConnect({
-        hostname: form.hostname,
-        port: portVal,
-        username: usernameVal,
+        hostname: form.hostname.trim(),
+        port: portValue(),
+        username: form.username.trim() || inheritedUsername || 'root',
         password: form.authMethod === 'password' ? form.password : undefined,
         keyId,
       });
-      setTestResult('Connection successful');
+      setTestResult({ ok: true, message: 'Connection successful' });
     } catch (err) {
-      setTestResult(`Connection failed: ${(err as Error).message}`);
+      setTestResult({ ok: false, message: `Connection failed: ${(err as Error).message}` });
     } finally {
       setTesting(false);
     }
@@ -167,38 +229,39 @@ export const HostForm: React.FC<HostFormProps> = ({
 
   const handleSave = async () => {
     if (!validate()) return;
+    const vaultId = host?.vault_id ?? selectedVaultId;
+    if (!vaultId) {
+      setSaveError('No vault is open. Unlock or create a vault first.');
+      return;
+    }
     setSaving(true);
     setSaveError(null);
     try {
-      const portVal = form.port ? Number(form.port) : (inheritedPort ?? 22);
-
-      const vaultId = host?.vault_id ?? selectedVaultId;
-      if (!vaultId) {
-        setSaveError('No vault selected. Please create or unlock a vault first.');
-        setSaving(false);
-        return;
-      }
-
       const payload = {
         vault_id: vaultId,
         group_id: form.groupId || null,
         label: form.label.trim(),
         hostname: form.hostname.trim(),
-        port: portVal,
-        username: form.username || null,
+        port: portValue(),
+        username: form.username.trim() || null,
         password: form.authMethod === 'password' ? form.password || null : null,
         identity_id: form.authMethod === 'identity' ? form.identityId || null : null,
         key_id: form.authMethod === 'key' ? form.keyId || null : null,
         keepalive_interval: Number(form.keepaliveInterval) || 60,
         compression: form.compression,
-        os_type: (form.osType as OSType) || null,
+        os_type: form.osType || null,
         notes: form.notes || null,
         colour: form.colour,
       };
-      if (isEditing) {
-        await updateHost(host!.id, payload);
+      let hostId: string;
+      if (host) {
+        await updateHost(host.id, payload);
+        hostId = host.id;
       } else {
-        await addHost({ ...payload, last_connected: null });
+        hostId = (await addHost({ ...payload, last_connected: null })).id;
+      }
+      if (host || form.tagIds.length > 0) {
+        await window.nexus.tags.setHostTags(hostId, form.tagIds);
       }
       onClose();
     } catch (err) {
@@ -211,218 +274,211 @@ export const HostForm: React.FC<HostFormProps> = ({
   const handleAddTag = async () => {
     const name = newTagName.trim();
     if (!name) return;
+    const existing = tags.find((t) => t.name.toLowerCase() === name.toLowerCase());
     try {
-      const tag = await addTag({ name, colour: null });
-      set('tagIds', [...form.tagIds, tag.id]);
+      const tag = existing ?? (await addTag({ name, colour: null }));
+      tagsTouched.current = true;
+      if (!form.tagIds.includes(tag.id)) set('tagIds', [...form.tagIds, tag.id]);
       setNewTagName('');
     } catch (err) {
       addNotification('error', (err as Error).message);
     }
   };
 
-  if (!open) return null;
+  const toggleTag = (id: string) => {
+    tagsTouched.current = true;
+    set('tagIds', form.tagIds.includes(id) ? form.tagIds.filter((t) => t !== id) : [...form.tagIds, id]);
+  };
+
+  const groupOptions: SelectOption[] = [
+    { value: '', label: 'None' },
+    ...groups.map((g) => ({ value: g.id, label: `${g.icon ? `${g.icon} ` : ''}${g.name}` })),
+  ];
+
+  const inheritedIdentityName = inheritedIdentityId
+    ? identities.find((i) => i.id === inheritedIdentityId)?.name
+    : undefined;
+  const identityOptions: SelectOption[] = [
+    {
+      value: '',
+      label: inheritedIdentityName ? `Inherited: ${inheritedIdentityName}` : 'Select an identity',
+    },
+    ...identities.map((i) => ({ value: i.id, label: i.name })),
+  ];
+  const keyOptions: SelectOption[] = [
+    { value: '', label: 'Select a key' },
+    ...keys.map((k) => ({ value: k.id, label: `${k.name} (${k.key_type})` })),
+  ];
 
   return (
-    <Modal
-      open={open}
+    <Dialog
+      open
       onClose={onClose}
-      title={isEditing ? `Edit Host — ${host!.label}` : 'New Host'}
-      maxWidth="max-w-md"
+      title={host ? `Edit ${host.label}` : 'New Host'}
+      dismissOnBackdrop={false}
+      footer={
+        <>
+          <Button
+            icon={PlugZap}
+            onClick={() => void handleTestConnection()}
+            loading={testing}
+            disabled={saving}
+            className="mr-auto"
+          >
+            Test Connection
+          </Button>
+          <Button variant="ghost" onClick={onClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button type="submit" form={formId} variant="primary" loading={saving}>
+            {isEditing ? 'Save Changes' : 'Create Host'}
+          </Button>
+        </>
+      }
     >
-      <div className="flex flex-col" style={{ maxHeight: '70vh' }}>
-        {/* Scrollable form body */}
-        <div className="flex-1 overflow-y-auto scrollbar-hidden">
-          <div className="flex flex-col gap-4">
-            {/* Save error banner */}
+      <form
+        id={formId}
+        ref={formRef}
+        noValidate
+        className="flex flex-col gap-6"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void handleSave();
+        }}
+      >
+        {(saveError || testResult) && (
+          <div ref={bannerRef} className="flex flex-col gap-2">
             {saveError && (
-              <div className="rounded bg-[rgba(247,118,142,0.15)] px-3 py-2 text-xs text-[var(--color-danger)]">
+              <p role="alert" className="flex items-start gap-2 rounded-md bg-danger-soft px-3 py-2 text-body-sm text-danger">
+                <Icon icon={CircleAlert} className="mt-0.5" />
                 {saveError}
-              </div>
+              </p>
             )}
-
-            {/* Test result banner */}
             {testResult && (
-              <div
-                className="rounded px-3 py-2 text-xs"
-                style={{
-                  backgroundColor: testResult.startsWith('Connection successful')
-                    ? 'rgba(158, 206, 106, 0.15)'
-                    : 'rgba(247, 118, 142, 0.15)',
-                  color: testResult.startsWith('Connection successful')
-                    ? 'var(--color-success)'
-                    : 'var(--color-danger)',
-                }}
+              <p
+                role={testResult.ok ? 'status' : 'alert'}
+                className={cx(
+                  'flex items-start gap-2 rounded-md px-3 py-2 text-body-sm',
+                  testResult.ok ? 'bg-success-soft text-success' : 'bg-danger-soft text-danger',
+                )}
               >
-                {testResult}
-              </div>
+                <Icon icon={testResult.ok ? CircleCheck : CircleAlert} className="mt-0.5" />
+                {testResult.message}
+              </p>
             )}
+          </div>
+        )}
 
-            {/* Label */}
+        <FormSection title="Connection">
+          <div className="grid grid-cols-2 gap-3">
             <Field label="Label" required error={errors.label}>
-              <input
-                className="input"
+              <Input
                 value={form.label}
                 onChange={(e) => set('label', e.target.value)}
                 placeholder="My Server"
                 autoFocus
               />
             </Field>
-
-            {/* Hostname */}
-            <Field label="Hostname" required error={errors.hostname}>
-              <input
-                className="input"
+            <Field label="Group">
+              <Select
+                value={form.groupId}
+                onChange={(e) => set('groupId', e.target.value)}
+                options={groupOptions}
+              />
+            </Field>
+          </div>
+          <div className="grid grid-cols-4 gap-3">
+            <Field label="Hostname" required error={errors.hostname} className="col-span-3">
+              <Input
+                code
                 value={form.hostname}
                 onChange={(e) => set('hostname', e.target.value)}
                 placeholder="192.168.1.1 or example.com"
+                spellCheck={false}
+                autoCapitalize="off"
               />
             </Field>
-
-            {/* Port */}
             <Field
               label="Port"
               error={errors.port}
-              hint={
-                !form.port && inheritedPort != null
-                  ? `Inherited from ${selectedGroup!.name}`
-                  : undefined
-              }
+              aside={!form.port && inheritedPort != null ? 'Inherited' : undefined}
             >
-              <input
-                className="input"
-                type="number"
-                min={1}
-                max={65535}
+              <Input
+                code
+                inputMode="numeric"
                 value={form.port}
                 onChange={(e) => set('port', e.target.value)}
                 placeholder={inheritedPort != null ? String(inheritedPort) : '22'}
               />
             </Field>
+          </div>
+          <Field
+            label="Username"
+            required={!inheritedUsername}
+            error={errors.username}
+            aside={!form.username && inheritedUsername ? inheritedFrom : undefined}
+          >
+            <Input
+              value={form.username}
+              onChange={(e) => set('username', e.target.value)}
+              placeholder={inheritedUsername ?? 'root'}
+              spellCheck={false}
+              autoCapitalize="off"
+            />
+          </Field>
+        </FormSection>
 
-            {/* Username */}
-            <Field
-              label="Username"
-              required
-              error={errors.username}
-              hint={
-                !form.username && inheritedUsername
-                  ? `Inherited from ${selectedGroup!.name}`
-                  : undefined
-              }
-            >
-              <input
-                className="input"
-                value={form.username}
-                onChange={(e) => set('username', e.target.value)}
-                placeholder={inheritedUsername ?? 'root'}
+        <FormSection title="Authentication">
+          <Field label="Method">
+            <Select
+              value={form.authMethod}
+              onChange={(e) => set('authMethod', e.target.value as AuthMethod)}
+              options={AUTH_OPTIONS}
+            />
+          </Field>
+
+          {form.authMethod === 'password' && (
+            <Field label="Password" hint="Stored encrypted in this vault.">
+              <PasswordInput
+                value={form.password}
+                onChange={(e) => set('password', e.target.value)}
+                placeholder="Enter password"
               />
             </Field>
+          )}
 
-            {/* Divider */}
-            <div className="border-t border-[var(--color-border)]" />
-
-            {/* Authentication */}
-            <Field label="Authentication">
-              <div className="flex gap-1 rounded-md border border-[var(--color-border)] p-0.5">
-                {(['password', 'identity', 'key'] as AuthMethod[]).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => set('authMethod', m)}
-                    className={`flex-1 rounded px-2 py-1 text-xs font-medium transition-colors ${
-                      form.authMethod === m
-                        ? 'bg-[var(--color-accent)] text-white'
-                        : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]'
-                    }`}
-                  >
-                    {m === 'password' ? 'Password' : m === 'identity' ? 'Identity' : 'SSH Key'}
-                  </button>
-                ))}
-              </div>
+          {form.authMethod === 'identity' && (
+            <Field
+              label="Identity"
+              aside={!form.identityId && inheritedIdentityName ? inheritedFrom : undefined}
+              hint={identities.length === 0 ? 'No identities in this vault yet.' : undefined}
+            >
+              <Select
+                value={form.identityId}
+                onChange={(e) => set('identityId', e.target.value)}
+                options={identityOptions}
+              />
             </Field>
+          )}
 
-            {/* Auth-specific input */}
-            {form.authMethod === 'password' && (
-              <Field label="Password">
-                <div className="relative">
-                  <input
-                    className="input"
-                    type={showPassword ? 'text' : 'password'}
-                    value={form.password}
-                    onChange={(e) => set('password', e.target.value)}
-                    placeholder="Enter password"
-                    style={{ paddingRight: '48px' }}
-                  />
-                  <button
-                    type="button"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
-                    onClick={() => setShowPassword(!showPassword)}
-                  >
-                    {showPassword ? 'Hide' : 'Show'}
-                  </button>
-                </div>
-              </Field>
-            )}
-
-            {form.authMethod === 'identity' && (
-              <Field label="Identity">
-                <select
-                  className="input"
-                  value={form.identityId}
-                  onChange={(e) => set('identityId', e.target.value)}
-                >
-                  <option value="">
-                    {inheritedIdentityId
-                      ? `(inherited) ${identities.find((i) => i.id === inheritedIdentityId)?.name ?? ''}`
-                      : '-- Select identity --'}
-                  </option>
-                  {identities.map((i) => (
-                    <option key={i.id} value={i.id}>
-                      {i.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            )}
-
-            {form.authMethod === 'key' && (
-              <Field label="SSH Key">
-                <select
-                  className="input"
-                  value={form.keyId}
-                  onChange={(e) => set('keyId', e.target.value)}
-                >
-                  <option value="">-- Select key --</option>
-                  {keys.map((k) => (
-                    <option key={k.id} value={k.id}>
-                      {k.name} ({k.key_type})
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            )}
-
-            {/* Divider */}
-            <div className="border-t border-[var(--color-border)]" />
-
-            {/* Group */}
-            <Field label="Group">
-              <select
-                className="input"
-                value={form.groupId}
-                onChange={(e) => set('groupId', e.target.value)}
-              >
-                <option value="">None</option>
-                {groups.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.icon ? `${g.icon} ` : ''}{g.name}
-                  </option>
-                ))}
-              </select>
+          {form.authMethod === 'key' && (
+            <Field
+              label="SSH key"
+              hint={keys.length === 0 ? 'No SSH keys yet: add one in the Keychain.' : undefined}
+            >
+              <Select
+                value={form.keyId}
+                onChange={(e) => set('keyId', e.target.value)}
+                options={keyOptions}
+              />
             </Field>
+          )}
+        </FormSection>
 
-            {/* Tags */}
-            <Field label="Tags">
+        <FormSection title="Details">
+          <fieldset className="flex flex-col gap-1.5">
+            <legend className="mb-1.5 text-body-sm font-medium text-fg-secondary">Tags</legend>
+            {tags.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
                 {tags.map((t) => {
                   const selected = form.tagIds.includes(t.id);
@@ -430,211 +486,147 @@ export const HostForm: React.FC<HostFormProps> = ({
                     <button
                       key={t.id}
                       type="button"
-                      onClick={() =>
-                        set(
-                          'tagIds',
-                          selected
-                            ? form.tagIds.filter((id) => id !== t.id)
-                            : [...form.tagIds, t.id],
-                        )
-                      }
-                      className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition-colors"
-                      style={{
-                        borderColor: selected
-                          ? t.colour ?? 'var(--color-accent)'
-                          : 'var(--color-border)',
-                        backgroundColor: selected
-                          ? `${t.colour ?? 'var(--color-accent)'}22`
-                          : 'transparent',
-                        color: selected
-                          ? t.colour ?? 'var(--color-accent)'
-                          : 'var(--color-text-muted)',
-                      }}
-                    >
-                      {t.colour && (
-                        <span
-                          className="inline-block h-2 w-2 rounded-full"
-                          style={{ backgroundColor: t.colour }}
-                        />
+                      aria-pressed={selected}
+                      onClick={() => toggleTag(t.id)}
+                      className={cx(
+                        'inline-flex h-6 items-center gap-1.5 rounded-full border px-2.5 text-body-sm',
+                        'transition-colors duration-(--duration-fast) ease-standard focus-ring',
+                        selected
+                          ? 'border-accent bg-accent-soft text-fg'
+                          : 'border-line-strong text-fg-muted hover:bg-surface-hover hover:text-fg',
                       )}
+                    >
+                      {selected && <Icon icon={Check} size={12} />}
+                      {/* The tag's own colour is user data, so it can't be a token. */}
+                      {t.colour && <Icon icon={Circle} size={8} fill={t.colour} color={t.colour} />}
                       {t.name}
                     </button>
                   );
                 })}
               </div>
-              <input
-                className="input w-full text-[11px]"
-                style={{ padding: '4px 8px', marginTop: '6px' }}
-                placeholder="Type a tag name and press Enter..."
-                value={newTagName}
-                onChange={(e) => setNewTagName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleAddTag();
-                  }
-                }}
+            )}
+            <Input
+              size="sm"
+              aria-label="New tag"
+              placeholder="Type a tag name and press Enter..."
+              value={newTagName}
+              onChange={(e) => setNewTagName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void handleAddTag();
+                }
+              }}
+            />
+          </fieldset>
+
+          <fieldset className="flex flex-col">
+            <legend className="mb-1.5 text-body-sm font-medium text-fg-secondary">Tab colour</legend>
+            <ColourPicker value={form.colour} onChange={(c) => set('colour', c)} />
+          </fieldset>
+
+          <Field label="Notes">
+            <Textarea
+              rows={2}
+              value={form.notes}
+              onChange={(e) => set('notes', e.target.value)}
+              placeholder="Notes about this host..."
+            />
+          </Field>
+        </FormSection>
+
+        <Disclosure label="Advanced" open={advancedOpen} onToggle={() => setAdvancedOpen((v) => !v)}>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="OS type">
+              <Select
+                value={form.osType}
+                onChange={(e) => set('osType', e.target.value as OSType | '')}
+                options={OS_OPTIONS}
               />
             </Field>
-
-            {/* Colour */}
-            <Field label="Tab Colour">
-              <ColourPicker value={form.colour} onChange={(c) => set('colour', c)} />
-            </Field>
-
-            {/* Advanced accordion */}
-            <Accordion label="Advanced Options">
-              <div className="flex flex-col gap-4">
-                <Field label="OS Type">
-                  <select
-                    className="input"
-                    value={form.osType}
-                    onChange={(e) => set('osType', e.target.value)}
-                  >
-                    <option value="">Auto-detect</option>
-                    {OS_TYPES.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-
-                <Field label="Keepalive Interval (seconds)" error={errors.keepaliveInterval}>
-                  <input
-                    className="input"
-                    type="number"
-                    min={0}
-                    value={form.keepaliveInterval}
-                    onChange={(e) => set('keepaliveInterval', e.target.value)}
-                    placeholder="60"
-                  />
-                </Field>
-
-                <Field label="Compression">
-                  <label className="flex cursor-pointer items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={form.compression}
-                      onChange={(e) => set('compression', e.target.checked)}
-                      className="accent-[var(--color-accent)]"
-                    />
-                    <span className="text-xs text-[var(--color-text-secondary)]">
-                      Enable compression
-                    </span>
-                  </label>
-                </Field>
-              </div>
-            </Accordion>
-
-            {/* Notes */}
-            <Field label="Notes">
-              <textarea
-                className="input resize-y"
-                rows={2}
-                value={form.notes}
-                onChange={(e) => set('notes', e.target.value)}
-                placeholder="Notes about this host..."
+            <Field
+              label="Keepalive interval"
+              error={errors.keepaliveInterval}
+              hint="Seconds between keepalive packets."
+            >
+              <Input
+                code
+                inputMode="numeric"
+                value={form.keepaliveInterval}
+                onChange={(e) => set('keepaliveInterval', e.target.value)}
+                placeholder="60"
               />
             </Field>
           </div>
-        </div>
-
-        {/* Fixed footer */}
-        <div className="mt-4 flex items-center gap-2 border-t border-[var(--color-border)] pt-4">
-          <button
-            type="button"
-            onClick={handleTestConnection}
-            disabled={testing || saving}
-            className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-tertiary)]"
-          >
-            {testing ? 'Testing...' : 'Test Connection'}
-          </button>
-          <div className="flex-1" />
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={saving}
-            className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-tertiary)]"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving}
-            className="rounded-md bg-[var(--color-accent)] px-4 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
-          >
-            {saving ? 'Saving...' : isEditing ? 'Save Changes' : 'Create Host'}
-          </button>
-        </div>
-      </div>
-    </Modal>
-  );
-};
-
-// ── Accordion component ─────────────────────────────────────
-
-function Accordion({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}): React.ReactElement {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <div className="rounded-md border border-[var(--color-border)]">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between px-3 py-2 text-xs font-medium text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text-primary)]"
-      >
-        {label}
-        <Icon
-          icon={ChevronDown}
-          size={12}
-          className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
-        />
-      </button>
-      {open && (
-        <div className="border-t border-[var(--color-border)] px-3 py-3">
-          {children}
-        </div>
-      )}
-    </div>
+          <label className="flex cursor-pointer items-center gap-2 text-body text-fg">
+            <input
+              type="checkbox"
+              checked={form.compression}
+              onChange={(e) => set('compression', e.target.checked)}
+              className="size-4 shrink-0 cursor-pointer accent-accent focus-ring"
+            />
+            Enable compression
+          </label>
+        </Disclosure>
+      </form>
+    </Dialog>
   );
 }
 
-// ── Inline field component ──────────────────────────────────
+/** A titled group of fields inside the form. */
+function FormSection({ title, children }: { title: string; children: React.ReactNode }): React.ReactElement {
+  const id = useId();
+  return (
+    <section aria-labelledby={id} className="flex flex-col gap-3">
+      <h3 id={id} className="text-body font-semibold text-fg">
+        {title}
+      </h3>
+      {children}
+    </section>
+  );
+}
 
-function Field({
+/** Collapsible section (closed by default) for settings most hosts never change. */
+function Disclosure({
   label,
-  required,
-  error,
-  hint,
+  open,
+  onToggle,
   children,
 }: {
   label: string;
-  required?: boolean;
-  error?: string;
-  hint?: string;
+  open: boolean;
+  onToggle: () => void;
   children: React.ReactNode;
 }): React.ReactElement {
+  const id = useId();
   return (
-    <div>
-      <label className="mb-1 block text-xs font-medium text-[var(--color-text-muted)]">
-        {label}
-        {required && <span className="ml-0.5 text-[var(--color-danger)]">*</span>}
-      </label>
-      {children}
-      {error && (
-        <p className="mt-1 text-[11px] text-[var(--color-danger)]">{error}</p>
+    <section className="rounded-lg border border-line">
+      <h3>
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={id}
+          onClick={onToggle}
+          className={cx(
+            'flex h-9 w-full items-center justify-between gap-2 rounded-lg px-3 text-body font-semibold text-fg',
+            'transition-colors duration-(--duration-fast) ease-standard hover:bg-surface-hover focus-ring-inset',
+          )}
+        >
+          {label}
+          <Icon
+            icon={ChevronDown}
+            className={cx(
+              'text-fg-muted transition-transform duration-(--duration-fast) ease-standard',
+              open && 'rotate-180',
+            )}
+          />
+        </button>
+      </h3>
+      {open && (
+        <div id={id} className="flex flex-col gap-3 border-t border-line p-3">
+          {children}
+        </div>
       )}
-      {hint && !error && (
-        <p className="mt-1 text-[11px] text-[var(--color-text-muted)] italic">{hint}</p>
-      )}
-    </div>
+    </section>
   );
 }

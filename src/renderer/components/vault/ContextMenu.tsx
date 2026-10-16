@@ -1,8 +1,11 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { cx } from '../ui';
 
 // ============================================================
-// ContextMenu — right-click menu rendered via portal
+// ContextMenu — right-click menu at the pointer, rendered via portal. Looks and behaves like
+// the design system's Menu (role="menu", arrows / Home / End move, Escape closes and returns
+// focus), but opens where the user clicked instead of under a trigger button.
 // ============================================================
 
 export interface ContextMenuItem {
@@ -28,19 +31,31 @@ interface ContextMenuProps {
   y: number;
   items: ContextMenuEntry[];
   onClose: () => void;
+  /** Accessible name of the menu. */
+  label?: string;
 }
 
-export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }) => {
+const EDGE = 4; // px kept between the menu and the window edge
+
+export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose, label }) => {
   const menuRef = useRef<HTMLDivElement>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
+
+  const menuItems = () => [
+    ...(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])') ?? []),
+  ];
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        onClose();
+        openerRef.current?.focus?.();
+      }
     },
     [onClose],
   );
 
-  const handleClickOutside = useCallback(
+  const handlePointerDown = useCallback(
     (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         onClose();
@@ -51,68 +66,82 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }
 
   useEffect(() => {
     document.addEventListener('keydown', handleKeyDown);
-    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('mousedown', handlePointerDown);
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('mousedown', handlePointerDown);
     };
-  }, [handleKeyDown, handleClickOutside]);
+  }, [handleKeyDown, handlePointerDown]);
 
-  // Adjust position to keep menu within viewport
+  // Keyboard users land on the first item, as in Menu.
   useEffect(() => {
-    if (!menuRef.current) return;
-    const rect = menuRef.current.getBoundingClientRect();
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
+    openerRef.current = document.activeElement as HTMLElement | null;
+    menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]:not([disabled])')?.focus();
+  }, []);
 
-    if (rect.right > vw) {
-      menuRef.current.style.left = `${vw - rect.width - 4}px`;
-    }
-    if (rect.bottom > vh) {
-      menuRef.current.style.top = `${vh - rect.height - 4}px`;
-    }
+  // Open at the pointer, kept inside the window. The coordinates are runtime values, so they
+  // are set on the element before paint rather than through a style prop.
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!el) return;
+    const { width, height } = el.getBoundingClientRect();
+    el.style.left = `${Math.max(EDGE, Math.min(x, window.innerWidth - width - EDGE))}px`;
+    el.style.top = `${Math.max(EDGE, Math.min(y, window.innerHeight - height - EDGE))}px`;
   }, [x, y]);
+
+  const onMenuKeyDown = (e: React.KeyboardEvent) => {
+    const all = menuItems();
+    const i = all.indexOf(document.activeElement as HTMLElement);
+    const go = (n: number) => all[(n + all.length) % all.length]?.focus();
+    switch (e.key) {
+      case 'ArrowDown': e.preventDefault(); go(i + 1); break;
+      case 'ArrowUp': e.preventDefault(); go(i - 1); break;
+      case 'Home': e.preventDefault(); go(0); break;
+      case 'End': e.preventDefault(); go(all.length - 1); break;
+      case 'Tab': e.preventDefault(); onClose(); break;
+    }
+  };
 
   return createPortal(
     <div
       ref={menuRef}
-      className="animate-fade-in fixed z-[100] min-w-[160px] rounded-md border border-[var(--color-border)] bg-[var(--color-bg-primary)] py-1 shadow-xl"
-      style={{ left: x, top: y }}
+      role="menu"
+      aria-label={label}
+      onKeyDown={onMenuKeyDown}
+      className="fixed top-0 left-0 z-(--z-dropdown) flex max-h-80 min-w-40 flex-col overflow-y-auto rounded-lg border border-line bg-surface-raised p-1 shadow-popover animate-fade-in"
     >
       {items.map((entry, idx) => {
         if (isDivider(entry)) {
-          return (
-            <div
-              key={`div-${idx}`}
-              className="my-1 h-px bg-[var(--color-border)]"
-            />
-          );
+          return <div key={`div-${idx}`} role="separator" className="my-1 h-px shrink-0 bg-line" />;
         }
 
         return (
           <button
             key={`item-${idx}`}
+            type="button"
+            role="menuitem"
+            tabIndex={-1}
+            disabled={entry.disabled}
+            // Pointer and keyboard share one highlight: hovering an item focuses it.
+            onMouseEnter={(e) => e.currentTarget.focus()}
             onClick={() => {
               if (!entry.disabled) {
                 entry.onClick();
                 onClose();
               }
             }}
-            disabled={entry.disabled}
-            className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors ${
-              entry.disabled
-                ? 'cursor-not-allowed text-[var(--color-text-muted)] opacity-50'
-                : entry.danger
-                  ? 'text-[var(--color-danger)] hover:bg-[var(--color-danger)]/10'
-                  : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]'
-            }`}
+            className={cx(
+              'flex h-8 w-full shrink-0 items-center gap-2 rounded-md px-2 text-left text-body focus-ring-inset',
+              'focus:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50',
+              entry.danger ? 'text-danger' : 'text-fg',
+            )}
           >
             {entry.icon && (
-              <span className="flex h-4 w-4 items-center justify-center">
+              <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden="true">
                 {entry.icon}
               </span>
             )}
-            <span>{entry.label}</span>
+            <span className="flex-1 truncate">{entry.label}</span>
           </button>
         );
       })}

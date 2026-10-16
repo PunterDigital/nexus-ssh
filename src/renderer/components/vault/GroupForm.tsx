@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
-import { Modal } from '../common/Modal';
-import { FormField } from '../common/FormField';
+import React, { useEffect, useId, useRef, useState } from 'react';
+import { Button, Dialog, Field, Input, Select, Textarea } from '../ui';
+import type { SelectOption } from '../ui';
 import { useVaultStore } from '../../stores/vault-store';
 import { useUIStore } from '../../stores/ui-store';
 import type { Group } from '../../../shared/types';
 
 // ============================================================
-// GroupForm — Create / Edit group, shown inside a Modal
+// GroupForm — create / edit a group (design system: #2366)
 // ============================================================
 
 interface GroupFormData {
@@ -19,9 +19,7 @@ interface GroupFormData {
   defaultIdentityId: string;
 }
 
-interface Errors {
-  [key: string]: string | undefined;
-}
+type Errors = Partial<Record<keyof GroupFormData, string>>;
 
 export interface GroupFormProps {
   open: boolean;
@@ -30,12 +28,23 @@ export interface GroupFormProps {
   group?: Group;
 }
 
-export const GroupForm: React.FC<GroupFormProps> = ({ open, onClose, group }) => {
-  const { groups, identities, addGroup, updateGroup, selectedVaultId } =
-    useVaultStore();
-  const { addNotification } = useUIStore();
+/** Mounted only while open, so the form starts fresh each time the dialog opens. */
+export function GroupForm(props: GroupFormProps): React.ReactElement | null {
+  if (!props.open) return null;
+  return <GroupFormDialog {...props} />;
+}
 
-  const isEditing = !!group;
+function GroupFormDialog({ onClose, group }: GroupFormProps): React.ReactElement {
+  const groups = useVaultStore((s) => s.groups);
+  const identities = useVaultStore((s) => s.identities);
+  const addGroup = useVaultStore((s) => s.addGroup);
+  const updateGroup = useVaultStore((s) => s.updateGroup);
+  const selectedVaultId = useVaultStore((s) => s.selectedVaultId);
+  const addNotification = useUIStore((s) => s.addNotification);
+
+  const formId = useId();
+  const defaultsId = useId();
+  const formRef = useRef<HTMLFormElement>(null);
 
   const [form, setForm] = useState<GroupFormData>({
     name: group?.name ?? '',
@@ -48,7 +57,13 @@ export const GroupForm: React.FC<GroupFormProps> = ({ open, onClose, group }) =>
   });
 
   const [errors, setErrors] = useState<Errors>({});
+  const [invalidSubmits, setInvalidSubmits] = useState(0);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (invalidSubmits === 0) return;
+    formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+  }, [invalidSubmits]);
 
   const set = (key: keyof GroupFormData, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -58,18 +73,27 @@ export const GroupForm: React.FC<GroupFormProps> = ({ open, onClose, group }) =>
   const validate = (): boolean => {
     const e: Errors = {};
     if (!form.name.trim()) e.name = 'Name is required';
-
-    const portNum = Number(form.defaultPort);
-    if (form.defaultPort && (isNaN(portNum) || portNum < 1 || portNum > 65535)) {
-      e.defaultPort = 'Port must be 1-65535';
+    const port = form.defaultPort.trim();
+    if (port && !(/^\d+$/.test(port) && Number(port) >= 1 && Number(port) <= 65535)) {
+      e.defaultPort = 'Port must be between 1 and 65535';
     }
-
     setErrors(e);
-    return Object.keys(e).length === 0;
+    if (Object.keys(e).length === 0) return true;
+    setInvalidSubmits((n) => n + 1);
+    return false;
   };
 
-  // Exclude current group from parent dropdown to prevent cycles
-  const parentOptions = groups.filter((g) => g.id !== group?.id);
+  // Exclude the group itself from the parent list to prevent cycles
+  const parentOptions: SelectOption[] = [
+    { value: '', label: 'None (top level)' },
+    ...groups
+      .filter((g) => g.id !== group?.id)
+      .map((g) => ({ value: g.id, label: `${g.icon ? `${g.icon} ` : ''}${g.name}` })),
+  ];
+  const identityOptions: SelectOption[] = [
+    { value: '', label: 'None' },
+    ...identities.map((i) => ({ value: i.id, label: i.name })),
+  ];
 
   const handleSave = async () => {
     if (!validate()) return;
@@ -81,13 +105,13 @@ export const GroupForm: React.FC<GroupFormProps> = ({ open, onClose, group }) =>
         name: form.name.trim(),
         description: form.description.trim() || null,
         icon: form.icon.trim() || null,
-        default_port: form.defaultPort ? Number(form.defaultPort) : null,
+        default_port: form.defaultPort.trim() ? Number(form.defaultPort.trim()) : null,
         default_username: form.defaultUsername.trim() || null,
         default_identity_id: form.defaultIdentityId || null,
       };
 
-      if (isEditing) {
-        await updateGroup(group!.id, payload);
+      if (group) {
+        await updateGroup(group.id, payload);
         addNotification('success', `Group "${payload.name}" updated`);
       } else {
         await addGroup(payload);
@@ -102,127 +126,111 @@ export const GroupForm: React.FC<GroupFormProps> = ({ open, onClose, group }) =>
   };
 
   return (
-    <Modal
-      open={open}
+    <Dialog
+      open
       onClose={onClose}
-      title={isEditing ? `Edit Group: ${group!.name}` : 'New Group'}
+      title={group ? `Edit ${group.name}` : 'New Group'}
+      dismissOnBackdrop={false}
       footer={
         <>
-          <button type="button" className="btn btn-ghost" onClick={onClose} disabled={saving}>
+          <Button variant="ghost" onClick={onClose} disabled={saving}>
             Cancel
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={handleSave}
-            disabled={saving}
-          >
-            {saving ? 'Saving...' : 'Save'}
-          </button>
+          </Button>
+          <Button type="submit" form={formId} variant="primary" loading={saving}>
+            {group ? 'Save Changes' : 'Create Group'}
+          </Button>
         </>
       }
     >
-      <div className="flex flex-col gap-4">
-        {/* Name + Icon */}
-        <div className="grid grid-cols-[1fr_80px] gap-3">
-          <FormField label="Name" required error={errors.name}>
-            <input
-              className="input"
-              value={form.name}
-              onChange={(e) => set('name', e.target.value)}
-              placeholder="Production Servers"
-            />
-          </FormField>
+      <form
+        id={formId}
+        ref={formRef}
+        noValidate
+        className="flex flex-col gap-6"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void handleSave();
+        }}
+      >
+        <div className="flex flex-col gap-3">
+          <div className="grid grid-cols-4 gap-3">
+            <Field label="Name" required error={errors.name} className="col-span-3">
+              <Input
+                value={form.name}
+                onChange={(e) => set('name', e.target.value)}
+                placeholder="Production Servers"
+                autoFocus
+              />
+            </Field>
+            <Field label="Icon" hint="Emoji or text">
+              <Input
+                value={form.icon}
+                onChange={(e) => set('icon', e.target.value)}
+                placeholder="📁"
+                maxLength={4}
+                className="text-center"
+              />
+            </Field>
+          </div>
 
-          <FormField label="Icon" helperText="Emoji or text">
-            <input
-              className="input text-center"
-              value={form.icon}
-              onChange={(e) => set('icon', e.target.value)}
-              placeholder="📁"
-              maxLength={4}
+          <Field label="Description">
+            <Textarea
+              rows={2}
+              value={form.description}
+              onChange={(e) => set('description', e.target.value)}
+              placeholder="Optional description..."
             />
-          </FormField>
+          </Field>
+
+          <Field label="Parent group">
+            <Select
+              value={form.parentId}
+              onChange={(e) => set('parentId', e.target.value)}
+              options={parentOptions}
+            />
+          </Field>
         </div>
 
-        {/* Description */}
-        <FormField label="Description">
-          <textarea
-            className="input resize-y"
-            rows={2}
-            value={form.description}
-            onChange={(e) => set('description', e.target.value)}
-            placeholder="Optional description..."
-          />
-        </FormField>
-
-        {/* Parent group */}
-        <FormField label="Parent Group">
-          <select
-            className="input"
-            value={form.parentId}
-            onChange={(e) => set('parentId', e.target.value)}
-          >
-            <option value="">None (top-level)</option>
-            {parentOptions.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.icon ? `${g.icon} ` : ''}{g.name}
-              </option>
-            ))}
-          </select>
-        </FormField>
-
-        {/* Defaults */}
-        <div
-          className="border rounded p-3 flex flex-col gap-3"
-          style={{ borderColor: 'var(--color-border)' }}
-        >
-          <span
-            className="text-[11px] font-medium uppercase tracking-wider"
-            style={{ color: 'var(--color-text-muted)' }}
-          >
-            Group Defaults (inherited by hosts)
-          </span>
+        <section aria-labelledby={defaultsId} className="flex flex-col gap-3">
+          <div className="flex flex-col gap-0.5">
+            <h3 id={defaultsId} className="text-body font-semibold text-fg">
+              Defaults for hosts
+            </h3>
+            <p className="text-body-sm text-fg-muted">
+              Hosts in this group use these when their own fields are empty.
+            </p>
+          </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <FormField label="Default Port" error={errors.defaultPort}>
-              <input
-                className="input"
-                type="number"
-                min={1}
-                max={65535}
+            <Field label="Default port" error={errors.defaultPort}>
+              <Input
+                code
+                inputMode="numeric"
                 value={form.defaultPort}
                 onChange={(e) => set('defaultPort', e.target.value)}
                 placeholder="22"
               />
-            </FormField>
-
-            <FormField label="Default Username">
-              <input
-                className="input"
+            </Field>
+            <Field label="Default username">
+              <Input
                 value={form.defaultUsername}
                 onChange={(e) => set('defaultUsername', e.target.value)}
                 placeholder="root"
+                spellCheck={false}
+                autoCapitalize="off"
               />
-            </FormField>
+            </Field>
           </div>
 
-          <FormField label="Default Identity">
-            <select
-              className="input"
+          <Field label="Default identity">
+            <Select
               value={form.defaultIdentityId}
               onChange={(e) => set('defaultIdentityId', e.target.value)}
-            >
-              <option value="">None</option>
-              {identities.map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.name}
-                </option>
-              ))}
-            </select>
-          </FormField>
-        </div>
-      </div>
-    </Modal>
+              options={identityOptions}
+            />
+          </Field>
+        </section>
+      </form>
+    </Dialog>
   );
-};
+}
