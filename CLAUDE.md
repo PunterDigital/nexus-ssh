@@ -64,7 +64,7 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   Tokens in `src/renderer/styles/tokens.css` (Tailwind 4 `@theme`: `bg-surface-raised`,
   `text-fg-muted`, `border-line-strong`, `text-body`, `shadow-popover`, …; spacing is Tailwind's
   4 px scale). Primitives in `src/renderer/components/ui` (Button, IconButton, Field, Input,
-  Select, Card, Dialog, Tabs, Toolbar, Menu, EmptyState). Themes change colours only: they set
+  PasswordInput, Textarea, Select, Card, Dialog, Tabs, Toolbar, Menu, EmptyState). Themes change colours only: they set
   the raw `--color-*` palette in `applyTheme()`, which also computes `--color-accent-fg` /
   `--color-danger-fg` for readable text on fills. ESLint bans hex, arbitrary values and inline
   styles in `components/ui/**`; add redesigned screen folders to that block. Gallery: URL hash
@@ -75,6 +75,10 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   Lock and Settings. Sidebar width/collapsed persist in app settings. The global `.input` class sets
   `width: 100%` (unlayered, so it beats `w-*`): size inputs with a wrapper. One terminal tab per
   host (`connectSession` reuses an open one), so E2E needing N tabs creates N hosts.
+- Lock screen (#2366): `LockScreen` + `CreateVaultDialog` share `vault/LockLayout.tsx` (backdrop that
+  scrolls when the window is short, card, logo, error). `Button` defaults to `secondary`: pass
+  `variant="primary"` for the main action. PIN unlock is UI only (no `unlockWithPin` in main;
+  `PinUnlockForm` is unreachable and `PinSetupDialog` unused): GroundStation card #2653.
 - Icons (#2374): Lucide only (`lucide-react`), always through `<Icon icon={Terminal} size={14} />`
   (`components/common/Icon.tsx`: default 14 px, stroke 2, `aria-hidden`). No hand-drawn `<svg>` icons
   and no emoji as icons. A brand logo Lucide doesn't ship (the GitHub mark) stays an `<svg data-logo>`.

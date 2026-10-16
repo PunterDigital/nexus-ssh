@@ -3,14 +3,26 @@ import { useVaultStore, useUIStore } from '../../stores';
 import { APP_NAME } from '../../../shared/constants';
 import { CreateVaultDialog } from './CreateVaultDialog';
 import { PinUnlockForm } from './PinUnlockForm';
-import { ChevronRight, Eye, EyeOff, LoaderCircle, LockKeyhole, SquareTerminal, Usb } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  LoaderCircle,
+  LockKeyhole,
+  Plus,
+  Usb,
+} from 'lucide-react';
 import { Icon } from '../common/Icon';
+import { Button, Field, PasswordInput, cx } from '../ui';
+import { LockCard, LockLayout, NexusLogo, UnlockError } from './LockLayout';
 
 // ============================================================
-// LockScreen — full-screen vault unlock / creation entry point
+// LockScreen — full-screen vault unlock / creation entry point (design system: #2366)
 // ============================================================
 
 type LockScreenMode = 'loading' | 'no-vault' | 'picker' | 'unlock' | 'create';
+
+const vaultDisplayName = (file: string) =>
+  (file.split(/[/\\]/).pop() ?? file).replace(/\.db$/, '');
 
 export function LockScreen(): React.ReactElement {
   const unlockVault = useVaultStore((s) => s.unlockVault);
@@ -22,8 +34,8 @@ export function LockScreen(): React.ReactElement {
 
   const [mode, setMode] = useState<LockScreenMode>('loading');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [shakeError, setShakeError] = useState(false);
+  // PIN unlock isn't wired up in the main process yet; nothing turns this on.
   const [usePinMode, setUsePinMode] = useState(false);
   const [vaultFiles, setVaultFiles] = useState<string[]>([]);
   const [selectedVaultPath, setSelectedVaultPath] = useState<string>('');
@@ -59,7 +71,9 @@ export function LockScreen(): React.ReactElement {
         if (!cancelled) setMode('no-vault');
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Trigger shake animation on error
@@ -116,14 +130,14 @@ export function LockScreen(): React.ReactElement {
       // Error is set in the store; shake animation handles UX
       setPassword('');
     }
-  }, [password, selectedVaultPath, vaultLoading, unlockVault, loadAll, setLockScreenVisible]);
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter') handleUnlock();
-    },
-    [handleUnlock],
-  );
+  }, [
+    password,
+    selectedVaultPath,
+    vaultLoading,
+    unlockVault,
+    loadAll,
+    setLockScreenVisible,
+  ]);
 
   const handleHardwareKeyUnlock = useCallback(async () => {
     if (!selectedVaultPath || vaultLoading) return;
@@ -149,12 +163,12 @@ export function LockScreen(): React.ReactElement {
   // --- Loading state ---
   if (mode === 'loading') {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-[var(--color-bg-secondary)]">
-        <div className="flex flex-col items-center gap-4">
+      <LockLayout>
+        <div className="flex flex-col items-center gap-4" aria-busy="true">
           <NexusLogo />
-          <Spinner />
+          <Icon icon={LoaderCircle} size={20} className="animate-spin text-accent" />
         </div>
-      </div>
+      </LockLayout>
     );
   }
 
@@ -175,280 +189,208 @@ export function LockScreen(): React.ReactElement {
   // --- Picker (multiple vaults) ---
   if (mode === 'picker') {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-[var(--color-bg-secondary)]">
-        <div className="flex w-[440px] flex-col gap-6 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-primary)] p-8 shadow-2xl animate-fade-in">
-          <div className="flex flex-col items-center gap-2">
+      <LockLayout>
+        <LockCard>
+          <div className="flex flex-col items-center gap-3 text-center">
             <NexusLogo />
-            <h1 className="text-xl font-bold text-[var(--color-text-primary)]">
-              Select a Vault
-            </h1>
-            <p className="text-xs text-[var(--color-text-muted)]">
-              You have {vaultFiles.length} {vaultFiles.length === 1 ? 'vault' : 'vaults'} in your
-              vault directory
+            <h1 className="text-heading font-semibold text-fg">Select a Vault</h1>
+            <p className="text-body-sm text-fg-muted">
+              You have {vaultFiles.length} {vaultFiles.length === 1 ? 'vault' : 'vaults'}{' '}
+              in your vault directory
             </p>
           </div>
 
-          <div className="flex max-h-80 flex-col gap-1 overflow-y-auto pr-1 scrollbar-hidden">
-            {vaultFiles.map((file) => {
-              const name = file.split(/[/\\]/).pop() ?? file;
-              return (
+          <ul className="flex max-h-80 flex-col gap-2 overflow-y-auto">
+            {vaultFiles.map((file) => (
+              <li key={file}>
                 <button
-                  key={file}
+                  type="button"
                   onClick={() => {
                     setSelectedVaultPath(file);
                     setMode('unlock');
                   }}
-                  className="flex items-center gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2.5 text-left transition-colors hover:border-[var(--color-accent)]/50 hover:bg-[var(--color-bg-tertiary)]"
+                  className={cx(
+                    'group flex w-full items-center gap-3 rounded-lg border border-line bg-surface-raised p-3 text-left',
+                    'transition-colors duration-(--duration-fast) ease-standard hover:border-line-strong hover:bg-surface-hover focus-ring-inset'
+                  )}
                 >
-                  <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md bg-[var(--color-accent)]/10">
-                    <Icon icon={LockKeyhole} size={16} color="var(--color-accent)" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-xs font-semibold text-[var(--color-text-primary)]">
-                      {name.replace(/\.db$/, '')}
-                    </div>
-                    <div className="truncate text-[10px] text-[var(--color-text-muted)]" title={file}>
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-accent-soft text-accent">
+                    <Icon icon={LockKeyhole} size={16} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-body font-semibold text-fg">
+                      {vaultDisplayName(file)}
+                    </span>
+                    <span
+                      className="block truncate font-code text-caption text-fg-muted"
+                      title={file}
+                    >
                       {file}
-                    </div>
-                  </div>
-                  <Icon icon={ChevronRight} size={10} color="var(--color-text-muted)" />
+                    </span>
+                  </span>
+                  <Icon
+                    icon={ChevronRight}
+                    size={14}
+                    className="shrink-0 text-fg-muted group-hover:text-fg"
+                  />
                 </button>
-              );
-            })}
-          </div>
+              </li>
+            ))}
+          </ul>
 
-          <div className="flex items-center justify-center border-t border-[var(--color-border)] pt-4">
-            <button
+          <div className="flex justify-center border-t border-line pt-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={Plus}
               onClick={() => setMode('create')}
-              className="text-xs text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-accent)]"
             >
               Create New Vault
-            </button>
+            </Button>
           </div>
-        </div>
-      </div>
+        </LockCard>
+      </LockLayout>
     );
   }
 
   // --- No vault exists ---
   if (mode === 'no-vault') {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-[var(--color-bg-secondary)]">
-        <div className="flex w-96 flex-col items-center gap-8 animate-fade-in">
-          <NexusLogo />
+      <LockLayout>
+        <div className="flex max-w-sm flex-col items-center gap-8 text-center animate-fade-in">
+          <NexusLogo size="lg" />
           <div className="flex flex-col items-center gap-2">
-            <h1 className="text-3xl font-bold tracking-tight text-[var(--color-text-primary)]">
+            <h1 className="text-display font-semibold tracking-tight text-fg">
               Welcome to {APP_NAME}
             </h1>
-            <p className="text-sm text-[var(--color-text-muted)]">
+            <p className="text-body-lg text-fg-muted">
               Secure SSH client with encrypted vault storage
             </p>
           </div>
-          <button
-            onClick={() => setMode('create')}
-            className="rounded-lg bg-[var(--color-accent)] px-6 py-3 text-sm font-semibold text-white transition-all hover:opacity-90 hover:shadow-lg hover:shadow-[var(--color-accent)]/20 active:scale-[0.98]"
-          >
+          <Button variant="primary" size="lg" onClick={() => setMode('create')}>
             Create Your First Vault
-          </button>
+          </Button>
         </div>
-      </div>
+      </LockLayout>
     );
   }
 
   // --- Unlock existing vault ---
+  const prompt = hwKeyPasswordless
+    ? 'Touch your hardware key to unlock'
+    : usePinMode
+      ? 'Enter your PIN to unlock'
+      : 'Enter password to unlock';
+
   return (
-    <div className="flex h-screen w-screen items-center justify-center bg-[var(--color-bg-secondary)]">
-      <div
-        className={`flex w-96 flex-col items-center gap-6 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-primary)] p-8 shadow-2xl animate-fade-in ${
-          shakeError ? 'animate-shake' : ''
-        }`}
-      >
-        {/* Branding */}
-        <div className="flex flex-col items-center gap-2">
+    <LockLayout>
+      <LockCard className={shakeError ? 'animate-shake' : undefined}>
+        <div className="flex flex-col items-center gap-3 text-center">
           <NexusLogo />
-          <h1 className="text-2xl font-bold tracking-tight text-[var(--color-text-primary)]">
-            {APP_NAME}
-          </h1>
-          <p className="text-sm text-[var(--color-text-muted)]">
-            {hwKeyPasswordless
-              ? 'Touch your hardware key to unlock'
-              : usePinMode
-                ? 'Enter your PIN to unlock'
-                : 'Enter password to unlock'}
-          </p>
+          <div className="flex flex-col items-center gap-1">
+            <h1 className="text-heading font-semibold tracking-tight text-fg">
+              {APP_NAME}
+            </h1>
+            {selectedVaultPath && (
+              <p
+                className="max-w-full truncate text-body font-medium text-fg-secondary"
+                title={selectedVaultPath}
+              >
+                {vaultDisplayName(selectedVaultPath)}
+              </p>
+            )}
+            <p className="text-body-sm text-fg-muted">{prompt}</p>
+          </div>
         </div>
 
-        {/* Selected vault name */}
-        {selectedVaultPath && (
-          <div className="w-full truncate text-center text-xs text-[var(--color-text-muted)]" title={selectedVaultPath}>
-            {(selectedVaultPath.split(/[/\\]/).pop() ?? '').replace(/\.db$/, '')}
-          </div>
-        )}
-
-        {/* Hardware-key-only (passwordless) vault */}
         {hwKeyPasswordless ? (
-          <>
-            <button
+          /* Hardware-key-only (passwordless) vault */
+          <div className="flex flex-col gap-3">
+            <Button
+              variant="primary"
+              size="lg"
+              fullWidth
+              icon={Usb}
+              loading={vaultLoading}
               onClick={handleHardwareKeyUnlock}
-              disabled={vaultLoading}
-              className="btn btn-primary flex w-full items-center justify-center gap-2 py-3"
             >
-              {vaultLoading ? (
-                <>
-                  <Spinner size={14} />
-                  Touch your key...
-                </>
-              ) : (
-                <>
-                  <HardwareKeyIcon />
-                  Unlock with Hardware Key
-                </>
-              )}
-            </button>
-            {vaultError && (
-              <div className="w-full rounded bg-[var(--color-danger)]/10 px-3 py-2 text-xs text-[var(--color-danger)]">
-                {vaultError}
-              </div>
-            )}
-          </>
+              {vaultLoading ? 'Touch your key…' : 'Unlock with Hardware Key'}
+            </Button>
+            <UnlockError message={vaultError} />
+          </div>
         ) : usePinMode ? (
-          /* PIN unlock */
           <PinUnlockForm
             onSuccess={handlePinSuccess}
             onSwitchToPassword={() => setUsePinMode(false)}
           />
         ) : (
-          <>
-            {/* Password input with show/hide */}
-            <div className="relative w-full">
-              <input
+          <form
+            className="flex flex-col gap-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleUnlock();
+            }}
+          >
+            <Field label="Master password">
+              <PasswordInput
                 ref={passwordRef}
-                type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                onKeyDown={handleKeyDown}
                 placeholder="Master password"
                 autoFocus
                 disabled={vaultLoading}
-                className="input w-full pr-10"
+                invalid={Boolean(vaultError)}
               />
-              <button
-                type="button"
-                onClick={() => setShowPassword((v) => !v)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text-primary)]"
-                tabIndex={-1}
-                title={showPassword ? 'Hide password' : 'Show password'}
-              >
-                {showPassword ? <EyeOffIcon /> : <EyeIcon />}
-              </button>
-            </div>
+            </Field>
 
-            {/* Error message */}
-            {vaultError && (
-              <div className="w-full rounded bg-[var(--color-danger)]/10 px-3 py-2 text-xs text-[var(--color-danger)]">
-                {vaultError}
-              </div>
-            )}
+            <UnlockError message={vaultError} />
 
-            {/* Unlock button */}
-            <button
-              onClick={handleUnlock}
-              disabled={vaultLoading || !password.trim()}
-              className="btn btn-primary w-full py-2.5"
+            <Button
+              type="submit"
+              variant="primary"
+              size="lg"
+              fullWidth
+              loading={vaultLoading}
+              disabled={!password.trim()}
             >
-              {vaultLoading ? (
-                <span className="flex items-center gap-2">
-                  <Spinner size={14} />
-                  Unlocking...
-                </span>
-              ) : (
-                'Unlock'
-              )}
-            </button>
+              {vaultLoading ? 'Unlocking…' : 'Unlock'}
+            </Button>
 
-            {/* Hardware-key alternative */}
             {hwKeyAvailable && (
-              <button
-                onClick={handleHardwareKeyUnlock}
+              <Button
+                variant="secondary"
+                fullWidth
+                icon={Usb}
                 disabled={vaultLoading}
-                className="btn btn-ghost flex w-full items-center justify-center gap-2 py-2"
+                onClick={handleHardwareKeyUnlock}
               >
-                <HardwareKeyIcon />
                 Use Hardware Key Instead
-              </button>
+              </Button>
             )}
-          </>
+          </form>
         )}
 
-        {/* Footer links */}
-        <div className="flex w-full flex-col items-center gap-2 border-t border-[var(--color-border)] pt-4">
-          {/* "Use PIN instead" link is hidden until PIN setup is exposed in settings */}
+        {/* Footer links. ("Use PIN instead" stays hidden until PIN unlock exists.) */}
+        <div className="flex flex-wrap items-center justify-center gap-2 border-t border-line pt-4">
           {vaultFiles.length > 1 && (
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={ChevronLeft}
               onClick={() => {
                 setPassword('');
                 setMode('picker');
               }}
-              className="text-xs text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-accent)]"
             >
-              ← Choose a different vault
-            </button>
+              Choose a different vault
+            </Button>
           )}
-          <button
-            onClick={() => setMode('create')}
-            className="text-xs text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-accent)]"
-          >
+          <Button variant="ghost" size="sm" icon={Plus} onClick={() => setMode('create')}>
             Create New Vault
-          </button>
+          </Button>
         </div>
-      </div>
-
-      {/* Inline style for shake animation */}
-      <style>{`
-        @keyframes shake {
-          0%, 100% { transform: translateX(0); }
-          10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }
-          20%, 40%, 60%, 80% { transform: translateX(4px); }
-        }
-        .animate-shake {
-          animation: shake 0.5s ease-in-out;
-        }
-      `}</style>
-    </div>
-  );
-}
-
-// ── Shared sub-components ────────────────────────────────────
-
-function NexusLogo(): React.ReactElement {
-  return (
-    <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[var(--color-accent)]/15">
-      <Icon icon={SquareTerminal} size={32} strokeWidth={1.5} color="var(--color-accent)" />
-    </div>
-  );
-}
-
-function Spinner({ size = 20 }: { size?: number }): React.ReactElement {
-  return (
-    <Icon icon={LoaderCircle} size={size} color="var(--color-accent)" className="animate-spin" />
-  );
-}
-
-function EyeIcon(): React.ReactElement {
-  return (
-    <Icon icon={Eye} size={16} />
-  );
-}
-
-function HardwareKeyIcon(): React.ReactElement {
-  return (
-    <Icon icon={Usb} size={16} />
-  );
-}
-
-function EyeOffIcon(): React.ReactElement {
-  return (
-    <Icon icon={EyeOff} size={16} />
+      </LockCard>
+    </LockLayout>
   );
 }
 

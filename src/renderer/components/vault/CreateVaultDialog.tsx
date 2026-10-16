@@ -1,11 +1,12 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { useVaultStore, useUIStore } from '../../stores';
-import { APP_NAME } from '../../../shared/constants';
-import { Eye, EyeOff, LoaderCircle, Star } from 'lucide-react';
+import { useVaultStore } from '../../stores';
+import { Check, LockKeyhole, Usb } from 'lucide-react';
 import { Icon } from '../common/Icon';
+import { Button, Field, Input, PasswordInput, Textarea, cx } from '../ui';
+import { LockCard, LockLayout, UnlockError } from './LockLayout';
 
 // ============================================================
-// CreateVaultDialog — full-screen vault creation flow
+// CreateVaultDialog — full-screen vault creation flow (design system: #2366)
 // ============================================================
 
 type PasswordStrength = 'weak' | 'fair' | 'good' | 'strong';
@@ -14,12 +15,11 @@ interface StrengthResult {
   level: PasswordStrength;
   score: number; // 0-4
   label: string;
-  color: string;
 }
 
-function calculatePasswordStrength(password: string): StrengthResult {
+export function calculatePasswordStrength(password: string): StrengthResult {
   if (!password) {
-    return { level: 'weak', score: 0, label: 'Weak', color: '#ff5555' };
+    return { level: 'weak', score: 0, label: 'Weak' };
   }
 
   let score = 0;
@@ -35,20 +35,63 @@ function calculatePasswordStrength(password: string): StrengthResult {
   const hasNumbers = /[0-9]/.test(password);
   const hasSymbols = /[^A-Za-z0-9]/.test(password);
 
-  const varietyCount = [hasUpper, hasLower, hasNumbers, hasSymbols].filter(Boolean).length;
+  const varietyCount = [hasUpper, hasLower, hasNumbers, hasSymbols].filter(
+    Boolean
+  ).length;
   score += varietyCount;
 
   // Map raw score to levels: 0-2=weak, 3=fair, 4-5=good, 6+=strong
-  if (score >= 6) {
-    return { level: 'strong', score: 4, label: 'Strong', color: '#50fa7b' };
-  }
-  if (score >= 4) {
-    return { level: 'good', score: 3, label: 'Good', color: '#f1fa8c' };
-  }
-  if (score >= 3) {
-    return { level: 'fair', score: 2, label: 'Fair', color: '#ffb86c' };
-  }
-  return { level: 'weak', score: 1, label: 'Weak', color: '#ff5555' };
+  if (score >= 6) return { level: 'strong', score: 4, label: 'Strong' };
+  if (score >= 4) return { level: 'good', score: 3, label: 'Good' };
+  if (score >= 3) return { level: 'fair', score: 2, label: 'Fair' };
+  return { level: 'weak', score: 1, label: 'Weak' };
+}
+
+// Strength colours are status tokens, so they follow the theme.
+const STRENGTH_TEXT: Record<PasswordStrength, string> = {
+  weak: 'text-danger',
+  fair: 'text-warning',
+  good: 'text-success',
+  strong: 'text-success',
+};
+const STRENGTH_FILL: Record<PasswordStrength, string> = {
+  weak: 'bg-danger',
+  fair: 'bg-warning',
+  good: 'bg-success',
+  strong: 'bg-success',
+};
+
+/** Four-segment meter: one segment per strength step. */
+function StrengthMeter({ strength }: { strength: StrengthResult }): React.ReactElement {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center justify-between text-caption">
+        <span className="text-fg-muted">Password strength</span>
+        <span className={cx('font-medium', STRENGTH_TEXT[strength.level])}>
+          {strength.label}
+        </span>
+      </div>
+      <div
+        className="grid grid-cols-4 gap-1"
+        role="meter"
+        aria-label="Password strength"
+        aria-valuemin={0}
+        aria-valuemax={4}
+        aria-valuenow={strength.score}
+        aria-valuetext={strength.label}
+      >
+        {[1, 2, 3, 4].map((step) => (
+          <span
+            key={step}
+            className={cx(
+              'h-1 rounded-full transition-colors duration-(--duration-base) ease-standard',
+              step <= strength.score ? STRENGTH_FILL[strength.level] : 'bg-surface-raised'
+            )}
+          />
+        ))}
+      </div>
+    </div>
+  );
 }
 
 interface CreateVaultDialogProps {
@@ -70,8 +113,6 @@ export function CreateVaultDialog({
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [description, setDescription] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
   const strength = useMemo(() => calculatePasswordStrength(password), [password]);
@@ -116,239 +157,161 @@ export function CreateVaultDialog({
     onSuccess,
   ]);
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter' && canCreate) handleCreate();
-    },
-    [canCreate, handleCreate],
-  );
-
   const displayError = localError || vaultError;
+  const tooWeak = password.length > 0 && strength.score < 2;
 
   return (
-    <div className="flex h-screen w-screen items-center justify-center bg-[var(--color-bg-secondary)]">
-      <div className="w-[460px] rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-primary)] p-8 shadow-2xl animate-slide-up">
+    <LockLayout>
+      <LockCard size="md" className="animate-slide-up">
         {/* Header */}
-        <div className="mb-6 flex flex-col items-center gap-2">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--color-accent)]/15">
-            <Icon icon={Star} size={24} color="var(--color-accent)" />
+        <div className="flex flex-col items-center gap-3 text-center">
+          <div className="flex size-12 items-center justify-center rounded-xl bg-accent-soft text-accent">
+            <Icon icon={LockKeyhole} size={24} />
           </div>
-          <h2 className="text-xl font-bold text-[var(--color-text-primary)]">
-            Create New Vault
-          </h2>
-          <p className="text-center text-xs text-[var(--color-text-muted)]">
-            Your vault encrypts all connections, keys, and credentials with Argon2id + SQLCipher.
+          <h1 className="text-heading font-semibold text-fg">Create New Vault</h1>
+          <p className="text-body-sm text-fg-muted">
+            Your vault encrypts all connections, keys, and credentials with Argon2id +
+            SQLCipher.
           </p>
         </div>
 
-        {/* Form */}
-        <div className="flex flex-col gap-4" onKeyDown={handleKeyDown}>
-          {/* Vault name */}
-          <div>
-            <label className="mb-1 block text-xs font-medium text-[var(--color-text-muted)]">
-              Vault Name
-            </label>
-            <input
-              type="text"
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void handleCreate();
+          }}
+        >
+          <Field label="Vault name" required>
+            <Input
               value={vaultName}
               onChange={(e) => setVaultName(e.target.value)}
               placeholder="My Vault"
               autoFocus
               disabled={vaultLoading}
-              className="input"
             />
-          </div>
+          </Field>
 
-          {/* Unlock method toggle */}
-          <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3">
-            <label className="flex cursor-pointer items-start gap-3">
-              <input
-                type="checkbox"
-                checked={useHardwareKey}
-                onChange={(e) => setUseHardwareKey(e.target.checked)}
-                disabled={vaultLoading}
-                className="mt-0.5 h-4 w-4 cursor-pointer accent-[var(--color-accent)]"
-              />
-              <div className="flex-1">
-                <div className="text-xs font-semibold text-[var(--color-text-primary)]">
-                  Passwordless — unlock with hardware key
-                </div>
-                <div className="mt-0.5 text-[11px] leading-snug text-[var(--color-text-muted)]">
-                  Use a FIDO2 security key (YubiKey 5+, Trezor Safe, etc.) as the only
-                  way to unlock this vault. The key never leaves your device, and the
-                  vault cannot be opened without it.
-                </div>
-              </div>
-            </label>
-          </div>
+          {/* Unlock method */}
+          <label
+            className={cx(
+              'flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors duration-(--duration-fast)',
+              useHardwareKey
+                ? 'border-accent bg-accent-soft'
+                : 'border-line bg-surface-sunken hover:border-line-strong'
+            )}
+          >
+            <input
+              type="checkbox"
+              checked={useHardwareKey}
+              onChange={(e) => setUseHardwareKey(e.target.checked)}
+              disabled={vaultLoading}
+              className="mt-0.5 size-4 shrink-0 cursor-pointer accent-accent focus-ring"
+            />
+            <span className="flex flex-col gap-0.5">
+              <span className="flex items-center gap-1.5 text-body font-medium text-fg">
+                <Icon icon={Usb} size={14} className="text-fg-muted" />
+                Passwordless — unlock with hardware key
+              </span>
+              <span className="text-body-sm text-fg-muted">
+                Use a FIDO2 security key (YubiKey 5+, Trezor Safe, etc.) as the only way
+                to unlock this vault. The key never leaves your device, and the vault
+                cannot be opened without it.
+              </span>
+            </span>
+          </label>
 
-          {/* Master password */}
-          {!useHardwareKey && (
-          <div>
-            <label className="mb-1 block text-xs font-medium text-[var(--color-text-muted)]">
-              Master Password
-            </label>
-            <div className="relative">
-              <input
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Choose a strong password"
-                disabled={vaultLoading}
-                className="input pr-10"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((v) => !v)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text-primary)]"
-                tabIndex={-1}
+          {useHardwareKey ? (
+            <p className="rounded-md bg-surface-sunken px-3 py-2 text-body-sm text-fg-secondary">
+              When you click{' '}
+              <strong className="font-semibold text-fg">Create with Hardware Key</strong>,
+              you'll be asked to insert and touch your security key. The key&apos;s PRF
+              extension produces the encryption secret — losing the key means losing the
+              vault, so consider enrolling a backup key later.
+            </p>
+          ) : (
+            <>
+              <Field
+                label="Master password"
+                required
+                hint={
+                  tooWeak
+                    ? 'Too weak to use: add length (12+) and mix letters, numbers and symbols.'
+                    : 'You need it to open the vault. It cannot be recovered.'
+                }
               >
-                <ToggleEyeIcon show={showPassword} />
-              </button>
-            </div>
+                <PasswordInput
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Choose a strong password"
+                  disabled={vaultLoading}
+                  autoComplete="new-password"
+                />
+              </Field>
+              {password.length > 0 && <StrengthMeter strength={strength} />}
 
-            {/* Strength meter */}
-            {password.length > 0 && (
-              <div className="mt-2">
-                <div className="mb-1 flex justify-between">
-                  <span className="text-xs text-[var(--color-text-muted)]">
-                    Password strength
-                  </span>
-                  <span className="text-xs font-medium" style={{ color: strength.color }}>
-                    {strength.label}
-                  </span>
-                </div>
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--color-bg-tertiary)]">
-                  <div
-                    className="h-full rounded-full transition-all duration-300 ease-out"
-                    style={{
-                      width: `${(strength.score / 4) * 100}%`,
-                      backgroundColor: strength.color,
-                    }}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-          )}
-
-          {/* Confirm password */}
-          {!useHardwareKey && (
-          <div>
-            <label className="mb-1 block text-xs font-medium text-[var(--color-text-muted)]">
-              Confirm Password
-            </label>
-            <div className="relative">
-              <input
-                type={showConfirm ? 'text' : 'password'}
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Repeat your password"
-                disabled={vaultLoading}
-                className="input pr-10"
-              />
-              <button
-                type="button"
-                onClick={() => setShowConfirm((v) => !v)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text-primary)]"
-                tabIndex={-1}
+              <Field
+                label="Confirm password"
+                required
+                error={
+                  confirmPassword.length > 0 && !passwordsMatch
+                    ? 'Passwords do not match'
+                    : undefined
+                }
               >
-                <ToggleEyeIcon show={showConfirm} />
-              </button>
-            </div>
-            {confirmPassword.length > 0 && !passwordsMatch && (
-              <p className="mt-1 text-xs text-[var(--color-danger)]">
-                Passwords do not match
-              </p>
-            )}
-            {passwordsMatch && (
-              <p className="mt-1 text-xs text-[var(--color-success)]">
-                Passwords match
-              </p>
-            )}
-          </div>
+                <PasswordInput
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Repeat your password"
+                  disabled={vaultLoading}
+                  autoComplete="new-password"
+                />
+              </Field>
+              {passwordsMatch && (
+                <p className="-mt-2 flex items-center gap-1 text-caption text-success">
+                  <Icon icon={Check} size={12} />
+                  Passwords match
+                </p>
+              )}
+            </>
           )}
 
-          {useHardwareKey && (
-            <div className="rounded bg-[var(--color-accent)]/10 px-3 py-2 text-[11px] leading-snug text-[var(--color-text-secondary)]">
-              When you click <strong>Create Vault</strong>, your browser will ask
-              you to insert and touch your security key. The key&apos;s PRF
-              extension produces the encryption secret — losing the key means
-              losing the vault, so consider enrolling a backup key later.
-            </div>
-          )}
-
-          {/* Description (optional) */}
-          <div>
-            <label className="mb-1 block text-xs font-medium text-[var(--color-text-muted)]">
-              Description{' '}
-              <span className="text-[var(--color-text-muted)]">(optional)</span>
-            </label>
-            <textarea
+          <Field label="Description" hint="Optional.">
+            <Textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Personal servers, work infrastructure..."
               rows={2}
               disabled={vaultLoading}
-              className="input resize-none"
+              className="resize-none"
             />
-          </div>
+          </Field>
 
-          {/* Error display */}
-          {displayError && (
-            <div className="rounded bg-[var(--color-danger)]/10 px-3 py-2 text-xs text-[var(--color-danger)]">
-              {displayError}
-            </div>
-          )}
+          <UnlockError message={displayError} />
 
-          {/* Buttons */}
-          <div className="flex gap-3 pt-2">
-            <button
-              onClick={onBack}
-              disabled={vaultLoading}
-              className="btn btn-ghost flex-1 py-2.5"
-            >
+          <div className="grid grid-cols-2 gap-3 pt-2">
+            <Button variant="ghost" size="lg" onClick={onBack} disabled={vaultLoading}>
               Back
-            </button>
-            <button
-              onClick={handleCreate}
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              size="lg"
+              loading={vaultLoading}
               disabled={!canCreate}
-              className="btn btn-primary flex-1 py-2.5"
             >
-              {vaultLoading ? (
-                <span className="flex items-center gap-2">
-                  <SpinnerSmall />
-                  {useHardwareKey ? 'Touch your key...' : 'Creating...'}
-                </span>
-              ) : useHardwareKey ? (
-                'Create with Hardware Key'
-              ) : (
-                'Create Vault'
-              )}
-            </button>
+              {vaultLoading
+                ? useHardwareKey
+                  ? 'Touch your key…'
+                  : 'Creating…'
+                : useHardwareKey
+                  ? 'Create with Hardware Key'
+                  : 'Create Vault'}
+            </Button>
           </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Helper components ────────────────────────────────────────
-
-function ToggleEyeIcon({ show }: { show: boolean }): React.ReactElement {
-  if (show) {
-    return (
-      <Icon icon={EyeOff} size={16} />
-    );
-  }
-  return (
-    <Icon icon={Eye} size={16} />
-  );
-}
-
-function SpinnerSmall(): React.ReactElement {
-  return (
-    <Icon icon={LoaderCircle} size={14} className="animate-spin" />
+        </form>
+      </LockCard>
+    </LockLayout>
   );
 }
 

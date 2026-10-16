@@ -17,7 +17,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { BUNDLED_THEMES, applyTheme, getThemeById } from '../../styles/themes';
-import { Button, Card, Dialog, EmptyState, Field, IconButton, Input, Menu, Select, Tabs, Toolbar, ToolbarSeparator } from '.';
+import { Button, Card, Dialog, EmptyState, Field, IconButton, Input, Menu, PasswordInput, Select, Textarea, Tabs, Toolbar, ToolbarSeparator } from '.';
 
 // Living reference for docs/design-system.md: every token and primitive in every state.
 // Open it with the app's URL hash #design-system (dev: http://localhost:5173/#design-system;
@@ -258,6 +258,12 @@ export function DesignSystemGallery() {
             </Field>
             <Field label="Small">
               <Input size="sm" placeholder="Filter" />
+            </Field>
+            <Field label="Password" hint="Show / hide is a real, focusable button.">
+              <PasswordInput placeholder="Master password" defaultValue="correct horse" />
+            </Field>
+            <Field label="Notes" hint="Textarea: same look as Input, grows on request.">
+              <Textarea placeholder="Personal servers, work infrastructure..." rows={2} />
             </Field>
           </div>
         </Section>

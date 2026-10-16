@@ -131,6 +131,8 @@ Import from `components/ui`. Each one is in the gallery in every state.
 | `IconButton` | Icon-only actions | `label` is required: it's the accessible name and the tooltip. `pressed` for toggles (`aria-pressed`). Square 24/32/40 |
 | `Field` | Label + control + hint/error | Wraps one control and wires `id`, `aria-describedby`, `aria-invalid`, `required` into it. `aside` for "Inherited from …" |
 | `Input` | Single-line text | `leadingIcon`, `code` (monospace), `size` sm/md, `invalid` |
+| `PasswordInput` | Secrets (master password, host passwords) | Input + a focusable show / hide toggle ("Show password", `aria-pressed`). `autoComplete` defaults to off |
+| `Textarea` | Multi-line text (notes, commands) | Styled like Input, wired by `Field`; `code` for monospace |
 | `Select` | Choosing one option | Native `<select>` styled like Input (free keyboard and screen-reader support) |
 | `Card` | A group of related content | Optional `title`, `description`, `actions`; `padding` |
 | `Dialog` | Modal tasks and confirmations | Focus moves in and is trapped, Escape closes, focus returns to the opener. `footer` buttons right-aligned, primary last. `dismissOnBackdrop={false}` for forms |
