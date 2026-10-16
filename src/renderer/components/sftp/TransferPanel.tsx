@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import type { TransferItem } from '../../../shared/types';
 import { useSFTPStore } from '../../stores/sftp-store';
+import { ChevronRight, CirclePause, CirclePlay, X } from 'lucide-react';
+import { Icon } from '../common/Icon';
 
 // ============================================================
 // TransferPanel — collapsible transfer queue at the bottom
@@ -159,13 +161,9 @@ const TransferRow: React.FC<TransferRowProps> = ({ transfer }) => {
             title={transfer.status === 'active' ? 'Pause' : 'Resume'}
           >
             {transfer.status === 'active' ? (
-              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-              </svg>
+              <Icon icon={CirclePause} size={12} />
             ) : (
-              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-              </svg>
+              <Icon icon={CirclePlay} size={12} />
             )}
           </button>
         )}
@@ -176,9 +174,7 @@ const TransferRow: React.FC<TransferRowProps> = ({ transfer }) => {
             title="Cancel"
             style={{ color: 'var(--color-danger)' }}
           >
-            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <Icon icon={X} size={12} />
           </button>
         )}
       </div>
@@ -221,13 +217,7 @@ export const TransferPanel: React.FC = () => {
           className="flex flex-1 items-center gap-2 text-left"
           onClick={() => setCollapsed((c) => !c)}
         >
-          <svg
-            className={`w-3 h-3 transition-transform ${collapsed ? '' : 'rotate-90'}`}
-            fill="currentColor"
-            viewBox="0 0 20 20"
-          >
-            <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
-          </svg>
+          <Icon icon={ChevronRight} size={12} className={`transition-transform ${collapsed ? '' : 'rotate-90'}`} />
           <span>
             Transfers
             {remaining > 0 && (

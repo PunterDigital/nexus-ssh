@@ -3,6 +3,8 @@ import { useUIStore, useVaultStore, useTerminalStore } from '../../stores';
 import type { ViewType } from '../../stores';
 import type { Snippet } from '../../../shared/types';
 import { SyncStatusBadge } from './SyncStatusBadge';
+import { ChevronDown, ChevronLeft, ChevronRight, Code, KeyRound, Lock, Play, Server } from 'lucide-react';
+import { Icon } from '../common/Icon';
 
 // ============================================================
 // Sidebar — nav + quick snippet dropdown
@@ -95,34 +97,21 @@ export const Sidebar: React.FC = () => {
       key: 'connections',
       label: 'Hosts',
       icon: (
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="1.5" y="2" width="11" height="4" rx="0.5" />
-          <rect x="1.5" y="8" width="11" height="4" rx="0.5" />
-          <circle cx="3.5" cy="4" r="0.5" fill="currentColor" />
-          <circle cx="3.5" cy="10" r="0.5" fill="currentColor" />
-        </svg>
+        <Icon icon={Server} size={14} />
       ),
     },
     {
       key: 'keychain',
       label: 'Keychain',
       icon: (
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
-          <rect x="1" y="5" width="12" height="8" rx="1.5" />
-          <path d="M4 5V3.5a3 3 0 0 1 6 0V5" />
-          <circle cx="7" cy="9" r="1" />
-        </svg>
+        <Icon icon={KeyRound} size={14} />
       ),
     },
     {
       key: 'snippets',
       label: 'Snippets',
       icon: (
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
-          <polyline points="4,4 1,7 4,10" />
-          <polyline points="10,4 13,7 10,10" />
-          <line x1="8.5" y1="2" x2="5.5" y2="12" />
-        </svg>
+        <Icon icon={Code} size={14} />
       ),
     },
   ];
@@ -136,9 +125,7 @@ export const Sidebar: React.FC = () => {
           className="flex h-10 items-center justify-center text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text-primary)]"
           title="Expand sidebar"
         >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <polyline points="5,3 10,7 5,11" />
-          </svg>
+          <Icon icon={ChevronRight} size={14} />
         </button>
       </div>
     );
@@ -157,14 +144,9 @@ export const Sidebar: React.FC = () => {
             title="Vault menu"
             className="flex w-full min-w-0 items-center gap-1.5 rounded px-1.5 py-0.5 text-left text-[11px] font-semibold text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]"
           >
-            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" className="flex-shrink-0">
-              <rect x="2" y="6" width="12" height="8" rx="1.5" />
-              <path d="M5 6V4a3 3 0 0 1 6 0v2" />
-            </svg>
+            <Icon icon={Lock} size={11} className="flex-shrink-0" />
             <span className="truncate">{vaultName || 'Vault'}</span>
-            <svg width="8" height="8" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="flex-shrink-0 opacity-60">
-              <polyline points="2,4 5,7 8,4" />
-            </svg>
+            <Icon icon={ChevronDown} size={8} className="flex-shrink-0 opacity-60" />
           </button>
           {vaultMenuOpen && (
             <div
@@ -190,9 +172,7 @@ export const Sidebar: React.FC = () => {
           className="rounded p-0.5 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]"
           title="Collapse sidebar"
         >
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <polyline points="8,2 3,6 8,10" />
-          </svg>
+          <Icon icon={ChevronLeft} size={12} />
         </button>
       </div>
 
@@ -225,23 +205,14 @@ export const Sidebar: React.FC = () => {
             className="flex w-full items-center justify-between rounded-md px-3 py-2 text-xs font-medium text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             <span className="flex items-center gap-2.5">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                <polygon points="3,2 3,12 11,7" fill="currentColor" stroke="none" />
-              </svg>
+              <Icon icon={Play} size={14} fill="currentColor" />
               Run Snippet
             </span>
-            <svg
-              width="10"
-              height="10"
-              viewBox="0 0 10 10"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
+            <Icon
+              icon={ChevronDown}
+              size={10}
               className={`transition-transform ${snippetsOpen ? 'rotate-180' : ''}`}
-            >
-              <polyline points="2,4 5,7 8,4" />
-            </svg>
+            />
           </button>
 
           {/* Dropdown panel */}

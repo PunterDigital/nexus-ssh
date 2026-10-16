@@ -1,6 +1,8 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { useVaultStore, useUIStore } from '../../stores';
 import { APP_NAME } from '../../../shared/constants';
+import { Eye, EyeOff, LoaderCircle, Star } from 'lucide-react';
+import { Icon } from '../common/Icon';
 
 // ============================================================
 // CreateVaultDialog — full-screen vault creation flow
@@ -129,18 +131,7 @@ export function CreateVaultDialog({
         {/* Header */}
         <div className="mb-6 flex flex-col items-center gap-2">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--color-accent)]/15">
-            <svg
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="var(--color-accent)"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z" />
-            </svg>
+            <Icon icon={Star} size={24} color="var(--color-accent)" />
           </div>
           <h2 className="text-xl font-bold text-[var(--color-text-primary)]">
             Create New Vault
@@ -347,45 +338,17 @@ export function CreateVaultDialog({
 function ToggleEyeIcon({ show }: { show: boolean }): React.ReactElement {
   if (show) {
     return (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M6.6 6.6a2 2 0 0 0 2.8 2.8" />
-        <path d="M1 1l14 14" />
-        <path d="M4.3 4.3C2.6 5.5 1 8 1 8s2.5 5 7 5c1.3 0 2.5-.4 3.5-1" />
-        <path d="M13 11.7C14.3 10.4 15 8 15 8s-2.5-5-7-5c-.5 0-1 .1-1.5.2" />
-      </svg>
+      <Icon icon={EyeOff} size={16} />
     );
   }
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z" />
-      <circle cx="8" cy="8" r="2" />
-    </svg>
+    <Icon icon={Eye} size={16} />
   );
 }
 
 function SpinnerSmall(): React.ReactElement {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="animate-spin">
-      <circle
-        cx="12"
-        cy="12"
-        r="10"
-        stroke="currentColor"
-        strokeWidth="3"
-        strokeDasharray="31.4 31.4"
-        strokeLinecap="round"
-        opacity="0.3"
-      />
-      <circle
-        cx="12"
-        cy="12"
-        r="10"
-        stroke="currentColor"
-        strokeWidth="3"
-        strokeDasharray="15.7 47.1"
-        strokeLinecap="round"
-      />
-    </svg>
+    <Icon icon={LoaderCircle} size={14} className="animate-spin" />
   );
 }
 

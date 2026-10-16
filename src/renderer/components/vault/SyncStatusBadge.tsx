@@ -1,5 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { useSyncStatus } from '../../hooks';
+import { Check, Minus, RefreshCw, X } from 'lucide-react';
+import { Icon } from '../common/Icon';
 
 // ============================================================
 // SyncStatusBadge — shows current sync state
@@ -40,61 +42,14 @@ export const SyncStatusBadge: React.FC = () => {
   const renderIcon = () => {
     switch (state) {
       case 'syncing':
-        return (
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 12 12"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            className="animate-spin text-[var(--color-accent)]"
-          >
-            <path d="M6 1v2M6 9v2M1 6h2M9 6h2" />
-            <path d="M2.4 2.4l1.4 1.4M8.2 8.2l1.4 1.4" opacity="0.5" />
-          </svg>
-        );
+        return <Icon icon={RefreshCw} size={12} className="animate-spin text-[var(--color-accent)]" />;
       case 'synced':
-        return (
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 12 12"
-            fill="none"
-            stroke="var(--color-success)"
-            strokeWidth="1.5"
-          >
-            <polyline points="2.5,6 5,8.5 9.5,3.5" />
-          </svg>
-        );
+        return <Icon icon={Check} size={12} color="var(--color-success)" />;
       case 'error':
-        return (
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 12 12"
-            fill="none"
-            stroke="var(--color-danger)"
-            strokeWidth="1.5"
-          >
-            <line x1="3" y1="3" x2="9" y2="9" />
-            <line x1="9" y1="3" x2="3" y2="9" />
-          </svg>
-        );
+        return <Icon icon={X} size={12} color="var(--color-danger)" />;
       case 'disabled':
       default:
-        return (
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 12 12"
-            fill="none"
-            stroke="var(--color-text-muted)"
-            strokeWidth="1.5"
-          >
-            <line x1="3" y1="6" x2="9" y2="6" />
-          </svg>
-        );
+        return <Icon icon={Minus} size={12} color="var(--color-text-muted)" />;
     }
   };
 

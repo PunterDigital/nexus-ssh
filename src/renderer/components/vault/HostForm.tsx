@@ -4,6 +4,8 @@ import { ColourPicker } from '../common/ColourPicker';
 import { useVaultStore } from '../../stores/vault-store';
 import { useUIStore } from '../../stores/ui-store';
 import type { Host, OSType } from '../../../shared/types';
+import { ChevronDown } from 'lucide-react';
+import { Icon } from '../common/Icon';
 
 // ============================================================
 // HostForm — Single-column scrollable host create/edit form
@@ -590,18 +592,11 @@ function Accordion({
         className="flex w-full items-center justify-between px-3 py-2 text-xs font-medium text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text-primary)]"
       >
         {label}
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 12 12"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
+        <Icon
+          icon={ChevronDown}
+          size={12}
           className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
-        >
-          <polyline points="3,4.5 6,7.5 9,4.5" />
-        </svg>
+        />
       </button>
       {open && (
         <div className="border-t border-[var(--color-border)] px-3 py-3">

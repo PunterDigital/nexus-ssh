@@ -5,6 +5,8 @@ import type { Vault, Group, Host } from '../../../shared/types';
 import { TreeNode } from './TreeNode';
 import { ContextMenu } from './ContextMenu';
 import type { ContextMenuEntry } from './ContextMenu';
+import { Copy, Folder, Pencil, Plus, Terminal, Trash2 } from 'lucide-react';
+import { Icon } from '../common/Icon';
 
 // ============================================================
 // VaultTree — hierarchical vault > group > host tree
@@ -313,42 +315,12 @@ export const VaultTree: React.FC<VaultTreeProps> = ({ filterText }) => {
     if (!contextMenu) return [];
     const { node } = contextMenu;
 
-    const iconPlus = (
-      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <line x1="6" y1="2" x2="6" y2="10" />
-        <line x1="2" y1="6" x2="10" y2="6" />
-      </svg>
-    );
-    const iconEdit = (
-      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <path d="M8.5 1.5l2 2L4 10H2v-2L8.5 1.5z" />
-      </svg>
-    );
-    const iconTrash = (
-      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <polyline points="2,3 10,3" />
-        <path d="M3 3v7a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1V3" />
-        <line x1="5" y1="5" x2="5" y2="9" />
-        <line x1="7" y1="5" x2="7" y2="9" />
-      </svg>
-    );
-    const iconConnect = (
-      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <polyline points="3,4 6,7 3,10" />
-        <line x1="6" y1="7" x2="10" y2="7" />
-      </svg>
-    );
-    const iconCopy = (
-      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <rect x="4" y="4" width="6" height="6" rx="1" />
-        <path d="M8 4V3a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h1" />
-      </svg>
-    );
-    const iconFolder = (
-      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <path d="M2 4V3a1 1 0 0 1 1-1h2.5L7 3.5h2a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4z" />
-      </svg>
-    );
+    const iconPlus = <Icon icon={Plus} size={12} />;
+    const iconEdit = <Icon icon={Pencil} size={12} />;
+    const iconTrash = <Icon icon={Trash2} size={12} />;
+    const iconConnect = <Icon icon={Terminal} size={12} />;
+    const iconCopy = <Icon icon={Copy} size={12} />;
+    const iconFolder = <Icon icon={Folder} size={12} />;
 
     switch (node.type) {
       case 'vault':

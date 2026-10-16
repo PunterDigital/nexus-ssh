@@ -3,6 +3,8 @@ import { useVaultStore, useUIStore } from '../../stores';
 import { APP_NAME } from '../../../shared/constants';
 import { CreateVaultDialog } from './CreateVaultDialog';
 import { PinUnlockForm } from './PinUnlockForm';
+import { ChevronRight, Eye, EyeOff, LoaderCircle, LockKeyhole, SquareTerminal, Usb } from 'lucide-react';
+import { Icon } from '../common/Icon';
 
 // ============================================================
 // LockScreen — full-screen vault unlock / creation entry point
@@ -199,11 +201,7 @@ export function LockScreen(): React.ReactElement {
                   className="flex items-center gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2.5 text-left transition-colors hover:border-[var(--color-accent)]/50 hover:bg-[var(--color-bg-tertiary)]"
                 >
                   <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md bg-[var(--color-accent)]/10">
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--color-accent)" strokeWidth="1.5">
-                      <rect x="2" y="6" width="12" height="8" rx="1.5" />
-                      <path d="M5 6V4a3 3 0 0 1 6 0v2" />
-                      <circle cx="8" cy="10" r="1" />
-                    </svg>
+                    <Icon icon={LockKeyhole} size={16} color="var(--color-accent)" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-xs font-semibold text-[var(--color-text-primary)]">
@@ -213,9 +211,7 @@ export function LockScreen(): React.ReactElement {
                       {file}
                     </div>
                   </div>
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--color-text-muted)" strokeWidth="1.5" strokeLinecap="round">
-                    <polyline points="3,2 7,5 3,8" />
-                  </svg>
+                  <Icon icon={ChevronRight} size={10} color="var(--color-text-muted)" />
                 </button>
               );
             })}
@@ -427,85 +423,32 @@ export function LockScreen(): React.ReactElement {
 function NexusLogo(): React.ReactElement {
   return (
     <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[var(--color-accent)]/15">
-      <svg
-        width="32"
-        height="32"
-        viewBox="0 0 32 32"
-        fill="none"
-        stroke="var(--color-accent)"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <rect x="4" y="8" width="24" height="18" rx="2" />
-        <polyline points="10,16 14,20 10,24" />
-        <line x1="18" y1="24" x2="24" y2="24" />
-      </svg>
+      <Icon icon={SquareTerminal} size={32} strokeWidth={1.5} color="var(--color-accent)" />
     </div>
   );
 }
 
 function Spinner({ size = 20 }: { size?: number }): React.ReactElement {
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      className="animate-spin"
-    >
-      <circle
-        cx="12"
-        cy="12"
-        r="10"
-        stroke="var(--color-accent)"
-        strokeWidth="3"
-        strokeDasharray="31.4 31.4"
-        strokeLinecap="round"
-        opacity="0.3"
-      />
-      <circle
-        cx="12"
-        cy="12"
-        r="10"
-        stroke="var(--color-accent)"
-        strokeWidth="3"
-        strokeDasharray="15.7 47.1"
-        strokeLinecap="round"
-      />
-    </svg>
+    <Icon icon={LoaderCircle} size={size} color="var(--color-accent)" className="animate-spin" />
   );
 }
 
 function EyeIcon(): React.ReactElement {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z" />
-      <circle cx="8" cy="8" r="2" />
-    </svg>
+    <Icon icon={Eye} size={16} />
   );
 }
 
 function HardwareKeyIcon(): React.ReactElement {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="1.5" y="5" width="9" height="6" rx="1.5" />
-      <circle cx="11.5" cy="8" r="2.25" />
-      <path d="M11.5 8h-1" />
-      <path d="M3.5 8h.01" />
-      <path d="M5.5 8h.01" />
-    </svg>
+    <Icon icon={Usb} size={16} />
   );
 }
 
 function EyeOffIcon(): React.ReactElement {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M6.6 6.6a2 2 0 0 0 2.8 2.8" />
-      <path d="M1 1l14 14" />
-      <path d="M4.3 4.3C2.6 5.5 1 8 1 8s2.5 5 7 5c1.3 0 2.5-.4 3.5-1" />
-      <path d="M13 11.7C14.3 10.4 15 8 15 8s-2.5-5-7-5c-.5 0-1 .1-1.5.2" />
-    </svg>
+    <Icon icon={EyeOff} size={16} />
   );
 }
 

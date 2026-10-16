@@ -3,6 +3,8 @@ import { useTerminalStore } from '../../stores/terminal-store';
 import { useUIStore } from '../../stores/ui-store';
 import { TerminalInstance } from './TerminalInstance';
 import { ConnectionStatus } from './ConnectionStatus';
+import { SquareTerminal } from 'lucide-react';
+import { Icon } from '../common/Icon';
 
 // ============================================================
 // TerminalView — renders all terminal instances, showing only
@@ -33,19 +35,7 @@ export const TerminalView: React.FC = () => {
     return (
       <div className="flex flex-1 items-center justify-center bg-[var(--color-bg-primary)]">
         <div className="flex flex-col items-center gap-3 text-[var(--color-text-muted)]">
-          <svg
-            width="48"
-            height="48"
-            viewBox="0 0 48 48"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            className="opacity-30"
-          >
-            <rect x="4" y="8" width="40" height="32" rx="3" />
-            <polyline points="12,20 18,26 12,32" />
-            <line x1="22" y1="32" x2="36" y2="32" />
-          </svg>
+          <Icon icon={SquareTerminal} size={48} strokeWidth={1.5} className="opacity-30" />
           <span className="text-sm">No active terminal</span>
           <span className="text-xs">
             Connect to a host or use Quick Connect to start a session

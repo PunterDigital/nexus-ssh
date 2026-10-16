@@ -5,6 +5,25 @@ import { BreadcrumbPath } from './BreadcrumbPath';
 import { DragDropOverlay } from './DragDropOverlay';
 import { ContextMenu, type ContextMenuEntry } from '../vault/ContextMenu';
 import { ChmodDialog } from './ChmodDialog';
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronUp,
+  Eye,
+  EyeOff,
+  File,
+  FileArchive,
+  FileCode,
+  FileCog,
+  FileImage,
+  FileSymlink,
+  FileText,
+  Folder,
+  FolderOpen,
+  RefreshCw,
+  type LucideIcon,
+} from 'lucide-react';
+import { Icon } from '../common/Icon';
 
 // ============================================================
 // FilePane — reusable file browser pane (local or remote)
@@ -53,10 +72,10 @@ function permissionsToString(mode: number): string {
   return result;
 }
 
-/** Map file extensions to icon labels for visual distinction */
-function getFileIcon(entry: SFTPEntry): string {
-  if (entry.isDirectory) return '\uD83D\uDCC1'; // folder
-  if (entry.isSymlink) return '\uD83D\uDD17'; // link
+/** Map file extensions to an icon (and colour) so file types are easy to tell apart. */
+function getFileIcon(entry: SFTPEntry): { icon: LucideIcon; color: string } {
+  if (entry.isDirectory) return { icon: Folder, color: 'var(--color-warning)' };
+  if (entry.isSymlink) return { icon: FileSymlink, color: 'var(--color-accent)' };
 
   const ext = entry.filename.split('.').pop()?.toLowerCase() ?? '';
   const codeExts = ['js', 'ts', 'jsx', 'tsx', 'py', 'rb', 'go', 'rs', 'c', 'cpp', 'h', 'java', 'cs', 'sh', 'bash', 'zsh', 'ps1'];
@@ -65,12 +84,13 @@ function getFileIcon(entry: SFTPEntry): string {
   const archiveExts = ['zip', 'tar', 'gz', 'bz2', 'xz', 'rar', '7z', 'tgz'];
   const imageExts = ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico', 'bmp'];
 
-  if (codeExts.includes(ext)) return '\uD83D\uDCDD'; // code memo
-  if (configExts.includes(ext)) return '\u2699\uFE0F'; // gear
-  if (textExts.includes(ext)) return '\uD83D\uDCC4'; // page
-  if (archiveExts.includes(ext)) return '\uD83D\uDCE6'; // package
-  if (imageExts.includes(ext)) return '\uD83D\uDDBC\uFE0F'; // picture
-  return '\uD83D\uDCC4'; // generic file
+  const muted = 'var(--color-text-muted)';
+  if (codeExts.includes(ext)) return { icon: FileCode, color: muted };
+  if (configExts.includes(ext)) return { icon: FileCog, color: muted };
+  if (textExts.includes(ext)) return { icon: FileText, color: muted };
+  if (archiveExts.includes(ext)) return { icon: FileArchive, color: muted };
+  if (imageExts.includes(ext)) return { icon: FileImage, color: muted };
+  return { icon: File, color: muted };
 }
 
 function joinPath(base: string, name: string, side: 'local' | 'remote'): string {
@@ -144,17 +164,7 @@ const SkeletonRow: React.FC = () => (
 const SortArrow: React.FC<{ active: boolean; direction: 'asc' | 'desc' }> = ({ active, direction }) => {
   if (!active) return null;
   return (
-    <svg
-      className="w-3 h-3 inline-block ml-0.5"
-      fill="currentColor"
-      viewBox="0 0 20 20"
-    >
-      {direction === 'asc' ? (
-        <path fillRule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clipRule="evenodd" />
-      ) : (
-        <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-      )}
-    </svg>
+    <Icon icon={direction === 'asc' ? ChevronUp : ChevronDown} size={12} className="inline-block ml-0.5" />
   );
 };
 
@@ -494,9 +504,7 @@ export const FilePane: React.FC<FilePaneProps> = ({ side }) => {
           onClick={handleGoParent}
           title="Go to parent directory"
         >
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-          </svg>
+          <Icon icon={ChevronLeft} size={14} />
         </button>
 
         {/* Breadcrumb */}
@@ -508,13 +516,7 @@ export const FilePane: React.FC<FilePaneProps> = ({ side }) => {
           onClick={toggleHidden}
           title={showHidden ? 'Hide hidden files' : 'Show hidden files'}
         >
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            {showHidden ? (
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-            ) : (
-              <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-            )}
-          </svg>
+          <Icon icon={showHidden ? Eye : EyeOff} size={14} />
         </button>
 
         {/* Refresh */}
@@ -523,9 +525,7 @@ export const FilePane: React.FC<FilePaneProps> = ({ side }) => {
           onClick={() => refresh()}
           title="Refresh"
         >
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
+          <Icon icon={RefreshCw} size={14} />
         </button>
       </div>
 
@@ -558,16 +558,7 @@ export const FilePane: React.FC<FilePaneProps> = ({ side }) => {
         ) : files.length === 0 ? (
           // Empty state
           <div className="flex flex-col items-center justify-center h-full gap-2">
-            <svg
-              className="w-10 h-10"
-              style={{ color: 'var(--color-text-muted)' }}
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={1}
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-            </svg>
+            <Icon icon={FolderOpen} size={40} strokeWidth={1.25} color="var(--color-text-muted)" />
             <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
               This folder is empty
             </span>
@@ -576,6 +567,7 @@ export const FilePane: React.FC<FilePaneProps> = ({ side }) => {
           files.map((entry, index) => {
             const isSelected = selected.includes(entry.filename);
             const isRenaming = renameTarget?.entry.filename === entry.filename;
+            const fileIcon = getFileIcon(entry);
 
             return (
               <div
@@ -596,8 +588,8 @@ export const FilePane: React.FC<FilePaneProps> = ({ side }) => {
                 onDragStart={(e) => handleDragStart(e, entry)}
               >
                 {/* Icon */}
-                <span className="w-7 flex-shrink-0 text-center text-sm">
-                  {getFileIcon(entry)}
+                <span className="flex w-7 flex-shrink-0 items-center justify-center">
+                  <Icon icon={fileIcon.icon} size={15} color={fileIcon.color} />
                 </span>
 
                 {/* Name */}
@@ -663,7 +655,9 @@ export const FilePane: React.FC<FilePaneProps> = ({ side }) => {
         {/* Inline new folder row */}
         {newFolderName !== null && (
           <div className="flex items-center gap-0 px-3 py-1 text-xs">
-            <span className="w-7 flex-shrink-0 text-center text-sm">{'\uD83D\uDCC1'}</span>
+            <span className="flex w-7 flex-shrink-0 items-center justify-center">
+              <Icon icon={Folder} size={15} color="var(--color-warning)" />
+            </span>
             <div className="flex-1 min-w-0">
               <input
                 className="input h-5 text-xs py-0 px-1"

@@ -1,5 +1,7 @@
 import React, { useRef, useState, useCallback } from 'react';
 import { useTerminalStore } from '../../stores/terminal-store';
+import { ChevronLeft, ChevronRight, Plus, X } from 'lucide-react';
+import { Icon } from '../common/Icon';
 
 // ============================================================
 // TabBar — horizontal browser-style tab bar with drag-to-reorder
@@ -114,17 +116,7 @@ export const TabBar: React.FC<TabBarProps> = ({ onNewTab }) => {
           className="flex h-6 w-6 items-center justify-center rounded text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]"
           title="New connection"
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 14 14"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-          >
-            <line x1="7" y1="2" x2="7" y2="12" />
-            <line x1="2" y1="7" x2="12" y2="7" />
-          </svg>
+          <Icon icon={Plus} size={14} />
         </button>
       </div>
     );
@@ -138,16 +130,7 @@ export const TabBar: React.FC<TabBarProps> = ({ onNewTab }) => {
           onClick={() => scrollBy('left')}
           className="flex h-full w-6 flex-shrink-0 items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
         >
-          <svg
-            width="10"
-            height="10"
-            viewBox="0 0 10 10"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-          >
-            <polyline points="7,1 3,5 7,9" />
-          </svg>
+          <Icon icon={ChevronLeft} size={14} />
         </button>
       )}
 
@@ -210,17 +193,7 @@ export const TabBar: React.FC<TabBarProps> = ({ onNewTab }) => {
                 onClick={(e) => handleCloseTab(e, tab.id, tab.sessionId)}
                 className="ml-auto flex h-4 w-4 flex-shrink-0 items-center justify-center rounded opacity-0 transition-opacity hover:bg-[var(--color-bg-tertiary)] group-hover:opacity-100"
               >
-                <svg
-                  width="8"
-                  height="8"
-                  viewBox="0 0 8 8"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                >
-                  <line x1="1" y1="1" x2="7" y2="7" />
-                  <line x1="7" y1="1" x2="1" y2="7" />
-                </svg>
+                <Icon icon={X} size={12} />
               </button>
             </div>
           );
@@ -233,16 +206,7 @@ export const TabBar: React.FC<TabBarProps> = ({ onNewTab }) => {
           onClick={() => scrollBy('right')}
           className="flex h-full w-6 flex-shrink-0 items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
         >
-          <svg
-            width="10"
-            height="10"
-            viewBox="0 0 10 10"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-          >
-            <polyline points="3,1 7,5 3,9" />
-          </svg>
+          <Icon icon={ChevronRight} size={14} />
         </button>
       )}
 
@@ -252,17 +216,7 @@ export const TabBar: React.FC<TabBarProps> = ({ onNewTab }) => {
         className="mx-1 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]"
         title="New connection"
       >
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 14 14"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-        >
-          <line x1="7" y1="2" x2="7" y2="12" />
-          <line x1="2" y1="7" x2="12" y2="7" />
-        </svg>
+        <Icon icon={Plus} size={14} />
       </button>
     </div>
   );

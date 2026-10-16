@@ -1,4 +1,6 @@
 import React from 'react';
+import { CircleAlert } from 'lucide-react';
+import { Icon } from '../common/Icon';
 
 // ============================================================
 // ConnectionStatus — overlay shown while connecting to a host
@@ -50,18 +52,7 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
         {/* Error icon */}
         {isError && (
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-danger)]/10">
-            <svg
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="var(--color-danger)"
-              strokeWidth="2"
-            >
-              <circle cx="12" cy="12" r="10" />
-              <line x1="12" y1="8" x2="12" y2="12" />
-              <line x1="12" y1="16" x2="12.01" y2="16" />
-            </svg>
+            <Icon icon={CircleAlert} size={24} color="var(--color-danger)" />
           </div>
         )}
 

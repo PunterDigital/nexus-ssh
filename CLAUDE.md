@@ -60,6 +60,11 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   are off. First check 5 s after launch, then every 6 h; app setting `checkForUpdates` (default on).
   electron-updater is an esbuild external loaded with a lazy `require`: a dynamic `import()` of it
   returns an undefined `autoUpdater` in the packaged app.
+- Icons (#2374): Lucide only (`lucide-react`), always through `<Icon icon={Terminal} size={14} />`
+  (`components/common/Icon.tsx`: default 14 px, stroke 2, `aria-hidden`). No hand-drawn `<svg>` icons
+  and no emoji as icons. A brand logo Lucide doesn't ship (the GitHub mark) stays an `<svg data-logo>`.
+  `tests/unit/icons.test.ts` fails on any of these. The emoji a user types as a group icon is data,
+  not an app icon, and stays.
 - Vault = SQLCipher DB + `.salt` file under `userData/vaults`. Keys: Argon2id (libsodium) →
   XSalsa20-Poly1305 key wrapping (`src/main/kdf`). Optional PIN and hardware-key (WebAuthn PRF) unlock.
 
