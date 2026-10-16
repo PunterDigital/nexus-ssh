@@ -159,7 +159,6 @@ export const IPC = {
   SNIPPETS_CREATE: 'snippets:create',
   SNIPPETS_UPDATE: 'snippets:update',
   SNIPPETS_DELETE: 'snippets:delete',
-  SNIPPETS_EXECUTE: 'snippets:execute',
 
   // Known Hosts
   KNOWN_HOSTS_LIST: 'known-hosts:list',
