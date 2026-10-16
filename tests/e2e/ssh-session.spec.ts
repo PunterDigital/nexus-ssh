@@ -116,17 +116,16 @@ test('add a host, run a command in the terminal, then download a file over SFTP'
     .click({ timeout: 15_000 })
     .catch(() => {});
 
-  // Click the empty right-hand end: the breadcrumb's segments are buttons that navigate instead.
-  const localPath = page.getByTitle('Click to edit path').first();
-  const box = (await localPath.boundingBox())!;
-  await localPath.click({ position: { x: box.width - 4, y: box.height / 2 } });
-  const pathInput = page.locator('input.font-mono').first();
+  await page.getByRole('button', { name: 'Edit local path' }).click();
+  const pathInput = page.getByRole('textbox', { name: 'Local path' });
   await pathInput.fill(localDir);
   await pathInput.press('Enter');
 
-  // The file only exists on the server, so the only match is in the remote pane.
-  await page.getByText(FILE_NAME, { exact: true }).first().click({ button: 'right' });
-  await page.getByText('Download', { exact: true }).click();
+  await page
+    .getByRole('listbox', { name: 'Remote files' })
+    .getByRole('option', { name: FILE_NAME, exact: true })
+    .click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Download' }).click();
 
   const downloaded = path.join(localDir, FILE_NAME);
   await expect(page.getByRole('button', { name: 'Clear completed' })).toBeVisible({
@@ -135,5 +134,7 @@ test('add a host, run a command in the terminal, then download a file over SFTP'
   await expect.poll(() => existsSync(downloaded)).toBe(true);
   expect(sha(downloaded)).toBe(sha(path.join(remoteDir, FILE_NAME)));
   // The local pane refreshes and lists the new file too.
-  await expect(page.getByText(FILE_NAME, { exact: true })).toHaveCount(2);
+  await expect(
+    page.getByRole('listbox', { name: 'Local files' }).getByRole('option', { name: FILE_NAME, exact: true }),
+  ).toBeVisible();
 });

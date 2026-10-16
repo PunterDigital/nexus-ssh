@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Pencil } from 'lucide-react';
 import { IconButton, Input, cx } from '../ui';
 
@@ -77,6 +77,22 @@ export const BreadcrumbPath: React.FC<BreadcrumbPathProps> = ({
   // doesn't navigate a second time or undo an Escape.
   const settled = useRef(false);
   const sideLabel = side === 'local' ? 'Local path' : 'Remote path';
+  const navRef = useRef<HTMLElement>(null);
+
+  // A path wider than the bar is clipped at the start, not the end: the current folder is the
+  // part that matters. The nav is overflow-hidden, so scroll it to its end whenever it resizes.
+  useLayoutEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const toEnd = () => {
+      nav.scrollLeft = nav.scrollWidth;
+    };
+    toEnd();
+    const observer = new ResizeObserver(toEnd);
+    observer.observe(nav);
+    if (nav.firstElementChild) observer.observe(nav.firstElementChild);
+    return () => observer.disconnect();
+  }, [path, editing]);
 
   useEffect(() => {
     setInputValue(path);
@@ -150,19 +166,17 @@ export const BreadcrumbPath: React.FC<BreadcrumbPathProps> = ({
         onClick={startEditing}
         title="Click to edit path"
       >
-        <nav aria-label={sideLabel} className="min-w-0 flex-1 overflow-hidden">
-          <ol className="flex min-w-0 items-center">
+        <nav ref={navRef} aria-label={sideLabel} className="min-w-0 flex-1 overflow-hidden">
+          <ol className="flex w-max items-center">
             {visible.map((seg, i) => {
               const last = i === visible.length - 1;
               return (
                 <li
                   key={seg ? seg.path : 'overflow'}
-                  className={cx(
-                    'flex min-w-0 items-center',
-                    last ? 'shrink' : 'shrink-0'
-                  )}
+                  className="flex shrink-0 items-center"
                 >
-                  {i > 0 && (
+                  {/* No separator after the root "/": it already is one */}
+                  {i > 0 && visible[i - 1]?.label !== '/' && (
                     <span aria-hidden="true" className="px-0.5 text-fg-muted">
                       /
                     </span>

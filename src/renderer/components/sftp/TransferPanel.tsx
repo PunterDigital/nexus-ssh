@@ -41,13 +41,13 @@ const STATUS_TEXT: Record<TransferItem['status'], string> = {
   failed: 'text-danger',
 };
 
-// accent-color tints a native <progress>; scheme-dark gives it a dark track (every theme is dark).
+// The progress-bar utility (tokens.css) draws the bar in the current text colour.
 const STATUS_BAR: Record<TransferItem['status'], string> = {
-  queued: 'accent-fg-muted',
-  active: 'accent-accent',
-  paused: 'accent-warning',
-  completed: 'accent-success',
-  failed: 'accent-danger',
+  queued: 'text-fg-muted',
+  active: 'text-accent',
+  paused: 'text-warning',
+  completed: 'text-success',
+  failed: 'text-danger',
 };
 
 const TransferRow: React.FC<{ transfer: TransferItem }> = ({ transfer }) => {
@@ -127,7 +127,7 @@ const TransferRow: React.FC<{ transfer: TransferItem }> = ({ transfer }) => {
         value={percentage}
         max={100}
         className={cx(
-          'h-1.5 w-20 shrink-0 scheme-dark @md:w-40 @3xl:w-64',
+          'progress-bar h-1.5 w-20 shrink-0 @md:w-40 @3xl:w-64',
           STATUS_BAR[transfer.status]
         )}
       />

@@ -91,8 +91,24 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   Cards, and stacks controls under labels in narrow containers (`@container`). The theme picker is a
   `radiogroup` of `ThemeCard` radios (roving tabindex); its preview sets the theme's palette as
   `--preview-*` custom properties (the one inline style: theme colours are data).
-  `SyncSettingsView` auto-saves 400 ms after an edit; Push/Pull/unmount flush a pending save first. Keychain: `KeychainView` list + per-key Menu, delete via a Dialog. Snippets and
-  SFTP are part 2 (still on the old `FormField`/`Modal`/inline styles).
+  `SyncSettingsView` auto-saves 400 ms after an edit; Push/Pull/unmount flush a pending save first.
+  Keychain: `KeychainView` list + per-key Menu, delete via a Dialog.
+- SFTP (#2367 part 2): `SFTPBrowser` splits two `FilePane`s with a keyboard-operable separator ("Resize
+  file panes"); the split is the `--sftp-split` custom property set through a ref (no style prop).
+  Each pane is an `@container` `<section>` ("Local files" / "Remote files") with a `Toolbar` and a
+  multi-select `listbox` of `option`s (one Tab stop; Enter opens, Backspace goes up, F2 renames,
+  Delete deletes, Shift+F10 opens the row menu, which reuses `vault/ContextMenu`). Columns hide as a
+  pane narrows. Each pane loads its own first folder when the session changes. The store's `error` is
+  shared by both panes, so `FilePane` reads it right after its own navigation. `BreadcrumbPath`
+  scrolls its clipped nav to the end, so a long path loses its start, not the current folder.
+  Transfers use a native `<progress>` with the `progress-bar` utility (tokens.css; bar = text colour:
+  Chromium ignores `accent-color` on progress). Remote delete passes `isDirectory` (folders are
+  deleted recursively by main). The test SSH server acknowledges SETSTAT without applying it.
+- Snippets (#2367 part 2): `components/snippets` (`SnippetsPanel`, `SnippetForm`, `SnippetExecuteDialog`,
+  `variables.ts` + unit tests, `useSnippetTarget`). One run dialog for the panel and the sidebar's
+  "Run Snippet": built-ins ({{hostname}}, {{username}}, {{port}}) are filled from the session, every
+  variable needs a value, substitution is one pass, and it only runs into a connected terminal tab.
+  "Run on connect" is stored but nothing runs it yet (card #2673).
 - Terminal settings (#2662): `lib/terminal-options.ts` turns the vault's Settings → Terminal values
   into xterm options (validated, clamped). A module cache holds the current values: `useTerminalPrefsCache`
   (App) loads it on unlock and follows `settings:changed`, `terminal-store.reset()` clears it.

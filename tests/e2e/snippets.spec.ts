@@ -138,7 +138,7 @@ async function openActions(name: string): Promise<void> {
 test('Snippets opens from the sidebar and shows the empty state', async () => {
   await nav('Snippets').click();
   await expect(nav('Snippets')).toHaveAttribute('aria-current', 'page');
-  await expect(main().getByRole('heading', { name: 'Snippets' })).toBeVisible();
+  await expect(main().getByRole('heading', { name: 'Snippets', exact: true })).toBeVisible();
   await expect(main().getByText('No snippets yet')).toBeVisible();
   await expect(main().getByText('0 snippets')).toBeVisible();
   // Nothing to search yet.
@@ -312,7 +312,8 @@ test('snippets persist across lock and unlock', async () => {
   const master = page.getByPlaceholder('Master password');
   await master.fill(PASSWORD);
   await master.press('Enter');
-  await expect(page.getByText('No connections yet')).toBeVisible({ timeout: 30_000 });
+  // Unlocking returns to the view that was open (Snippets).
+  await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible({ timeout: 30_000 });
   await recordClipboard();
 
   await nav('Snippets').click();
@@ -367,6 +368,17 @@ test('running snippets types the resolved command into the active terminal', asy
   await expect.poll(() => server.commands).toContain(`echo host-${server.host}`);
   await expect.poll(() => server.commands).toContain('echo second-line');
   expect(server.commands.join('\n')).not.toContain('{{');
+
+  // The sidebar's quick runner opens the same dialog (it used to send {{custom:…}} unfilled).
+  await page.getByRole('complementary', { name: 'Sidebar' }).getByRole('button', { name: 'Run Snippet' }).click();
+  await page.getByRole('menuitem', { name: GREET }).click();
+  const quick = page.getByRole('dialog', { name: `Run "${GREET}"?` });
+  const quickGreeting = quick.getByRole('textbox', { name: 'Greeting' });
+  await expect(quickGreeting).toBeFocused();
+  await quickGreeting.fill('from-the-sidebar');
+  await quickGreeting.press('Enter');
+  await expect(quick).toHaveCount(0);
+  await expect.poll(() => server.commands).toContain('echo from-the-sidebar');
 });
 
 test('deleting a snippet asks first; Cancel keeps it, Delete Snippet removes it', async () => {
