@@ -50,9 +50,11 @@ function KeyDetails({ keyId, onClose }: { keyId: string; onClose: () => void }):
   }, [keyId]);
 
   const handleCopy = useCallback(
-    async (text: string, label: string) => {
+    async (text: string, label: string, secret = false) => {
       try {
-        await navigator.clipboard.writeText(text);
+        // Secrets go through main, which clears the clipboard after the "Clipboard clear timeout".
+        if (secret) await window.nexus.clipboard.copySecure(text);
+        else await navigator.clipboard.writeText(text);
         addNotification('success', `${label} copied to clipboard`);
       } catch {
         addNotification('error', `Failed to copy ${label.toLowerCase()}`);
@@ -152,7 +154,7 @@ function KeyDetails({ keyId, onClose }: { keyId: string; onClose: () => void }):
                     variant="ghost"
                     icon={Copy}
                     aria-label="Copy private key"
-                    onClick={() => void handleCopy(key.private_key, 'Private key')}
+                    onClick={() => void handleCopy(key.private_key, 'Private key', true)}
                   >
                     Copy
                   </Button>

@@ -189,11 +189,16 @@ export const IPC = {
   UPDATER_INSTALL: 'updater:install',
   UPDATER_OPEN_DOWNLOADS: 'updater:open-downloads',
   UPDATER_STATUS: 'updater:status',
+
+  // External links
+  SHELL_OPEN_EXTERNAL: 'shell:open-external',
 } as const;
 
 // ── App updates ──────────────────────────────────────────────
 /** Where macOS (and any build that can't self-install) sends people for a new version. */
 export const DOWNLOADS_PAGE_URL = 'https://punterdigital.github.io/personal-apps/';
+/** Source code, linked from Settings → About. */
+export const REPOSITORY_URL = 'https://github.com/PunterDigital/nexus-ssh';
 /** Latest published release, used by `notify` mode (electron-updater reads latest.yml itself). */
 export const LATEST_RELEASE_API_URL =
   'https://api.github.com/repos/PunterDigital/nexus-ssh/releases/latest';
