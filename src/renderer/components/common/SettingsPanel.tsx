@@ -133,14 +133,11 @@ export const SettingsPanel: React.FC = () => {
   useEffect(() => {
     (async () => {
       try {
-        const [vaultSettings, appSettings, cursorStyle, cursorBlink] = await Promise.all([
+        const [vaultSettings, appSettings] = await Promise.all([
           (window.nexus.settings.getAll() as Promise<Partial<SettingsValues>>).catch(() => null),
           window.nexus.appSettings.getAll().catch(() => null),
-          // getAll only returns the keys main has defaults for, which don't include the cursor
-          // settings, so they are read one by one (they were saved but never shown again).
-          window.nexus.settings.get('cursorStyle').catch(() => null),
-          window.nexus.settings.get('cursorBlink').catch(() => null),
         ]);
+        const { cursorStyle, cursorBlink } = vaultSettings ?? {};
 
         setSettings((prev) => ({
           ...prev,
@@ -466,7 +463,7 @@ export const SettingsPanel: React.FC = () => {
               <SettingsGroup title="Rendering">
                 <SettingRow
                   label="GPU acceleration"
-                  description="Draw terminals with WebGL for better performance."
+                  description="Draw terminals with WebGL for better performance. Applies to sessions opened after the change."
                 >
                   {(ids) => (
                     <Switch

@@ -32,6 +32,8 @@ const DEFAULTS: NexusSettings = {
   terminalFont: 'JetBrains Mono',
   terminalFontSize: 14,
   scrollbackLines: 10000,
+  cursorStyle: 'block',
+  cursorBlink: true,
   sftpConcurrency: 3,
   gpuAcceleration: true,
   showHiddenFiles: false,
