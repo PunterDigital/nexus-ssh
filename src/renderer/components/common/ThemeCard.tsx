@@ -1,5 +1,7 @@
 import React from 'react';
 import type { NexusTheme } from '../../../shared/types';
+import { Check } from 'lucide-react';
+import { Icon } from './Icon';
 
 // ============================================================
 // ThemeCard — Small preview card for a theme
@@ -84,18 +86,7 @@ export const ThemeCard: React.FC<ThemeCardProps> = ({ theme, selected, onClick }
             className="absolute top-1 right-1 w-3.5 h-3.5 rounded-full flex items-center justify-center"
             style={{ backgroundColor: 'var(--color-accent)' }}
           >
-            <svg
-              width="8"
-              height="8"
-              viewBox="0 0 12 12"
-              fill="none"
-              stroke="#fff"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <polyline points="2,6 5,9 10,3" />
-            </svg>
+            <Icon icon={Check} size={8} strokeWidth={3} color="#fff" />
           </div>
         )}
       </div>

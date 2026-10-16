@@ -11,6 +11,8 @@ import { SnippetsPanel } from './components/common/SnippetsPanel';
 import { SettingsPanel } from './components/common/SettingsPanel';
 import { ToastHost } from './components/common/ToastHost';
 import { UpdateBanner } from './components/common/UpdateBanner';
+import { Lock, Settings, Terminal, X } from 'lucide-react';
+import { Icon } from './components/common/Icon';
 
 // ============================================================
 // Nexus SSH Client — App Shell
@@ -114,10 +116,7 @@ function HeaderBar(): React.ReactElement {
               )}
               {/* Terminal icon */}
               {!tab.colour && (
-                <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" className="flex-shrink-0 opacity-50">
-                  <polyline points="2,3 5,6 2,9" />
-                  <line x1="7" y1="9" x2="10" y2="9" />
-                </svg>
+                <Icon icon={Terminal} size={10} className="flex-shrink-0 opacity-50" />
               )}
               <span className="max-w-[100px] truncate">{tab.label}</span>
               {/* Close button */}
@@ -125,10 +124,7 @@ function HeaderBar(): React.ReactElement {
                 onClick={(e) => handleCloseSessionTab(e, tab.id)}
                 className="ml-0.5 flex-shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-[var(--color-bg-primary)] group-hover:opacity-100"
               >
-                <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5">
-                  <line x1="1.5" y1="1.5" x2="6.5" y2="6.5" />
-                  <line x1="6.5" y1="1.5" x2="1.5" y2="6.5" />
-                </svg>
+                <Icon icon={X} size={8} strokeWidth={3} />
               </span>
             </button>
           );
@@ -144,10 +140,7 @@ function HeaderBar(): React.ReactElement {
         className="rounded p-1 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]"
         title="Lock vault"
       >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-          <rect x="3" y="7" width="10" height="7" rx="1" />
-          <path d="M5 7V5a3 3 0 0 1 6 0v2" />
-        </svg>
+        <Icon icon={Lock} size={16} />
       </button>
 
       {/* Settings button */}
@@ -160,10 +153,7 @@ function HeaderBar(): React.ReactElement {
         }`}
         title="Settings"
       >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M19.14 12.94a7.49 7.49 0 0 0 .05-1.88l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.61-.22l-2.39.96a7.5 7.5 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54a7.5 7.5 0 0 0-1.63.94l-2.39-.96a.5.5 0 0 0-.61.22L2.69 8.84a.5.5 0 0 0 .12.64l2.03 1.58a7.49 7.49 0 0 0 0 1.88l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .61.22l2.39-.96a7.5 7.5 0 0 0 1.63.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54a7.5 7.5 0 0 0 1.63-.94l2.39.96a.5.5 0 0 0 .61-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58z" />
-          <circle cx="12" cy="12" r="3" />
-        </svg>
+        <Icon icon={Settings} size={16} />
       </button>
     </div>
   );

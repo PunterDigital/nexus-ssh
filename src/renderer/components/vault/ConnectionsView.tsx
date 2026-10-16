@@ -3,6 +3,8 @@ import { useVaultStore, useTerminalStore, useUIStore } from '../../stores';
 import type { Host, Group, Vault } from '../../../shared/types';
 import { HostForm } from './HostForm';
 import { GroupForm } from './GroupForm';
+import { Apple, ChevronRight, FolderPlus, Grid2x2, LayoutGrid, List, Plus, Search, Server, SquareTerminal } from 'lucide-react';
+import { Icon } from '../common/Icon';
 
 // ============================================================
 // ConnectionsView — Termius-style grid of host cards
@@ -120,10 +122,7 @@ export function ConnectionsView({ mode = 'ssh' }: ConnectionsViewProps = {}): Re
           onClick={() => setShowNewHost(true)}
           className="flex items-center gap-1.5 rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 active:scale-[0.97]"
         >
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="6" y1="2" x2="6" y2="10" />
-            <line x1="2" y1="6" x2="10" y2="6" />
-          </svg>
+          <Icon icon={Plus} size={12} />
           New Host
         </button>
 
@@ -132,11 +131,7 @@ export function ConnectionsView({ mode = 'ssh' }: ConnectionsViewProps = {}): Re
           onClick={() => setShowNewGroup(true)}
           className="flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] active:scale-[0.97]"
         >
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M1 4.5a1 1 0 0 1 1-1h2.5l1 1H10a1 1 0 0 1 1 1V9a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V4.5z" />
-            <line x1="6" y1="5.5" x2="6" y2="8" />
-            <line x1="4.75" y1="6.75" x2="7.25" y2="6.75" />
-          </svg>
+          <Icon icon={FolderPlus} size={12} />
           New Group
         </button>
 
@@ -144,18 +139,11 @@ export function ConnectionsView({ mode = 'ssh' }: ConnectionsViewProps = {}): Re
 
         {/* Search */}
         <div className="relative">
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 14 14"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
+          <Icon
+            icon={Search}
+            size={14}
             className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]"
-          >
-            <circle cx="6" cy="6" r="4" />
-            <line x1="9" y1="9" x2="12.5" y2="12.5" />
-          </svg>
+          />
           <input
             type="text"
             value={search}
@@ -377,9 +365,7 @@ function HostCard({ host, group, connected, onConnect, onEdit }: HostCardProps):
 
       {/* Hover connect indicator */}
       <div className="absolute right-3 top-3 opacity-0 transition-opacity group-hover:opacity-100">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--color-accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="6,3 11,8 6,13" />
-        </svg>
+        <Icon icon={ChevronRight} size={16} color="var(--color-accent)" />
       </div>
     </button>
   );
@@ -446,9 +432,7 @@ function HostRow({ host, group, connected, onConnect, onEdit }: HostRowProps): R
 
       {/* Connect arrow */}
       <div className="opacity-0 transition-opacity group-hover:opacity-100">
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--color-accent)" strokeWidth="1.5" strokeLinecap="round">
-          <polyline points="5,2 10,7 5,12" />
-        </svg>
+        <Icon icon={ChevronRight} size={14} color="var(--color-accent)" />
       </div>
     </button>
   );
@@ -460,11 +444,7 @@ function EmptyState({ hasHosts, search }: { hasHosts: boolean; search: string })
   return (
     <div className="flex h-full items-center justify-center">
       <div className="flex flex-col items-center gap-3 text-[var(--color-text-muted)]">
-        <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="1.5" className="opacity-30">
-          <rect x="6" y="10" width="36" height="28" rx="3" />
-          <polyline points="14,22 20,28 14,34" />
-          <line x1="24" y1="34" x2="34" y2="34" />
-        </svg>
+        <Icon icon={SquareTerminal} size={48} strokeWidth={1.5} className="opacity-30" />
         {hasHosts ? (
           <>
             <span className="text-sm">No hosts match &ldquo;{search}&rdquo;</span>
@@ -484,57 +464,9 @@ function EmptyState({ hasHosts, search }: { hasHosts: boolean; search: string })
 // ── OS Icon ─────────────────────────────────────────────────
 
 function OSIcon({ osType, size = 18 }: { osType: string | null; size?: number }): React.ReactElement {
-  const s = size;
-  const common = {
-    width: s,
-    height: s,
-    viewBox: '0 0 24 24',
-    fill: 'none',
-    stroke: 'currentColor',
-    strokeWidth: '1.5',
-    strokeLinecap: 'round' as const,
-    strokeLinejoin: 'round' as const,
-    className: 'text-[var(--color-text-muted)]',
-  };
-
-  switch (osType) {
-    case 'linux':
-      return (
-        <svg {...common}>
-          <circle cx="12" cy="6" r="3" />
-          <path d="M12 9v6" />
-          <path d="M8 21c-1-3 0-6 1-8" />
-          <path d="M16 21c1-3 0-6-1-8" />
-          <path d="M7 15h10" />
-        </svg>
-      );
-    case 'windows':
-      return (
-        <svg {...common}>
-          <rect x="3" y="3" width="8" height="8" />
-          <rect x="13" y="3" width="8" height="8" />
-          <rect x="3" y="13" width="8" height="8" />
-          <rect x="13" y="13" width="8" height="8" />
-        </svg>
-      );
-    case 'macos':
-      return (
-        <svg {...common}>
-          <path d="M18 15c-.5 2.5-2 4-4 4-1 0-1.5-.5-2.5-.5s-1.5.5-2.5.5c-2 0-4-3-4-6s1.5-5 3.5-5c1 0 2 .5 2.5.5s1.5-.5 2.5-.5c1.5 0 3 1 3.5 2.5-2 1-1.5 4 1 5z" />
-          <path d="M14.5 4c.5-1 1.5-2 2.5-2-.5 1.5-1.5 2.5-2.5 3" />
-        </svg>
-      );
-    default:
-      // Generic server icon
-      return (
-        <svg {...common}>
-          <rect x="4" y="4" width="16" height="6" rx="1" />
-          <rect x="4" y="14" width="16" height="6" rx="1" />
-          <circle cx="8" cy="7" r="1" fill="currentColor" stroke="none" />
-          <circle cx="8" cy="17" r="1" fill="currentColor" stroke="none" />
-        </svg>
-      );
-  }
+  const icon =
+    osType === 'linux' ? SquareTerminal : osType === 'windows' ? Grid2x2 : osType === 'macos' ? Apple : Server;
+  return <Icon icon={icon} size={size} className="text-[var(--color-text-muted)]" />;
 }
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -552,24 +484,11 @@ function formatRelativeTime(iso: string): string {
 }
 
 function GridIcon(): React.ReactElement {
-  return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3">
-      <rect x="1" y="1" width="5" height="5" rx="1" />
-      <rect x="8" y="1" width="5" height="5" rx="1" />
-      <rect x="1" y="8" width="5" height="5" rx="1" />
-      <rect x="8" y="8" width="5" height="5" rx="1" />
-    </svg>
-  );
+  return <Icon icon={LayoutGrid} size={14} />;
 }
 
 function ListIcon(): React.ReactElement {
-  return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3">
-      <line x1="1" y1="3" x2="13" y2="3" />
-      <line x1="1" y1="7" x2="13" y2="7" />
-      <line x1="1" y1="11" x2="13" y2="11" />
-    </svg>
-  );
+  return <Icon icon={List} size={14} />;
 }
 
 export default ConnectionsView;

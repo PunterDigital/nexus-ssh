@@ -5,6 +5,8 @@ import { useVaultStore } from '../../stores/vault-store';
 import { useUIStore } from '../../stores/ui-store';
 import { useSyncStatus } from '../../hooks/use-ipc';
 import type { BackendConfig, SyncBackendType, SyncInterval, ConflictResolution } from '../../../shared/types';
+import { ArrowDown, ArrowUp, Check, CircleCheck, CircleX, Database, Folder, LoaderCircle, LockKeyhole, Server } from 'lucide-react';
+import { Icon } from '../common/Icon';
 
 // ============================================================
 // SyncSettingsView — Full sync settings panel (per-vault)
@@ -23,11 +25,7 @@ const BACKEND_OPTIONS: BackendOption[] = [
     label: 'SFTP',
     description: 'Sync via SSH file transfer protocol',
     icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <rect x="2" y="8" width="16" height="10" rx="2" />
-        <path d="M6 8V5a4 4 0 018 0v3" />
-        <circle cx="10" cy="13" r="1.5" />
-      </svg>
+      <Icon icon={LockKeyhole} size={20} />
     ),
   },
   {
@@ -35,12 +33,7 @@ const BACKEND_OPTIONS: BackendOption[] = [
     label: 'FTP',
     description: 'Sync via FTP with optional TLS',
     icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <rect x="2" y="3" width="16" height="6" rx="2" />
-        <rect x="2" y="11" width="16" height="6" rx="2" />
-        <circle cx="5" cy="6" r="1" fill="currentColor" />
-        <circle cx="5" cy="14" r="1" fill="currentColor" />
-      </svg>
+      <Icon icon={Server} size={20} />
     ),
   },
   {
@@ -48,11 +41,7 @@ const BACKEND_OPTIONS: BackendOption[] = [
     label: 'S3',
     description: 'Amazon S3, MinIO, B2, R2 compatible',
     icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <ellipse cx="10" cy="5" rx="7" ry="3" />
-        <path d="M3 5v10c0 1.66 3.13 3 7 3s7-1.34 7-3V5" />
-        <path d="M3 10c0 1.66 3.13 3 7 3s7-1.34 7-3" />
-      </svg>
+      <Icon icon={Database} size={20} />
     ),
   },
   {
@@ -60,10 +49,7 @@ const BACKEND_OPTIONS: BackendOption[] = [
     label: 'Local Filesystem',
     description: 'Sync to a local or network-mounted directory',
     icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <path d="M2 5l2-3h5l2 3h7v12H2V5z" />
-        <path d="M2 8h16" />
-      </svg>
+      <Icon icon={Folder} size={20} />
     ),
   },
 ];
@@ -254,18 +240,13 @@ export const SyncSettingsView: React.FC = () => {
       <div className="flex items-center justify-end gap-1.5 px-1 py-1 text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
         {saveState === 'saving' && (
           <>
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" className="animate-spin">
-              <circle cx="5" cy="5" r="3.5" opacity="0.25" />
-              <path d="M5 1.5a3.5 3.5 0 013 5.5" />
-            </svg>
+            <Icon icon={LoaderCircle} size={10} className="animate-spin" />
             <span>Saving...</span>
           </>
         )}
         {saveState === 'saved' && (
           <>
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--color-success)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="2,5 4,7 8,3" />
-            </svg>
+            <Icon icon={Check} size={10} color="var(--color-success)" />
             <span style={{ color: 'var(--color-success)' }}>Saved</span>
           </>
         )}
@@ -346,18 +327,7 @@ export const SyncSettingsView: React.FC = () => {
               >
                 {testing ? (
                   <>
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 14 14"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      className="animate-spin"
-                    >
-                      <circle cx="7" cy="7" r="5" opacity="0.25" />
-                      <path d="M7 2a5 5 0 014 8" />
-                    </svg>
+                    <Icon icon={LoaderCircle} size={14} className="animate-spin" />
                     Testing...
                   </>
                 ) : (
@@ -366,20 +336,13 @@ export const SyncSettingsView: React.FC = () => {
               </button>
               {testResult === 'success' && (
                 <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--color-success)' }}>
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <circle cx="7" cy="7" r="5" />
-                    <polyline points="4.5,7 6,8.5 9.5,5" />
-                  </svg>
+                  <Icon icon={CircleCheck} size={14} />
                   Connection successful
                 </span>
               )}
               {testResult === 'fail' && (
                 <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--color-danger)' }}>
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <circle cx="7" cy="7" r="5" />
-                    <line x1="5" y1="5" x2="9" y2="9" />
-                    <line x1="9" y1="5" x2="5" y2="9" />
-                  </svg>
+                  <Icon icon={CircleX} size={14} />
                   {testError ? `Connection failed: ${testError}` : 'Connection failed'}
                 </span>
               )}
@@ -531,26 +494,12 @@ export const SyncSettingsView: React.FC = () => {
               >
                 {syncing ? (
                   <>
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 14 14"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      className="animate-spin"
-                    >
-                      <circle cx="7" cy="7" r="5" opacity="0.25" />
-                      <path d="M7 2a5 5 0 014 8" />
-                    </svg>
+                    <Icon icon={LoaderCircle} size={14} className="animate-spin" />
                     Syncing...
                   </>
                 ) : (
                   <>
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
-                      <path d="M7 11V3" />
-                      <path d="M3.5 6.5L7 3l3.5 3.5" />
-                    </svg>
+                    <Icon icon={ArrowUp} size={14} />
                     Push
                   </>
                 )}
@@ -561,10 +510,7 @@ export const SyncSettingsView: React.FC = () => {
                 onClick={() => handleSyncNow('pull')}
                 disabled={syncing}
               >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
-                  <path d="M7 3v8" />
-                  <path d="M3.5 7.5L7 11l3.5-3.5" />
-                </svg>
+                <Icon icon={ArrowDown} size={14} />
                 Pull
               </button>
             </div>

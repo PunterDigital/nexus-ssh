@@ -1,5 +1,7 @@
 import React from 'react';
 import type { HostKeyPrompt as HostKeyPromptData, HostKeyVerification } from '../../../shared/types';
+import { TriangleAlert } from 'lucide-react';
+import { Icon } from '../common/Icon';
 
 // ============================================================
 // HostKeyPrompt — TOFU host key verification modal
@@ -28,18 +30,7 @@ export const HostKeyPrompt: React.FC<HostKeyPromptProps> = ({
           }`}
         >
           {/* Warning icon */}
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 20 20"
-            fill="none"
-            stroke={isChanged ? 'var(--color-danger)' : 'var(--color-warning)'}
-            strokeWidth="1.5"
-          >
-            <path d="M10 2L1 18h18L10 2z" />
-            <line x1="10" y1="8" x2="10" y2="12" />
-            <line x1="10" y1="15" x2="10.01" y2="15" />
-          </svg>
+          <Icon icon={TriangleAlert} size={20} color={isChanged ? 'var(--color-danger)' : 'var(--color-warning)'} />
           <span
             className={`text-sm font-semibold ${
               isChanged

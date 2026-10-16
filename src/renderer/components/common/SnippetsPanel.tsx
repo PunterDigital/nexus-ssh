@@ -6,6 +6,8 @@ import { useUIStore } from '../../stores/ui-store';
 import { SnippetForm, type SnippetFormData } from './SnippetForm';
 import { SnippetExecuteDialog } from './SnippetExecuteDialog';
 import { Modal } from './Modal';
+import { Pencil, Play, Plus, SquareTerminal, Trash2 } from 'lucide-react';
+import { Icon } from './Icon';
 
 // ============================================================
 // SnippetsPanel — compact list of snippets. Click to run.
@@ -153,10 +155,7 @@ export const SnippetsPanel: React.FC = () => {
           onClick={handleNewSnippet}
           className="flex items-center gap-1.5 rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 active:scale-[0.97]"
         >
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="6" y1="2" x2="6" y2="10" />
-            <line x1="2" y1="6" x2="10" y2="6" />
-          </svg>
+          <Icon icon={Plus} size={12} />
           New Snippet
         </button>
       </div>
@@ -250,9 +249,7 @@ export const SnippetsPanel: React.FC = () => {
                 disabled={!activeSessionId}
                 className="flex items-center gap-1.5 rounded-md bg-[var(--color-accent)] px-4 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
               >
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
-                  <polygon points="1,0 1,10 9,5" />
-                </svg>
+                <Icon icon={Play} size={10} fill="currentColor" />
                 Run in Session
               </button>
             </div>
@@ -303,9 +300,7 @@ const SnippetRow: React.FC<SnippetRowProps> = ({
         className="flex min-w-0 flex-1 items-center gap-3 text-left"
       >
         <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-[var(--color-bg-secondary)] text-[var(--color-text-muted)] group-hover:bg-[var(--color-bg-tertiary)] group-hover:text-[var(--color-accent)]">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
-            <polygon points="2,1 2,11 10,6" />
-          </svg>
+          <Icon icon={Play} size={12} fill="currentColor" />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -351,9 +346,7 @@ const SnippetRow: React.FC<SnippetRowProps> = ({
               className="rounded p-1.5 text-[var(--color-text-muted)] opacity-0 transition-opacity hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] group-hover:opacity-100"
               title="Edit snippet"
             >
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M8 2l2 2-6 6-2 1 1-2 5-7z" />
-              </svg>
+              <Icon icon={Pencil} size={12} />
             </button>
             <button
               type="button"
@@ -361,11 +354,7 @@ const SnippetRow: React.FC<SnippetRowProps> = ({
               className="rounded p-1.5 text-[var(--color-text-muted)] opacity-0 transition-opacity hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-danger)] group-hover:opacity-100"
               title="Delete snippet"
             >
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                <path d="M2 3h8" />
-                <path d="M4 3V2h4v1" />
-                <path d="M3 3v8h6V3" />
-              </svg>
+              <Icon icon={Trash2} size={12} />
             </button>
           </>
         )}
@@ -379,10 +368,7 @@ const SnippetRow: React.FC<SnippetRowProps> = ({
 const EmptyState: React.FC<{ onCreate: () => void }> = ({ onCreate }) => (
   <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
     <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--color-bg-tertiary)]">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--color-text-muted)]">
-        <polyline points="4 17 10 11 4 5" />
-        <line x1="12" y1="19" x2="20" y2="19" />
-      </svg>
+      <Icon icon={SquareTerminal} size={24} strokeWidth={1.5} className="text-[var(--color-text-muted)]" />
     </div>
     <div>
       <p className="text-sm font-medium text-[var(--color-text-secondary)]">

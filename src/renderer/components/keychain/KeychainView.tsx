@@ -5,6 +5,8 @@ import { GenerateKeyDialog } from './GenerateKeyDialog';
 import { ImportKeyDialog } from './ImportKeyDialog';
 import { KeyDetailsDialog } from './KeyDetailsDialog';
 import type { SSHKey, KeyType } from '../../../shared/types';
+import { Copy, Download, KeyRound, LockKeyhole, Plus, Trash2 } from 'lucide-react';
+import { Icon } from '../common/Icon';
 
 // ============================================================
 // KeychainView — Main keychain panel showing all SSH keys
@@ -118,10 +120,7 @@ export const KeychainView: React.FC = () => {
             className="btn btn-primary"
             onClick={() => setGenerateOpen(true)}
           >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <line x1="7" y1="2" x2="7" y2="12" />
-              <line x1="2" y1="7" x2="12" y2="7" />
-            </svg>
+            <Icon icon={Plus} size={14} />
             Generate Key
           </button>
           <button
@@ -129,11 +128,7 @@ export const KeychainView: React.FC = () => {
             style={{ border: '1px solid var(--color-border)' }}
             onClick={() => setImportOpen(true)}
           >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <path d="M2 10v2h10v-2" />
-              <path d="M7 2v7" />
-              <path d="M4 6l3 3 3-3" />
-            </svg>
+            <Icon icon={Download} size={14} />
             Import Key
           </button>
         </div>
@@ -144,12 +139,7 @@ export const KeychainView: React.FC = () => {
         {keys.length === 0 ? (
           /* Empty state */
           <div className="flex flex-col items-center justify-center h-full gap-3">
-            <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="var(--color-text-muted)" strokeWidth="1.5">
-              <rect x="8" y="20" width="32" height="20" rx="3" />
-              <circle cx="24" cy="14" r="8" />
-              <circle cx="24" cy="30" r="2" />
-              <line x1="24" y1="32" x2="24" y2="36" />
-            </svg>
+            <Icon icon={LockKeyhole} size={48} strokeWidth={1.5} color="var(--color-text-muted)" />
             <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
               No SSH keys yet. Generate or import a key to get started.
             </p>
@@ -177,12 +167,7 @@ export const KeychainView: React.FC = () => {
                     className="flex items-center justify-center w-9 h-9 rounded-md mt-0.5 shrink-0"
                     style={{ backgroundColor: badge.bgColor }}
                   >
-                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke={badge.textColor} strokeWidth="1.5">
-                      <circle cx="6" cy="7" r="3" />
-                      <path d="M9 7h6" />
-                      <path d="M13 7v3" />
-                      <path d="M15 7v2" />
-                    </svg>
+                    <Icon icon={KeyRound} size={18} color={badge.textColor} />
                   </div>
 
                   {/* Key info */}
@@ -238,10 +223,7 @@ export const KeychainView: React.FC = () => {
                       onClick={() => handleCopyPublicKey(key)}
                       title="Copy public key"
                     >
-                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
-                        <rect x="4" y="4" width="8" height="8" rx="1.5" />
-                        <path d="M10 4V2.5A1.5 1.5 0 008.5 1H2.5A1.5 1.5 0 001 2.5v6A1.5 1.5 0 002.5 10H4" />
-                      </svg>
+                      <Icon icon={Copy} size={14} />
                       Copy Public Key
                     </button>
 
@@ -269,13 +251,7 @@ export const KeychainView: React.FC = () => {
                         title="Delete key"
                         style={{ color: 'var(--color-danger)' }}
                       >
-                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
-                          <path d="M2 4h10" />
-                          <path d="M5 4V2.5A.5.5 0 015.5 2h3a.5.5 0 01.5.5V4" />
-                          <path d="M3 4v8.5a.5.5 0 00.5.5h7a.5.5 0 00.5-.5V4" />
-                          <line x1="6" y1="7" x2="6" y2="10" />
-                          <line x1="8" y1="7" x2="8" y2="10" />
-                        </svg>
+                        <Icon icon={Trash2} size={14} />
                       </button>
                     )}
                   </div>

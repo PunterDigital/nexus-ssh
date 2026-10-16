@@ -1,4 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { KeySquare, LoaderCircle } from 'lucide-react';
+import { Icon } from '../common/Icon';
 
 // ============================================================
 // PinSetupDialog — modal for setting up PIN quick-unlock
@@ -89,27 +91,7 @@ export function PinSetupDialog({
         {/* Header */}
         <div className="mb-5 flex flex-col items-center gap-2">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--color-accent)]/15">
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 20 20"
-              fill="none"
-              stroke="var(--color-accent)"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <rect x="3" y="1" width="14" height="18" rx="2" />
-              {/* Keypad dots */}
-              <circle cx="7" cy="9" r="0.8" fill="var(--color-accent)" />
-              <circle cx="10" cy="9" r="0.8" fill="var(--color-accent)" />
-              <circle cx="13" cy="9" r="0.8" fill="var(--color-accent)" />
-              <circle cx="7" cy="12" r="0.8" fill="var(--color-accent)" />
-              <circle cx="10" cy="12" r="0.8" fill="var(--color-accent)" />
-              <circle cx="13" cy="12" r="0.8" fill="var(--color-accent)" />
-              <circle cx="10" cy="15" r="0.8" fill="var(--color-accent)" />
-              <rect x="4" y="3" width="12" height="3" rx="0.5" />
-            </svg>
+            <Icon icon={KeySquare} size={20} color="var(--color-accent)" />
           </div>
           <h3 className="text-lg font-semibold text-[var(--color-text-primary)]">
             Set Up Quick Unlock
@@ -219,10 +201,7 @@ export function PinSetupDialog({
 
 function SmallSpinner(): React.ReactElement {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="animate-spin">
-      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="31.4 31.4" strokeLinecap="round" opacity="0.3" />
-      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="15.7 47.1" strokeLinecap="round" />
-    </svg>
+    <Icon icon={LoaderCircle} size={14} className="animate-spin" />
   );
 }
 

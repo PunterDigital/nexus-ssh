@@ -3,6 +3,8 @@ import { Modal } from '../common/Modal';
 import { FormField } from '../common/FormField';
 import { useVaultStore } from '../../stores/vault-store';
 import { useUIStore } from '../../stores/ui-store';
+import { CircleCheck, CircleX, Copy, Eye, EyeOff, FolderOpen, LoaderCircle } from 'lucide-react';
+import { Icon } from '../common/Icon';
 
 // ============================================================
 // ImportKeyDialog — Modal for importing an SSH key
@@ -194,10 +196,7 @@ export const ImportKeyDialog: React.FC<ImportKeyDialogProps> = ({ open, onClose 
             onClick={handleSelectFile}
             type="button"
           >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--color-text-muted)" strokeWidth="1.5">
-              <path d="M2 7V3a1 1 0 011-1h3l2 2h3a1 1 0 011 1v2" />
-              <path d="M1.5 7h11a1 1 0 01.98 1.2l-1 5A1 1 0 0111.5 14h-9a1 1 0 01-.98-.8l-1-5A1 1 0 011.5 7z" />
-            </svg>
+            <Icon icon={FolderOpen} size={14} color="var(--color-text-muted)" />
             <span
               className="text-xs truncate"
               style={{ color: selectedFileName ? 'var(--color-text-primary)' : 'var(--color-text-muted)' }}
@@ -247,17 +246,9 @@ export const ImportKeyDialog: React.FC<ImportKeyDialogProps> = ({ open, onClose 
               title={showPassphrase ? 'Hide passphrase' : 'Show passphrase'}
             >
               {showPassphrase ? (
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--color-text-muted)" strokeWidth="1.2">
-                  <path d="M1 1l12 12" />
-                  <path d="M5.6 5.6a2 2 0 002.8 2.8" />
-                  <path d="M3 4.5C1.8 5.5 1 7 1 7s2 4 6 4c.8 0 1.5-.15 2.1-.4" />
-                  <path d="M10.5 9.8C12 8.7 13 7 13 7s-2-4-6-4c-.5 0-1 .07-1.4.17" />
-                </svg>
+                <Icon icon={EyeOff} size={14} color="var(--color-text-muted)" />
               ) : (
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--color-text-muted)" strokeWidth="1.2">
-                  <ellipse cx="7" cy="7" rx="6" ry="4" />
-                  <circle cx="7" cy="7" r="2" />
-                </svg>
+                <Icon icon={Eye} size={14} color="var(--color-text-muted)" />
               )}
             </button>
           </div>
@@ -285,18 +276,7 @@ export const ImportKeyDialog: React.FC<ImportKeyDialogProps> = ({ open, onClose 
 
   const renderImporting = () => (
     <div className="flex flex-col items-center justify-center py-10 gap-3">
-      <svg
-        width="32"
-        height="32"
-        viewBox="0 0 32 32"
-        fill="none"
-        stroke="var(--color-accent)"
-        strokeWidth="2"
-        className="animate-spin"
-      >
-        <circle cx="16" cy="16" r="12" opacity="0.25" />
-        <path d="M16 4a12 12 0 019 18" />
-      </svg>
+      <Icon icon={LoaderCircle} size={32} color="var(--color-accent)" className="animate-spin" />
       <span className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
         Importing key...
       </span>
@@ -309,10 +289,7 @@ export const ImportKeyDialog: React.FC<ImportKeyDialogProps> = ({ open, onClose 
         className="flex items-center gap-2 px-3 py-2 rounded-md"
         style={{ backgroundColor: 'rgba(158, 206, 106, 0.1)', border: '1px solid rgba(158, 206, 106, 0.3)' }}
       >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--color-success)" strokeWidth="1.5">
-          <circle cx="8" cy="8" r="6" />
-          <polyline points="5.5,8 7,9.5 10.5,6" />
-        </svg>
+        <Icon icon={CircleCheck} size={16} color="var(--color-success)" />
         <span className="text-xs" style={{ color: 'var(--color-success)' }}>
           SSH key imported successfully
         </span>
@@ -331,10 +308,7 @@ export const ImportKeyDialog: React.FC<ImportKeyDialogProps> = ({ open, onClose 
           </FormField>
 
           <button className="btn btn-primary w-full" onClick={handleCopyPublicKey}>
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <rect x="4" y="4" width="8" height="8" rx="1.5" />
-              <path d="M10 4V2.5A1.5 1.5 0 008.5 1H2.5A1.5 1.5 0 001 2.5v6A1.5 1.5 0 002.5 10H4" />
-            </svg>
+            <Icon icon={Copy} size={14} />
             {copied ? 'Copied!' : 'Copy to Clipboard'}
           </button>
         </>
@@ -348,11 +322,7 @@ export const ImportKeyDialog: React.FC<ImportKeyDialogProps> = ({ open, onClose 
         className="flex items-center gap-2 px-3 py-2 rounded-md"
         style={{ backgroundColor: 'rgba(247, 118, 142, 0.1)', border: '1px solid rgba(247, 118, 142, 0.3)' }}
       >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--color-danger)" strokeWidth="1.5">
-          <circle cx="8" cy="8" r="6" />
-          <line x1="6" y1="6" x2="10" y2="10" />
-          <line x1="10" y1="6" x2="6" y2="10" />
-        </svg>
+        <Icon icon={CircleX} size={16} color="var(--color-danger)" />
         <span className="text-xs" style={{ color: 'var(--color-danger)' }}>
           {errorMsg}
         </span>

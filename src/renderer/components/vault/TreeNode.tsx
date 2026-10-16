@@ -1,5 +1,7 @@
 import React, { useCallback, useRef } from 'react';
 import type { VaultTreeNode } from '../../../shared/types';
+import { ChevronRight, Folder, LockKeyhole, Monitor } from 'lucide-react';
+import { Icon } from '../common/Icon';
 
 // ============================================================
 // TreeNode — recursive tree node for vault/group/host items
@@ -24,43 +26,25 @@ interface TreeNodeProps {
   filterText: string;
 }
 
-/** SVG icons for each node type. */
+/** Lucide icons for each node type. */
 const VaultIcon: React.FC = () => (
-  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3">
-    <rect x="2" y="3" width="10" height="9" rx="1.5" />
-    <path d="M5 3V1.5h4V3" />
-    <circle cx="7" cy="7.5" r="1.5" />
-    <line x1="7" y1="9" x2="7" y2="10" />
-  </svg>
+  <Icon icon={LockKeyhole} size={14} />
 );
 
 const GroupIcon: React.FC = () => (
-  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3">
-    <path d="M2 4.5V3a1 1 0 0 1 1-1h3l1.5 1.5H11a1 1 0 0 1 1 1V11a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4.5z" />
-  </svg>
+  <Icon icon={Folder} size={14} />
 );
 
 const HostIcon: React.FC = () => (
-  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3">
-    <rect x="1.5" y="2" width="11" height="8" rx="1.5" />
-    <line x1="7" y1="10" x2="7" y2="12" />
-    <line x1="4" y1="12" x2="10" y2="12" />
-    <circle cx="4" cy="5" r="0.5" fill="currentColor" />
-  </svg>
+  <Icon icon={Monitor} size={14} />
 );
 
 const ChevronIcon: React.FC<{ expanded: boolean }> = ({ expanded }) => (
-  <svg
-    width="10"
-    height="10"
-    viewBox="0 0 10 10"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.5"
+  <Icon
+    icon={ChevronRight}
+    size={10}
     className={`transition-transform duration-150 ${expanded ? 'rotate-90' : ''}`}
-  >
-    <polyline points="3,2 7,5 3,8" />
-  </svg>
+  />
 );
 
 function getNodeIcon(type: VaultTreeNode['type']): React.ReactNode {
