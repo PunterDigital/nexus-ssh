@@ -11,12 +11,13 @@ import {
   Server,
   type LucideIcon,
 } from 'lucide-react';
-import { useUIStore, useVaultStore, useTerminalStore } from '../../stores';
+import { useUIStore, useVaultStore } from '../../stores';
 import type { ViewType } from '../../stores';
 import type { Snippet } from '../../../shared/types';
-import { Button, Dialog, IconButton, Menu, cx, type MenuEntry } from '../ui';
+import { IconButton, Menu, cx, type MenuEntry } from '../ui';
 import { Icon } from '../common/Icon';
 import { SyncStatusBadge } from '../vault/SyncStatusBadge';
+import { SnippetExecuteDialog } from '../snippets/SnippetExecuteDialog';
 import {
   SIDEBAR_DEFAULT_WIDTH,
   SIDEBAR_MAX_WIDTH,
@@ -130,7 +131,7 @@ export const Sidebar: React.FC = () => {
     );
 
   const snippetDialog = (
-    <RunSnippetDialog snippet={confirmSnippet} onClose={() => setConfirmSnippet(null)} />
+    <SnippetExecuteDialog snippet={confirmSnippet} onClose={() => setConfirmSnippet(null)} />
   );
 
   if (collapsed) {
@@ -301,72 +302,3 @@ export const Sidebar: React.FC = () => {
     </aside>
   );
 };
-
-/** "Run <snippet>?" confirmation: shows the command and the session it will be typed into. */
-function RunSnippetDialog({
-  snippet,
-  onClose,
-}: {
-  snippet: Snippet | null;
-  onClose: () => void;
-}) {
-  const addNotification = useUIStore((s) => s.addNotification);
-  const hosts = useVaultStore((s) => s.hosts);
-  const sessions = useTerminalStore((s) => s.sessions);
-  const activeSessionId = useTerminalStore((s) => s.activeSessionId);
-  const writeToSession = useTerminalStore((s) => s.writeToSession);
-
-  const activeSession = sessions.find((s) => s.id === activeSessionId);
-  const activeHost = activeSession
-    ? hosts.find((h) => h.id === activeSession.hostId)
-    : null;
-
-  const run = () => {
-    if (!snippet || !activeSessionId) return;
-    for (const line of snippet.command.split('\n'))
-      writeToSession(activeSessionId, line + '\n');
-    addNotification('success', `Ran "${snippet.name}"`);
-    onClose();
-  };
-
-  return (
-    <Dialog
-      open={snippet !== null}
-      onClose={onClose}
-      title={snippet ? `Run "${snippet.name}"?` : ''}
-      description={snippet?.description || undefined}
-      footer={
-        <>
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={run} disabled={!activeSessionId}>
-            Run
-          </Button>
-        </>
-      }
-    >
-      <div className="flex flex-col gap-3">
-        <div>
-          <div className="mb-1 text-body-sm font-medium text-fg-secondary">Command</div>
-          <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-md border border-line bg-surface-sunken p-2 font-code text-body-sm text-fg">
-            {snippet?.command}
-          </pre>
-        </div>
-        <div className="rounded-md border border-line bg-surface-sunken px-3 py-2 text-body-sm">
-          {activeSession && activeHost ? (
-            <span className="text-fg-secondary">
-              Will run in{' '}
-              <span className="font-semibold text-fg">{activeHost.label}</span>{' '}
-              <span className="font-code text-fg-muted">({activeHost.hostname})</span>
-            </span>
-          ) : (
-            <span className="text-danger">
-              No active terminal session. Connect to a host first.
-            </span>
-          )}
-        </div>
-      </div>
-    </Dialog>
-  );
-}

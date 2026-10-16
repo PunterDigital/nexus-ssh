@@ -1,60 +1,44 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useSFTPStore } from '../../stores/sftp-store';
 import { useSFTPTransferProgress } from '../../hooks/use-ipc';
+import { cx } from '../ui';
 import { FilePane } from './FilePane';
 import { TransferPanel } from './TransferPanel';
-import { Settings } from 'lucide-react';
-import { Icon } from '../common/Icon';
 
 // ============================================================
-// SFTPBrowser — main dual-pane SFTP file browser
+// SFTPBrowser — dual-pane file browser for one SFTP session: local files on the left, remote
+// on the right, a draggable (and keyboard-resizable) divider between them, and the transfer
+// queue underneath. Each pane loads its starting folder itself once the session is active.
 // ============================================================
 
 interface SFTPBrowserProps {
   sessionId: string;
 }
 
-const MIN_PANE_WIDTH = 200;
+/** Split limits, in percent of the browser's width. The panes also have a CSS minimum width. */
+const SPLIT_MIN = 15;
+const SPLIT_MAX = 85;
+const SPLIT_DEFAULT = 50;
+
+const clampSplit = (pct: number) => Math.max(SPLIT_MIN, Math.min(SPLIT_MAX, pct));
 
 export const SFTPBrowser: React.FC<SFTPBrowserProps> = ({ sessionId }) => {
-  const {
-    setActiveSessionId,
-    navigateLocal,
-    navigateRemote,
-    localPath,
-    remotePath,
-    updateTransferProgress,
-    completeTransfer,
-    failTransfer,
-  } = useSFTPStore();
+  const setActiveSessionId = useSFTPStore((s) => s.setActiveSessionId);
+  const updateTransferProgress = useSFTPStore((s) => s.updateTransferProgress);
+  const completeTransfer = useSFTPStore((s) => s.completeTransfer);
+  const failTransfer = useSFTPStore((s) => s.failTransfer);
 
-  const [splitPosition, setSplitPosition] = useState(50); // percentage
+  const [split, setSplit] = useState(SPLIT_DEFAULT); // left pane width, percent
+  const [dragging, setDragging] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const isDragging = useRef(false);
 
-  // Initialize session
+  // The panes (FilePane) load their first folder when the active session changes.
   useEffect(() => {
     setActiveSessionId(sessionId);
-    navigateRemote('/');
+    return () => setActiveSessionId(null);
+  }, [sessionId, setActiveSessionId]);
 
-    // Initialize local pane with the user's home directory
-    (async () => {
-      try {
-        const home = await window.nexus.fs.home();
-        navigateLocal(home);
-      } catch {
-        // Fallback to the current localPath if fs.home fails
-        navigateLocal(localPath);
-      }
-    })();
-
-    return () => {
-      setActiveSessionId(null);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
-
-  // Listen for transfer progress from main process
+  // Transfer progress from the main process
   useSFTPTransferProgress(
     useCallback(
       (progress: unknown) => {
@@ -66,7 +50,6 @@ export const SFTPBrowser: React.FC<SFTPBrowserProps> = ({ sessionId }) => {
           error?: string;
         };
         if (!p?.id) return;
-
         if (p.status === 'completed') {
           completeTransfer(p.id);
         } else if (p.status === 'failed') {
@@ -77,104 +60,88 @@ export const SFTPBrowser: React.FC<SFTPBrowserProps> = ({ sessionId }) => {
           updateTransferProgress(p.id, p.transferred, p.size, status);
         }
       },
-      [updateTransferProgress, completeTransfer, failTransfer],
-    ),
+      [updateTransferProgress, completeTransfer, failTransfer]
+    )
   );
 
-  // ── Resizable divider ─────────────────────────────────────
+  // The split is dynamic, so it goes in a CSS variable (basis-(--sftp-split)), not a style prop.
+  useLayoutEffect(() => {
+    containerRef.current?.style.setProperty('--sftp-split', `${split}%`);
+  }, [split]);
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+  // ── Divider: pointer drag, arrow keys, double-click resets ──
+  const onDividerPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0 || !containerRef.current) return;
     e.preventDefault();
-    isDragging.current = true;
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-  }, []);
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isDragging.current || !containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const pct = (x / rect.width) * 100;
-      const clamped = Math.max(
-        (MIN_PANE_WIDTH / rect.width) * 100,
-        Math.min(100 - (MIN_PANE_WIDTH / rect.width) * 100, pct),
-      );
-      setSplitPosition(clamped);
+    const handle = e.currentTarget;
+    handle.setPointerCapture(e.pointerId);
+    const rect = containerRef.current.getBoundingClientRect();
+    setDragging(true);
+    const onMove = (ev: PointerEvent) =>
+      setSplit(clampSplit(((ev.clientX - rect.left) / rect.width) * 100));
+    const onUp = () => {
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onUp);
+      handle.removeEventListener('pointercancel', onUp);
+      setDragging(false);
     };
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onUp);
+    handle.addEventListener('pointercancel', onUp);
+  };
 
-    const handleMouseUp = () => {
-      if (isDragging.current) {
-        isDragging.current = false;
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-      }
-    };
-
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, []);
+  const onDividerKeyDown = (e: React.KeyboardEvent) => {
+    const step = e.shiftKey ? 10 : 2;
+    const next =
+      e.key === 'ArrowLeft'
+        ? split - step
+        : e.key === 'ArrowRight'
+          ? split + step
+          : e.key === 'Home'
+            ? SPLIT_MIN
+            : e.key === 'End'
+              ? SPLIT_MAX
+              : e.key === 'Enter'
+                ? SPLIT_DEFAULT
+                : null;
+    if (next === null) return;
+    e.preventDefault();
+    setSplit(clampSplit(next));
+  };
 
   return (
-    <div className="flex flex-col h-full w-full" style={{ backgroundColor: 'var(--color-bg-primary)' }}>
-      {/* Header bar */}
-      <div
-        className="flex items-center justify-between px-3 py-1.5 border-b text-xs"
-        style={{
-          borderColor: 'var(--color-border)',
-          backgroundColor: 'var(--color-bg-secondary)',
-          color: 'var(--color-text-secondary)',
-        }}
-      >
-        <div className="flex items-center gap-4">
-          <span>
-            <span style={{ color: 'var(--color-text-muted)' }}>Local:</span>{' '}
-            <span className="font-mono">{localPath === '__drives__' ? 'This PC' : localPath}</span>
-          </span>
-          <span>
-            <span style={{ color: 'var(--color-text-muted)' }}>Remote:</span>{' '}
-            <span className="font-mono">{remotePath}</span>
-          </span>
-        </div>
-        <div className="flex items-center gap-1">
-          {/* Settings gear placeholder */}
-          <button
-            className="btn-ghost w-6 h-6 flex items-center justify-center rounded"
-            title="SFTP Settings"
-          >
-            <Icon icon={Settings} size={14} />
-          </button>
-        </div>
-      </div>
-
-      {/* Dual pane area */}
-      <div ref={containerRef} className="flex flex-1 min-h-0 overflow-hidden">
-        {/* Local pane (left) */}
-        <div style={{ width: `${splitPosition}%` }} className="min-w-0">
+    <div className="flex h-full min-h-0 w-full min-w-0 flex-col bg-surface">
+      <div ref={containerRef} className="flex min-h-0 flex-1 overflow-hidden">
+        {/* Both panes keep a minimum width, so a split dragged far to one side at a wide window
+            still leaves the other pane usable when the window gets narrower. */}
+        <div className="min-w-48 shrink grow-0 basis-(--sftp-split)">
           <FilePane side="local" />
         </div>
 
-        {/* Resize handle */}
         <div
-          className="resize-handle flex-shrink-0"
-          onMouseDown={handleMouseDown}
-          style={{
-            borderLeft: '1px solid var(--color-border)',
-            borderRight: '1px solid var(--color-border)',
-          }}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize file panes"
+          aria-valuemin={SPLIT_MIN}
+          aria-valuemax={SPLIT_MAX}
+          aria-valuenow={Math.round(split)}
+          tabIndex={0}
+          title="Drag to resize, double-click to reset"
+          onPointerDown={onDividerPointerDown}
+          onKeyDown={onDividerKeyDown}
+          onDoubleClick={() => setSplit(SPLIT_DEFAULT)}
+          className={cx(
+            'w-1 shrink-0 cursor-col-resize outline-none transition-colors duration-(--duration-fast) ease-standard',
+            'hover:bg-accent focus-visible:bg-accent',
+            dragging ? 'bg-accent' : 'bg-line'
+          )}
         />
 
-        {/* Remote pane (right) */}
-        <div style={{ width: `${100 - splitPosition}%` }} className="min-w-0">
+        <div className="min-w-48 flex-1">
           <FilePane side="remote" />
         </div>
       </div>
 
-      {/* Transfer panel (bottom) */}
       <TransferPanel />
     </div>
   );

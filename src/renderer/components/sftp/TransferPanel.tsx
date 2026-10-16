@@ -1,55 +1,71 @@
-import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronDown,
+  ChevronRight,
+  Pause,
+  Play,
+  X,
+} from 'lucide-react';
 import type { TransferItem } from '../../../shared/types';
 import { useSFTPStore } from '../../stores/sftp-store';
-import { ChevronRight, CirclePause, CirclePlay, X } from 'lucide-react';
 import { Icon } from '../common/Icon';
+import { Button, IconButton, cx } from '../ui';
 
 // ============================================================
-// TransferPanel — collapsible transfer queue at the bottom
+// TransferPanel — collapsible transfer queue under the panes. One row per transfer: direction,
+// file name, a native <progress> bar coloured by status, percentage, speed and bytes (the last
+// two only where the panel is wide enough: it is an @container), and pause / resume / cancel.
 // ============================================================
 
-/** Format bytes into human-readable size */
+/** Format bytes into a human-readable size. */
 function formatSize(bytes: number): string {
   if (bytes <= 0) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
   const value = bytes / Math.pow(1024, i);
   return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
-/** Transfer speed estimate — simple display helper */
 function formatSpeed(bytesPerSec: number): string {
   if (bytesPerSec <= 0) return '--';
   return `${formatSize(bytesPerSec)}/s`;
 }
 
-const STATUS_COLORS: Record<TransferItem['status'], string> = {
-  queued: 'var(--color-text-muted)',
-  active: 'var(--color-accent)',
-  paused: 'var(--color-warning)',
-  completed: 'var(--color-success)',
-  failed: 'var(--color-danger)',
+const STATUS_TEXT: Record<TransferItem['status'], string> = {
+  queued: 'text-fg-muted',
+  active: 'text-accent',
+  paused: 'text-warning',
+  completed: 'text-success',
+  failed: 'text-danger',
 };
 
-const STATUS_BAR_COLORS: Record<TransferItem['status'], string> = {
-  queued: 'var(--color-text-muted)',
-  active: 'var(--color-accent)',
-  paused: 'var(--color-warning)',
-  completed: 'var(--color-success)',
-  failed: 'var(--color-danger)',
+// accent-color tints a native <progress>; scheme-dark gives it a dark track (every theme is dark).
+const STATUS_BAR: Record<TransferItem['status'], string> = {
+  queued: 'accent-fg-muted',
+  active: 'accent-accent',
+  paused: 'accent-warning',
+  completed: 'accent-success',
+  failed: 'accent-danger',
 };
 
-interface TransferRowProps {
-  transfer: TransferItem;
-}
-
-const TransferRow: React.FC<TransferRowProps> = ({ transfer }) => {
-  const { pauseTransfer, resumeTransfer, cancelTransfer } = useSFTPStore();
-  const percentage = transfer.size > 0 ? Math.round((transfer.transferred / transfer.size) * 100) : 0;
-  const filename = transfer.localPath.split(/[\\/]/).pop() ?? transfer.localPath;
+const TransferRow: React.FC<{ transfer: TransferItem }> = ({ transfer }) => {
+  const pauseTransfer = useSFTPStore((s) => s.pauseTransfer);
+  const resumeTransfer = useSFTPStore((s) => s.resumeTransfer);
+  const cancelTransfer = useSFTPStore((s) => s.cancelTransfer);
+  const percentage =
+    transfer.status === 'completed'
+      ? 100
+      : transfer.size > 0
+        ? Math.min(100, Math.round((transfer.transferred / transfer.size) * 100))
+        : 0;
   const isUpload = transfer.direction === 'upload';
+  const fullPath = isUpload ? transfer.localPath : transfer.remotePath;
+  const filename = fullPath.split(/[\\/]/).pop() || fullPath;
+  const running = transfer.status === 'active' || transfer.status === 'paused';
 
-  // Real transfer speed — exponential moving average over sampled deltas
+  // Transfer speed: exponential moving average over sampled deltas.
   const [speed, setSpeed] = useState(0);
   const lastSampleRef = useRef<{ time: number; transferred: number } | null>(null);
 
@@ -59,193 +75,166 @@ const TransferRow: React.FC<TransferRowProps> = ({ transfer }) => {
       if (transfer.status !== 'paused') setSpeed(0);
       return;
     }
-
     const now = Date.now();
     const last = lastSampleRef.current;
-
     if (!last) {
       lastSampleRef.current = { time: now, transferred: transfer.transferred };
       return;
     }
-
-    const timeDelta = (now - last.time) / 1000; // seconds
+    const timeDelta = (now - last.time) / 1000;
     const byteDelta = transfer.transferred - last.transferred;
-
     if (timeDelta >= 0.2 && byteDelta >= 0) {
       const instantSpeed = byteDelta / timeDelta;
-      // EMA smoothing: blend 30% new reading with 70% previous
+      // Blend 30% new reading with 70% previous
       setSpeed((prev) => (prev === 0 ? instantSpeed : prev * 0.7 + instantSpeed * 0.3));
       lastSampleRef.current = { time: now, transferred: transfer.transferred };
     }
   }, [transfer.transferred, transfer.status]);
 
   const handlePauseResume = useCallback(() => {
-    if (transfer.status === 'active') {
-      pauseTransfer(transfer.id);
-    } else if (transfer.status === 'paused') {
-      resumeTransfer(transfer.id);
-    }
+    if (transfer.status === 'active') pauseTransfer(transfer.id);
+    else if (transfer.status === 'paused') resumeTransfer(transfer.id);
   }, [transfer.id, transfer.status, pauseTransfer, resumeTransfer]);
 
-  const handleCancel = useCallback(() => {
-    cancelTransfer(transfer.id);
-  }, [transfer.id, cancelTransfer]);
+  const statusLabel =
+    transfer.status === 'completed'
+      ? 'Done'
+      : transfer.status === 'failed'
+        ? 'Failed'
+        : transfer.status === 'queued'
+          ? 'Queued'
+          : `${percentage}%`;
 
   return (
-    <div
-      className="flex items-center gap-3 px-3 py-1.5 text-xs hover:bg-[var(--color-bg-tertiary)] transition-colors"
-    >
-      {/* Direction arrow */}
+    <li className="relative flex h-8 min-w-0 items-center gap-3 px-3 text-body-sm hover:bg-surface-hover">
       <span
-        className="flex-shrink-0 text-sm"
-        style={{ color: isUpload ? 'var(--color-accent)' : 'var(--color-success)' }}
+        className={cx(
+          'flex shrink-0 items-center',
+          isUpload ? 'text-accent' : 'text-success'
+        )}
         title={isUpload ? 'Upload' : 'Download'}
       >
-        {isUpload ? '\u2191' : '\u2193'}
+        <Icon icon={isUpload ? ArrowUp : ArrowDown} size={14} />
+        <span className="sr-only">{isUpload ? 'Upload' : 'Download'}</span>
       </span>
 
-      {/* Filename */}
-      <span
-        className="truncate min-w-0 w-40"
-        style={{ color: 'var(--color-text-primary)' }}
-        title={isUpload ? transfer.localPath : transfer.remotePath}
-      >
+      <span className="min-w-0 flex-1 truncate font-code text-fg" title={fullPath}>
         {filename}
       </span>
 
-      {/* Progress bar */}
-      <div className="flex-1 min-w-[80px]">
-        <div className="transfer-progress">
-          <div
-            className="transfer-progress-bar"
-            style={{
-              width: `${transfer.status === 'completed' ? 100 : percentage}%`,
-              backgroundColor: STATUS_BAR_COLORS[transfer.status],
-            }}
-          />
-        </div>
-      </div>
+      <progress
+        aria-label={`${filename} progress`}
+        value={percentage}
+        max={100}
+        className={cx(
+          'h-1.5 w-20 shrink-0 scheme-dark @md:w-40 @3xl:w-64',
+          STATUS_BAR[transfer.status]
+        )}
+      />
 
-      {/* Percentage */}
       <span
-        className="w-10 text-right flex-shrink-0"
-        style={{ color: STATUS_COLORS[transfer.status] }}
+        className={cx(
+          'w-12 shrink-0 text-right tabular-nums',
+          STATUS_TEXT[transfer.status]
+        )}
+        title={transfer.status === 'failed' ? transfer.error : undefined}
       >
-        {transfer.status === 'completed' ? '100%' : transfer.status === 'failed' ? 'ERR' : `${percentage}%`}
+        {statusLabel}
       </span>
 
-      {/* Speed */}
-      <span
-        className="w-16 text-right flex-shrink-0"
-        style={{ color: 'var(--color-text-muted)' }}
-      >
+      <span className="hidden w-20 shrink-0 text-right tabular-nums text-fg-muted @2xl:block">
         {transfer.status === 'active' ? formatSpeed(speed) : ''}
       </span>
 
-      {/* Size / Progress bytes */}
-      <span
-        className="w-36 text-right flex-shrink-0 tabular-nums"
-        style={{ color: 'var(--color-text-muted)' }}
-      >
-        {transfer.status === 'active' || transfer.status === 'paused'
+      <span className="hidden w-36 shrink-0 text-right tabular-nums text-fg-muted @xl:block">
+        {running
           ? `${formatSize(transfer.transferred)} / ${formatSize(transfer.size)}`
           : formatSize(transfer.size)}
       </span>
 
-      {/* Actions */}
-      <div className="flex items-center gap-1 flex-shrink-0">
-        {(transfer.status === 'active' || transfer.status === 'paused') && (
-          <button
-            className="btn-ghost w-5 h-5 flex items-center justify-center rounded text-[10px]"
+      <div className="flex w-13 shrink-0 items-center justify-end gap-1">
+        {running && (
+          <IconButton
+            size="sm"
+            icon={transfer.status === 'active' ? Pause : Play}
+            label={`${transfer.status === 'active' ? 'Pause' : 'Resume'} ${filename}`}
             onClick={handlePauseResume}
-            title={transfer.status === 'active' ? 'Pause' : 'Resume'}
-          >
-            {transfer.status === 'active' ? (
-              <Icon icon={CirclePause} size={12} />
-            ) : (
-              <Icon icon={CirclePlay} size={12} />
-            )}
-          </button>
+          />
         )}
         {transfer.status !== 'completed' && (
-          <button
-            className="btn-ghost w-5 h-5 flex items-center justify-center rounded text-[10px]"
-            onClick={handleCancel}
-            title="Cancel"
-            style={{ color: 'var(--color-danger)' }}
-          >
-            <Icon icon={X} size={12} />
-          </button>
+          <IconButton
+            size="sm"
+            icon={X}
+            label={`${transfer.status === 'failed' ? 'Remove' : 'Cancel'} ${filename}`}
+            onClick={() => cancelTransfer(transfer.id)}
+            className="hover:text-danger"
+          />
         )}
       </div>
-    </div>
+    </li>
   );
 };
 
 export const TransferPanel: React.FC = () => {
+  const id = useId();
   const [collapsed, setCollapsed] = useState(false);
   const transfers = useSFTPStore((s) => s.transfers);
   const clearCompletedTransfers = useSFTPStore((s) => s.clearCompletedTransfers);
 
   const remaining = useMemo(
-    () => transfers.filter((t) => t.status === 'queued' || t.status === 'active' || t.status === 'paused').length,
-    [transfers],
+    () =>
+      transfers.filter(
+        (t) => t.status === 'queued' || t.status === 'active' || t.status === 'paused'
+      ).length,
+    [transfers]
   );
-
   const completedCount = useMemo(
     () => transfers.filter((t) => t.status === 'completed').length,
-    [transfers],
+    [transfers]
   );
 
   if (transfers.length === 0) return null;
 
   return (
-    <div
-      className="border-t flex flex-col"
-      style={{
-        borderColor: 'var(--color-border)',
-        backgroundColor: 'var(--color-bg-secondary)',
-      }}
+    <section
+      aria-label="Transfers"
+      className="@container flex shrink-0 flex-col border-t border-line bg-surface-sunken"
     >
-      {/* Header */}
-      <div
-        className="flex items-center justify-between px-3 py-1.5 text-xs font-medium hover:bg-[var(--color-bg-tertiary)] transition-colors"
-        style={{ color: 'var(--color-text-secondary)' }}
-      >
-        <button
-          type="button"
-          className="flex flex-1 items-center gap-2 text-left"
+      <div className="flex h-8 shrink-0 items-center gap-2 px-1.5">
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={collapsed ? ChevronRight : ChevronDown}
+          aria-expanded={!collapsed}
+          aria-controls={`${id}-list`}
           onClick={() => setCollapsed((c) => !c)}
+          className="min-w-0"
         >
-          <Icon icon={ChevronRight} size={12} className={`transition-transform ${collapsed ? '' : 'rotate-90'}`} />
-          <span>
-            Transfers
-            {remaining > 0 && (
-              <span style={{ color: 'var(--color-text-muted)' }}>
-                {' '}&middot; {remaining} file{remaining !== 1 ? 's' : ''} remaining
-              </span>
-            )}
-          </span>
-        </button>
+          Transfers
+          {remaining > 0 && (
+            <span className="truncate font-normal text-fg-muted">
+              · {remaining} file{remaining !== 1 ? 's' : ''} remaining
+            </span>
+          )}
+        </Button>
+        <div className="flex-1" />
         {completedCount > 0 && (
-          <button
-            type="button"
-            className="btn-ghost text-[10px] px-1.5 py-0.5 rounded"
-            onClick={() => clearCompletedTransfers()}
-          >
+          <Button variant="ghost" size="sm" onClick={() => clearCompletedTransfers()}>
             Clear completed
-          </button>
+          </Button>
         )}
       </div>
 
-      {/* Transfer list */}
       {!collapsed && (
-        <div className="max-h-40 overflow-y-auto scrollbar-thin">
+        <ul
+          id={`${id}-list`}
+          className="max-h-40 overflow-y-auto border-t border-line pb-1 scrollbar-thin"
+        >
           {transfers.map((transfer) => (
             <TransferRow key={transfer.id} transfer={transfer} />
           ))}
-        </div>
+        </ul>
       )}
-    </div>
+    </section>
   );
 };

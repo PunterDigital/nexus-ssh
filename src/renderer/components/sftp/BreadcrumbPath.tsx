@@ -1,7 +1,11 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Pencil } from 'lucide-react';
+import { IconButton, Input, cx } from '../ui';
 
 // ============================================================
-// BreadcrumbPath — clickable path segments with inline editing
+// BreadcrumbPath — the current folder as clickable segments; click the empty end of the bar,
+// the "…" segment or the pencil button to type a path instead (Enter goes there, Escape
+// cancels, leaving the field goes there too).
 // ============================================================
 
 interface BreadcrumbPathProps {
@@ -10,34 +14,37 @@ interface BreadcrumbPathProps {
   onNavigate: (path: string) => void;
 }
 
+interface Segment {
+  label: string;
+  path: string;
+}
+
 /**
  * Split a path into navigable segments.
- * For Windows local paths like "C:\Users\foo", we keep the drive as the first segment.
+ * For Windows local paths like "C:\Users\foo", "This PC" and the drive come first.
  * For Unix paths like "/home/user/app", the root "/" is the first segment.
  */
-function splitPath(path: string, side: 'local' | 'remote'): { label: string; path: string }[] {
-  const segments: { label: string; path: string }[] = [];
-
+export function splitPath(path: string, side: 'local' | 'remote'): Segment[] {
   // Windows "This PC" drives-root sentinel
   if (path === '__drives__' && side === 'local') {
     return [{ label: 'This PC', path: '__drives__' }];
   }
 
   const normalized = path.replace(/\\/g, '/');
+  const segments: Segment[] = [];
 
-  // Windows drive root
-  const driveMatch = normalized.match(/^([A-Za-z]:)\//);
+  // Windows drive ("C:" or "C:/…")
+  const driveMatch = normalized.match(/^([A-Za-z]:)(\/|$)/);
   if (driveMatch && side === 'local') {
     segments.push({ label: 'This PC', path: '__drives__' });
     segments.push({ label: driveMatch[1], path: driveMatch[1] + '\\' });
-    const rest = normalized.slice(driveMatch[0].length);
-    if (rest) {
-      const parts = rest.split('/').filter(Boolean);
-      let accumulated = driveMatch[1] + '\\';
-      for (const part of parts) {
-        accumulated += part + '\\';
-        segments.push({ label: part, path: accumulated });
-      }
+    let accumulated = driveMatch[1] + '\\';
+    for (const part of normalized
+      .slice(driveMatch[0].length)
+      .split('/')
+      .filter(Boolean)) {
+      accumulated += part + '\\';
+      segments.push({ label: part, path: accumulated });
     }
     return segments;
   }
@@ -45,26 +52,31 @@ function splitPath(path: string, side: 'local' | 'remote'): { label: string; pat
   // Unix path
   if (normalized.startsWith('/')) {
     segments.push({ label: '/', path: '/' });
-    const parts = normalized.slice(1).split('/').filter(Boolean);
     let accumulated = '/';
-    for (const part of parts) {
+    for (const part of normalized.slice(1).split('/').filter(Boolean)) {
       accumulated += part + '/';
       segments.push({ label: part, path: accumulated });
     }
     return segments;
   }
 
-  // Fallback
-  segments.push({ label: normalized, path: normalized });
-  return segments;
+  return [{ label: normalized, path: normalized }];
 }
 
 const MAX_VISIBLE_SEGMENTS = 6;
 
-export const BreadcrumbPath: React.FC<BreadcrumbPathProps> = ({ path, side, onNavigate }) => {
+export const BreadcrumbPath: React.FC<BreadcrumbPathProps> = ({
+  path,
+  side,
+  onNavigate,
+}) => {
   const [editing, setEditing] = useState(false);
   const [inputValue, setInputValue] = useState(path);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Set once an edit is submitted or cancelled, so the blur that follows (the input unmounts)
+  // doesn't navigate a second time or undo an Escape.
+  const settled = useRef(false);
+  const sideLabel = side === 'local' ? 'Local path' : 'Remote path';
 
   useEffect(() => {
     setInputValue(path);
@@ -72,88 +84,131 @@ export const BreadcrumbPath: React.FC<BreadcrumbPathProps> = ({ path, side, onNa
 
   useEffect(() => {
     if (editing && inputRef.current) {
+      settled.current = false;
       inputRef.current.focus();
       inputRef.current.select();
     }
   }, [editing]);
 
-  const handleSubmit = useCallback(() => {
-    const trimmed = inputValue.trim();
-    if (trimmed) {
-      onNavigate(trimmed);
-    }
-    setEditing(false);
-  }, [inputValue, onNavigate]);
+  const startEditing = () => {
+    setInputValue(path);
+    setEditing(true);
+  };
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter') {
-        handleSubmit();
-      } else if (e.key === 'Escape') {
-        setInputValue(path);
-        setEditing(false);
-      }
-    },
-    [handleSubmit, path],
-  );
+  const submit = () => {
+    if (settled.current) return;
+    settled.current = true;
+    const trimmed = inputValue.trim();
+    setEditing(false);
+    if (trimmed) onNavigate(trimmed);
+  };
+
+  const cancel = () => {
+    settled.current = true;
+    setInputValue(path);
+    setEditing(false);
+  };
 
   if (editing) {
     return (
-      <input
-        ref={inputRef}
-        className="input h-7 text-xs font-mono flex-1"
-        value={inputValue}
-        onChange={(e) => setInputValue(e.target.value)}
-        onKeyDown={handleKeyDown}
-        onBlur={handleSubmit}
-        spellCheck={false}
-      />
+      <div className="min-w-32 flex-1">
+        <Input
+          ref={inputRef}
+          size="sm"
+          code
+          aria-label={sideLabel}
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              submit();
+            } else if (e.key === 'Escape') {
+              // Don't let Escape reach a dialog or menu handler further up.
+              e.stopPropagation();
+              cancel();
+            }
+          }}
+          onBlur={submit}
+          spellCheck={false}
+          autoComplete="off"
+        />
+      </div>
     );
   }
 
   const segments = splitPath(path, side);
   const overflow = segments.length > MAX_VISIBLE_SEGMENTS;
-  const visible = overflow
-    ? [segments[0], { label: '\u2026', path: '' }, ...segments.slice(-(MAX_VISIBLE_SEGMENTS - 2))]
+  const visible: (Segment | null)[] = overflow
+    ? [segments[0], null, ...segments.slice(-(MAX_VISIBLE_SEGMENTS - 2))]
     : segments;
 
   return (
-    <div
-      className="flex items-center gap-0.5 flex-1 min-w-0 h-7 px-2 rounded cursor-text text-xs font-mono overflow-hidden"
-      style={{ backgroundColor: 'var(--color-bg-tertiary)' }}
-      onClick={() => setEditing(true)}
-      title="Click to edit path"
-    >
-      {visible.map((seg, i) => (
-        <React.Fragment key={i}>
-          {i > 0 && (
-            <span className="mx-0.5 flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>
-              /
-            </span>
-          )}
-          {seg.path ? (
-            <button
-              className="hover:underline truncate flex-shrink-0 max-w-[120px]"
-              style={{
-                color:
-                  i === visible.length - 1
-                    ? 'var(--color-text-primary)'
-                    : 'var(--color-text-secondary)',
-                fontWeight: i === visible.length - 1 ? 600 : 400,
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                onNavigate(seg.path);
-              }}
-              title={seg.path}
-            >
-              {seg.label}
-            </button>
-          ) : (
-            <span style={{ color: 'var(--color-text-muted)' }}>{seg.label}</span>
-          )}
-        </React.Fragment>
-      ))}
+    <div className="flex min-w-32 flex-1 items-center gap-1">
+      <div
+        className="flex h-6 min-w-0 flex-1 cursor-text items-center rounded-md border border-line-strong bg-surface-raised px-1 font-code text-body-sm"
+        onClick={startEditing}
+        title="Click to edit path"
+      >
+        <nav aria-label={sideLabel} className="min-w-0 flex-1 overflow-hidden">
+          <ol className="flex min-w-0 items-center">
+            {visible.map((seg, i) => {
+              const last = i === visible.length - 1;
+              return (
+                <li
+                  key={seg ? seg.path : 'overflow'}
+                  className={cx(
+                    'flex min-w-0 items-center',
+                    last ? 'shrink' : 'shrink-0'
+                  )}
+                >
+                  {i > 0 && (
+                    <span aria-hidden="true" className="px-0.5 text-fg-muted">
+                      /
+                    </span>
+                  )}
+                  {seg ? (
+                    <button
+                      type="button"
+                      aria-current={last ? 'location' : undefined}
+                      title={seg.path === '__drives__' ? 'This PC' : seg.path}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onNavigate(seg.path);
+                      }}
+                      className={cx(
+                        'max-w-32 truncate rounded-sm px-1 hover:bg-surface-hover hover:text-fg focus-ring-inset',
+                        last ? 'font-semibold text-fg' : 'text-fg-secondary'
+                      )}
+                    >
+                      {seg.label}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      aria-label="Show the full path"
+                      title="Show the full path"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        startEditing();
+                      }}
+                      className="rounded-sm px-1 text-fg-muted hover:bg-surface-hover hover:text-fg focus-ring-inset"
+                    >
+                      …
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+        </nav>
+      </div>
+      <IconButton
+        icon={Pencil}
+        size="sm"
+        label={side === 'local' ? 'Edit local path' : 'Edit remote path'}
+        onClick={startEditing}
+      />
     </div>
   );
 };

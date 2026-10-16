@@ -86,6 +86,9 @@ export default [
       'src/renderer/components/common/SettingsPanel.tsx',
       'src/renderer/components/common/ThemeCard.tsx',
       'src/renderer/components/common/ColourPicker.tsx',
+      // #2367 part 2
+      'src/renderer/components/sftp/**/*.{ts,tsx}',
+      'src/renderer/components/snippets/**/*.{ts,tsx}',
     ],
     rules: {
       'no-restricted-syntax': [

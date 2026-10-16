@@ -182,8 +182,9 @@ const nexusAPI = {
       call('sftp:download', sessionId, remotePath, localPath),
     mkdir: (sessionId: string, remotePath: string) =>
       call('sftp:mkdir', sessionId, remotePath),
-    delete: (sessionId: string, remotePath: string) =>
-      call('sftp:delete', sessionId, remotePath),
+    /** A directory is deleted with everything in it. */
+    delete: (sessionId: string, remotePath: string, isDirectory = false) =>
+      call('sftp:delete', sessionId, remotePath, isDirectory),
     rename: (sessionId: string, oldPath: string, newPath: string) =>
       call('sftp:rename', sessionId, oldPath, newPath),
     stat: (sessionId: string, remotePath: string) =>
