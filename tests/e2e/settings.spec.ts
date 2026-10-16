@@ -219,6 +219,39 @@ test('picking a theme card recolours the app; arrow keys move between themes', a
   await leaveSettings();
 });
 
+test('About links open the repository and downloads page in the browser (#2664)', async () => {
+  // Record instead of launching a real browser.
+  await app!.evaluate(({ shell }) => {
+    const g = globalThis as unknown as { __opened: string[] };
+    g.__opened = [];
+    shell.openExternal = async (url: string) => {
+      g.__opened.push(url);
+    };
+  });
+  const opened = () => app!.evaluate(() => (globalThis as unknown as { __opened: string[] }).__opened);
+
+  await openSettings();
+  await goTo('About');
+  await page.getByRole('link', { name: 'GitHub Repository' }).click();
+  await page.getByRole('link', { name: 'Website' }).click();
+  await expect
+    .poll(opened)
+    .toEqual(['https://github.com/PunterDigital/nexus-ssh', 'https://punterdigital.github.io/personal-apps/']);
+  // The window itself never navigated away.
+  await expect(sectionHeading('About')).toBeVisible();
+
+  // Anything off the allow-list is refused by main.
+  const refused = await page.evaluate(() =>
+    window.nexus.shell.openExternal('https://example.com/').then(
+      () => 'opened',
+      (err: Error) => err.message,
+    ),
+  );
+  expect(refused).toBe('This link is not allowed');
+  expect(await opened()).toHaveLength(2);
+  await leaveSettings();
+});
+
 test('every section fits the minimum window with the widest sidebar', async () => {
   await app!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(900, 600));
   await expect.poll(() => page.evaluate(() => window.innerWidth)).toBeLessThanOrEqual(900);

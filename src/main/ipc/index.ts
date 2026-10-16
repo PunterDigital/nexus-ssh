@@ -14,6 +14,7 @@ import { registerClipboardHandlers } from './clipboard-handlers';
 import { registerFsHandlers } from './fs-handlers';
 import { registerAppSettingsHandlers } from './app-settings-handlers';
 import { registerUpdaterHandlers } from './updater-handlers';
+import { registerShellHandlers } from './shell-handlers';
 
 /**
  * Register all IPC handlers for the main process.
@@ -32,4 +33,5 @@ export function registerAllHandlers(): void {
   registerFsHandlers();
   registerAppSettingsHandlers();
   registerUpdaterHandlers();
+  registerShellHandlers();
 }

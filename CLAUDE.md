@@ -101,6 +101,13 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   rebuilds each xterm from the cache, and main replays the output (`markReady` → `scrollbackBuffer`).
   Main's settings `DEFAULTS` must list every vault setting: `getAll` returns only those keys
   (cursor style/blink were missing until #2662).
+- External links (#2664): `window.nexus.shell.openExternal(url)` → `shell:open-external`, which opens only
+  https URLs under `REPOSITORY_URL` / `DOWNLOADS_PAGE_URL` (`src/main/shell/external-links.ts`, unit-tested).
+  Add a URL to that allow-list rather than a new open-anything call. The window itself never navigates.
+- Secrets go to the clipboard through `window.nexus.clipboard.copySecure` (main clears it after the
+  "Clipboard clear timeout"), never `navigator.clipboard`: private keys since #2663. E2E can swap main's
+  `clipboard.writeText`/`readText` for an in-memory fake via `app.evaluate` (`keychain.spec.ts`),
+  which keeps the shared OS clipboard out of it.
 - `sr-only` is `position: absolute`: give its parent `relative`, or inside a scroll container it
   escapes to the nearest positioned ancestor outside and makes the whole page scroll (#2367).
 - Icons (#2374): Lucide only (`lucide-react`), always through `<Icon icon={Terminal} size={14} />`

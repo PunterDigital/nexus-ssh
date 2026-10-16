@@ -287,6 +287,12 @@ const nexusAPI = {
       call('clipboard:copy-secure', text),
   },
 
+  // ── External links ─────────────────────────────────────────
+  shell: {
+    /** Opens an allow-listed https link (repository, downloads page) in the default browser. */
+    openExternal: (url: string) => call('shell:open-external', url),
+  },
+
   // ── App-level settings (stored outside the encrypted vault) ──
   appSettings: {
     get: (key: string) => call('app-settings:get', key),

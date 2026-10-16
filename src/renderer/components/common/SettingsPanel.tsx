@@ -27,6 +27,8 @@ import {
   DEFAULT_SCROLLBACK,
   DEFAULT_SFTP_CONCURRENCY,
   APP_NAME,
+  DOWNLOADS_PAGE_URL,
+  REPOSITORY_URL,
   UPDATE_CHECK_SETTING,
 } from '../../../shared/constants';
 import { Icon } from './Icon';
@@ -240,6 +242,16 @@ export const SettingsPanel: React.FC = () => {
       addNotification('error', (err as Error).message);
     }
   }, [addNotification]);
+
+  const openLink = useCallback(
+    (e: React.MouseEvent<HTMLAnchorElement>, url: string) => {
+      e.preventDefault();
+      window.nexus.shell.openExternal(url).catch((err: unknown) => {
+        addNotification('error', `Couldn't open the link: ${(err as Error).message}`);
+      });
+    },
+    [addNotification],
+  );
 
   const section = SECTIONS.find((s) => s.id === activeSection) ?? SECTIONS[0];
   const titleId = useId();
@@ -531,14 +543,11 @@ export const SettingsPanel: React.FC = () => {
                 terminals, SFTP file browser, and cross-device sync.
               </p>
 
-              {/* These links don't open anything yet: the preload has no openExternal. */}
+              {/* Opened in the default browser by main (allow-listed); the window never navigates. */}
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                 <a
-                  href="#"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    // window.nexus.shell.openExternal('https://github.com/punter-digital/nexus');
-                  }}
+                  href={REPOSITORY_URL}
+                  onClick={(e) => openLink(e, REPOSITORY_URL)}
                   className="inline-flex items-center gap-1.5 rounded-sm text-body text-accent hover:underline focus-ring"
                 >
                   <svg data-logo aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
@@ -547,11 +556,8 @@ export const SettingsPanel: React.FC = () => {
                   GitHub Repository
                 </a>
                 <a
-                  href="#"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    // window.nexus.shell.openExternal('https://punterdigital.com');
-                  }}
+                  href={DOWNLOADS_PAGE_URL}
+                  onClick={(e) => openLink(e, DOWNLOADS_PAGE_URL)}
                   className="inline-flex items-center gap-1.5 rounded-sm text-body text-accent hover:underline focus-ring"
                 >
                   <Icon icon={Globe} size={14} />

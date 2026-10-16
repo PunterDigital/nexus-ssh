@@ -197,6 +197,49 @@ test('the details show the fingerprint and public key, copy it, and keep the pri
   await expect.poll(readClipboard).toBe(generatedPublicKey);
 });
 
+test('copying the private key uses the auto-clearing clipboard (#2663)', async () => {
+  // copySecure writes from the main process. Swap main's clipboard for an in-memory one: the OS
+  // clipboard is shared with the specs running in parallel.
+  await app!.evaluate(({ clipboard }) => {
+    const g = globalThis as unknown as { __fakeClipboard: string };
+    g.__fakeClipboard = '';
+    clipboard.writeText = (text: string) => {
+      g.__fakeClipboard = text;
+    };
+    clipboard.readText = () => g.__fakeClipboard;
+  });
+  const mainClipboard = () =>
+    app!.evaluate(() => (globalThis as unknown as { __fakeClipboard: string }).__fakeClipboard);
+
+  // Clear after 1 s instead of the default 30 s.
+  const applied = page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        const off = window.nexus.settings.onChanged((key, value) => {
+          if (key === 'clipboardClearTimeout' && value === 1) {
+            off();
+            resolve();
+          }
+        });
+      }),
+  );
+  await page.evaluate(() => window.nexus.settings.set('clipboardClearTimeout', 1));
+  await applied;
+
+  await page.evaluate(() => ((window as unknown as { __copied: string }).__copied = ''));
+  await keyItem(GENERATED).getByText(GENERATED, { exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: GENERATED });
+  await dialog.getByRole('button', { name: 'Copy private key' }).click();
+
+  await expect.poll(mainClipboard).toMatch(/BEGIN OPENSSH PRIVATE KEY/);
+  expect(await readClipboard()).toBe(''); // not through navigator.clipboard
+  await expect(page.getByRole('status').filter({ hasText: 'Private key copied' })).toBeVisible();
+  await expect.poll(mainClipboard, { timeout: 5_000 }).toBe('');
+
+  await dialog.getByRole('button', { name: 'Done' }).click();
+  await expect(dialog).toHaveCount(0);
+});
+
 test('deleting a key asks first; Cancel keeps it, Delete Key removes it', async () => {
   const openDelete = async () => {
     await keyItem(GENERATED).getByRole('button', { name: `More actions for ${GENERATED}` }).click();
