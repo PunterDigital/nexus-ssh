@@ -1,11 +1,15 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { Modal } from '../common/Modal';
+import React, { useCallback, useEffect, useState } from 'react';
+import { CircleAlert, Copy, Eye, EyeOff, LoaderCircle } from 'lucide-react';
 import { useUIStore } from '../../stores/ui-store';
+import { Icon } from '../common/Icon';
+import { Button, Dialog, Field, Textarea, cx } from '../ui';
+import { keyTypeBadge } from './keyType';
 import type { SSHKey } from '../../../shared/types';
 
 // ============================================================
-// KeyDetailsDialog — view a single SSH key's public + private
-// material with copy-to-clipboard and show/hide toggles.
+// KeyDetailsDialog — one SSH key's metadata, public key and (hidden until asked for) private
+// key, each with a copy button (design system: #2367). Mounted only while a key is selected,
+// so every key opens with its private key hidden.
 // ============================================================
 
 interface KeyDetailsDialogProps {
@@ -13,25 +17,22 @@ interface KeyDetailsDialogProps {
   onClose: () => void;
 }
 
-export const KeyDetailsDialog: React.FC<KeyDetailsDialogProps> = ({ keyId, onClose }) => {
+export function KeyDetailsDialog({ keyId, onClose }: KeyDetailsDialogProps): React.ReactElement | null {
+  if (keyId === null) return null;
+  // key={keyId}: switching straight to another key starts from a clean state.
+  return <KeyDetails key={keyId} keyId={keyId} onClose={onClose} />;
+}
+
+function KeyDetails({ keyId, onClose }: { keyId: string; onClose: () => void }): React.ReactElement {
   const addNotification = useUIStore((s) => s.addNotification);
   const [key, setKey] = useState<SSHKey | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showPrivate, setShowPrivate] = useState(false);
 
-  // Load full key whenever the dialog opens with a new keyId
+  // Load the full key (incl. private material) for this id.
   useEffect(() => {
-    if (!keyId) {
-      setKey(null);
-      setError(null);
-      setShowPrivate(false);
-      return;
-    }
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-    setShowPrivate(false);
     window.nexus.keychain
       .getFullKey(keyId)
       .then((k) => {
@@ -60,117 +61,117 @@ export const KeyDetailsDialog: React.FC<KeyDetailsDialogProps> = ({ keyId, onClo
     [addNotification],
   );
 
-  const maskedPrivateKey = key?.private_key
-    ? key.private_key.replace(/[^\n]/g, '\u2022')
-    : '';
+  const maskedPrivateKey = key?.private_key ? key.private_key.replace(/[^\n]/g, '•') : '';
+  const badge = key ? keyTypeBadge(key) : null;
 
   return (
-    <Modal
-      open={keyId !== null}
+    <Dialog
+      open
       onClose={onClose}
       title={key ? key.name : 'Key Details'}
-      maxWidth="max-w-2xl"
+      size="lg"
+      footer={
+        <Button variant="primary" onClick={onClose}>
+          Done
+        </Button>
+      }
     >
-      <div className="flex flex-col gap-4" style={{ maxHeight: '70vh' }}>
+      <div className="flex flex-col gap-4">
         {loading && (
-          <div className="flex items-center justify-center py-8">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-[var(--color-bg-tertiary)] border-t-[var(--color-accent)]" />
-          </div>
+          <p role="status" className="flex items-center justify-center gap-2 py-8 text-body text-fg-muted">
+            <Icon icon={LoaderCircle} size={20} className="animate-spin text-accent" />
+            Loading key…
+          </p>
         )}
 
         {error && (
-          <div className="rounded bg-[rgba(247,118,142,0.15)] px-3 py-2 text-xs text-[var(--color-danger)]">
-            {error}
-          </div>
+          <p role="alert" className="flex items-start gap-2 rounded-md bg-danger-soft px-3 py-2 text-body-sm text-danger">
+            <Icon icon={CircleAlert} className="mt-0.5" />
+            <span className="min-w-0 break-words">{error}</span>
+          </p>
         )}
 
         {key && !loading && (
           <>
             {/* Metadata */}
-            <div className="grid grid-cols-2 gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 text-xs">
-              <div>
-                <div className="text-[10px] uppercase tracking-wide text-[var(--color-text-muted)]">Type</div>
-                <div className="mt-0.5 font-medium text-[var(--color-text-primary)]">
-                  {key.key_type.toUpperCase()}{key.bits ? ` ${key.bits}` : ''}
-                </div>
+            <dl className="grid grid-cols-2 gap-3 rounded-lg border border-line bg-surface-sunken p-3">
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <dt className="text-caption text-fg-muted">Type</dt>
+                <dd>
+                  <span className={cx('rounded-sm px-1.5 text-body-sm font-medium', badge?.className)}>
+                    {badge?.label}
+                  </span>
+                </dd>
               </div>
-              <div>
-                <div className="text-[10px] uppercase tracking-wide text-[var(--color-text-muted)]">Created</div>
-                <div className="mt-0.5 font-medium text-[var(--color-text-primary)]">
-                  {new Date(key.created_at).toLocaleDateString()}
-                </div>
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <dt className="text-caption text-fg-muted">Created</dt>
+                <dd className="text-body text-fg">{new Date(key.created_at).toLocaleDateString()}</dd>
               </div>
-              <div className="col-span-2">
-                <div className="text-[10px] uppercase tracking-wide text-[var(--color-text-muted)]">Fingerprint</div>
-                <div className="mt-0.5 break-all font-mono text-[11px] text-[var(--color-text-primary)]">
-                  {key.fingerprint}
-                </div>
+              <div className="col-span-2 flex min-w-0 flex-col gap-0.5">
+                <dt className="text-caption text-fg-muted">Fingerprint</dt>
+                <dd className="font-code text-body-sm break-all text-fg select-text">{key.fingerprint}</dd>
               </div>
-            </div>
+            </dl>
 
             {/* Public key */}
-            <div className="flex flex-col gap-1">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-[var(--color-text-muted)]">Public Key</span>
-                <button
-                  type="button"
-                  onClick={() => handleCopy(key.public_key, 'Public key')}
-                  className="rounded px-2 py-0.5 text-[10px] text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]"
+            <Field
+              label="Public key"
+              aside={
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon={Copy}
+                  aria-label="Copy public key"
+                  onClick={() => void handleCopy(key.public_key, 'Public key')}
                 >
                   Copy
-                </button>
-              </div>
-              <textarea
-                readOnly
-                value={key.public_key}
-                className="input resize-none font-mono text-[11px]"
-                rows={4}
-                style={{ wordBreak: 'break-all' }}
-              />
-            </div>
+                </Button>
+              }
+            >
+              <Textarea code readOnly rows={3} value={key.public_key} className="resize-none break-all" />
+            </Field>
 
             {/* Private key */}
-            <div className="flex flex-col gap-1">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-[var(--color-text-muted)]">Private Key</span>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
+            <Field
+              label="Private key"
+              hint={showPrivate ? undefined : 'Hidden for security. Select Show to reveal it.'}
+              aside={
+                <span className="flex items-center gap-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon={showPrivate ? EyeOff : Eye}
+                    aria-label={showPrivate ? 'Hide private key' : 'Show private key'}
+                    aria-pressed={showPrivate}
                     onClick={() => setShowPrivate((v) => !v)}
-                    className="rounded px-2 py-0.5 text-[10px] text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]"
                   >
                     {showPrivate ? 'Hide' : 'Show'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(key.private_key, 'Private key')}
-                    className="rounded px-2 py-0.5 text-[10px] text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]"
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon={Copy}
+                    aria-label="Copy private key"
+                    onClick={() => void handleCopy(key.private_key, 'Private key')}
                   >
                     Copy
-                  </button>
-                </div>
-              </div>
-              <textarea
+                  </Button>
+                </span>
+              }
+            >
+              <Textarea
+                code
                 readOnly
+                rows={6}
                 value={showPrivate ? key.private_key : maskedPrivateKey}
-                className="input resize-none font-mono text-[11px]"
-                rows={8}
-                style={{
-                  wordBreak: 'break-all',
-                  filter: showPrivate ? 'none' : 'blur(0)',
-                }}
+                className="resize-none break-all"
               />
-              {!showPrivate && (
-                <p className="text-[10px] italic text-[var(--color-text-muted)]">
-                  The private key is hidden for security. Click &ldquo;Show&rdquo; to reveal it.
-                </p>
-              )}
-            </div>
+            </Field>
           </>
         )}
       </div>
-    </Modal>
+    </Dialog>
   );
-};
+}
 
 export default KeyDetailsDialog;

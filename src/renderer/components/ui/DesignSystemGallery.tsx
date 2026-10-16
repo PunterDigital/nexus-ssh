@@ -17,7 +17,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { BUNDLED_THEMES, applyTheme, getThemeById } from '../../styles/themes';
-import { Button, Card, Dialog, EmptyState, Field, IconButton, Input, Menu, PasswordInput, Select, Textarea, Tabs, Toolbar, ToolbarSeparator } from '.';
+import { Button, Card, Checkbox, Dialog, EmptyState, Field, IconButton, Input, Menu, PasswordInput, RadioGroup, Select, Switch, Textarea, Tabs, Toolbar, ToolbarSeparator } from '.';
 
 // Living reference for docs/design-system.md: every token and primitive in every state.
 // Open it with the app's URL hash #design-system (dev: http://localhost:5173/#design-system;
@@ -102,6 +102,10 @@ export function DesignSystemGallery() {
   const [hidden, setHidden] = useState(false);
   const [lastAction, setLastAction] = useState('none');
   const [host, setHost] = useState('');
+  const [autoSync, setAutoSync] = useState(true);
+  const [cursor, setCursor] = useState('block');
+  const [conflict, setConflict] = useState('ask');
+  const [keepTimes, setKeepTimes] = useState(false);
 
   useEffect(() => {
     applyTheme(getThemeById(themeId));
@@ -265,6 +269,47 @@ export function DesignSystemGallery() {
             <Field label="Notes" hint="Textarea: same look as Input, grows on request.">
               <Textarea placeholder="Personal servers, work infrastructure..." rows={2} />
             </Field>
+          </div>
+        </Section>
+
+        <Section title="Switch, Checkbox and RadioGroup">
+          <div className="grid max-w-2xl grid-cols-2 gap-4">
+            <Field label="Auto-sync" hint="Switch: applies immediately.">
+              <Switch checked={autoSync} onChange={setAutoSync} />
+            </Field>
+            <Field label="Disabled switch">
+              <Switch checked={false} onChange={() => undefined} disabled />
+            </Field>
+            <Checkbox
+              label="Preserve timestamps"
+              description="Checkbox: a choice saved with a form."
+              checked={keepTimes}
+              onChange={(e) => setKeepTimes(e.target.checked)}
+            />
+            <RadioGroup
+              label="Cursor style"
+              showLabel
+              value={cursor}
+              onChange={setCursor}
+              options={[
+                { value: 'block', label: 'Block' },
+                { value: 'underline', label: 'Underline' },
+                { value: 'bar', label: 'Bar' },
+              ]}
+            />
+            <RadioGroup
+              className="col-span-2"
+              label="Conflict resolution"
+              showLabel
+              variant="list"
+              value={conflict}
+              onChange={setConflict}
+              options={[
+                { value: 'ask', label: 'Ask me', description: 'Show both versions and let me choose.' },
+                { value: 'local', label: 'Keep local', description: 'This device wins.' },
+                { value: 'remote', label: 'Keep remote', description: 'The synced copy wins.', disabled: true },
+              ]}
+            />
           </div>
         </Section>
 

@@ -1,41 +1,22 @@
-import React, { useState, useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
+import { Copy, Ellipsis, Eye, Import, KeyRound, Plus, Trash2 } from 'lucide-react';
 import { useVaultStore } from '../../stores/vault-store';
 import { useUIStore } from '../../stores/ui-store';
+import { Icon } from '../common/Icon';
+import { Button, Dialog, EmptyState, IconButton, Menu, cx, type MenuEntry } from '../ui';
 import { GenerateKeyDialog } from './GenerateKeyDialog';
 import { ImportKeyDialog } from './ImportKeyDialog';
 import { KeyDetailsDialog } from './KeyDetailsDialog';
-import type { SSHKey, KeyType } from '../../../shared/types';
-import { Copy, Download, KeyRound, LockKeyhole, Plus, Trash2 } from 'lucide-react';
-import { Icon } from '../common/Icon';
+import { keyTypeBadge } from './keyType';
+import type { SSHKey } from '../../../shared/types';
 
 // ============================================================
-// KeychainView — Main keychain panel showing all SSH keys
+// KeychainView — the vault's SSH keys (design system: #2367). Header with the count and the
+// Generate / Import actions, then one row per key: the row opens the key's details, the copy
+// button copies its public key, and "More actions" holds details, copy and delete. Deleting
+// asks first in a Dialog named after the key. Fits a 560 px main area: the header wraps and
+// long names / fingerprints truncate with a tooltip.
 // ============================================================
-
-const KEY_TYPE_LABELS: Record<KeyType, string> = {
-  ed25519: 'Ed25519',
-  rsa: 'RSA',
-  ecdsa: 'ECDSA',
-};
-
-function getKeyTypeBadge(key: SSHKey): { label: string; bgColor: string; textColor: string } {
-  const bits = key.bits ? ` ${key.bits}` : '';
-  switch (key.key_type) {
-    case 'ed25519':
-      return { label: 'Ed25519', bgColor: 'rgba(158, 206, 106, 0.15)', textColor: 'var(--color-success)' };
-    case 'rsa':
-      return { label: `RSA${bits}`, bgColor: 'rgba(122, 162, 247, 0.15)', textColor: 'var(--color-accent)' };
-    case 'ecdsa':
-      return { label: `ECDSA${bits}`, bgColor: 'rgba(224, 175, 104, 0.15)', textColor: 'var(--color-warning)' };
-    default:
-      return { label: key.key_type, bgColor: 'var(--color-bg-tertiary)', textColor: 'var(--color-text-muted)' };
-  }
-}
-
-function truncateFingerprint(fp: string, maxLen = 32): string {
-  if (fp.length <= maxLen) return fp;
-  return fp.slice(0, maxLen) + '...';
-}
 
 function formatDate(dateStr: string): string {
   try {
@@ -57,26 +38,26 @@ export const KeychainView: React.FC = () => {
 
   const [generateOpen, setGenerateOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deleteKey, setDeleteKey] = useState<SSHKey | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [viewKeyId, setViewKeyId] = useState<string | null>(null);
 
-  // Build a map of key_id -> referencing entities
+  // key_id -> what uses it: identities with the key, hosts through such an identity, and hosts
+  // that use the key directly (the host form's "SSH key" method).
   const keyReferences = useMemo(() => {
     const refs: Record<string, string[]> = {};
+    const add = (keyId: string, label: string) => {
+      (refs[keyId] ??= []).push(label);
+    };
     for (const identity of identities) {
-      if (identity.key_id) {
-        if (!refs[identity.key_id]) refs[identity.key_id] = [];
-        refs[identity.key_id].push(`Identity: ${identity.name}`);
-      }
+      if (identity.key_id) add(identity.key_id, `Identity: ${identity.name}`);
     }
     for (const host of hosts) {
-      if (host.identity_id) {
+      if (host.key_id) {
+        add(host.key_id, `Host: ${host.label}`);
+      } else if (host.identity_id) {
         const identity = identities.find((i) => i.id === host.identity_id);
-        if (identity?.key_id) {
-          if (!refs[identity.key_id]) refs[identity.key_id] = [];
-          refs[identity.key_id].push(`Host: ${host.label}`);
-        }
+        if (identity?.key_id) add(identity.key_id, `Host: ${host.label}`);
       }
     }
     return refs;
@@ -97,7 +78,7 @@ export const KeychainView: React.FC = () => {
       await window.nexus.keychain.deleteKey(id);
       await useVaultStore.getState().loadKeys();
       addNotification('success', 'SSH key deleted');
-      setDeleteConfirmId(null);
+      setDeleteKey(null);
     } catch (err) {
       addNotification('error', `Failed to delete key: ${(err as Error).message}`);
     } finally {
@@ -105,160 +86,63 @@ export const KeychainView: React.FC = () => {
     }
   };
 
+  const keyActions = (key: SSHKey): MenuEntry[] => [
+    { id: 'details', label: 'View details', icon: Eye, onSelect: () => setViewKeyId(key.id) },
+    { id: 'copy', label: 'Copy public key', icon: Copy, onSelect: () => void handleCopyPublicKey(key) },
+    { separator: true, id: 'sep' },
+    { id: 'delete', label: 'Delete key…', icon: Trash2, danger: true, onSelect: () => setDeleteKey(key) },
+  ];
+
+  const deleteRefs = deleteKey ? (keyReferences[deleteKey.id] ?? []) : [];
+
   return (
-    <div className="flex flex-1 flex-col h-full w-full" style={{ backgroundColor: 'var(--color-bg-primary)' }}>
-      {/* Header */}
-      <div
-        className="flex w-full items-center justify-between px-5 py-3 border-b no-select"
-        style={{ borderColor: 'var(--color-border)' }}
-      >
-        <h1 className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-          SSH Keychain
-        </h1>
-        <div className="flex items-center gap-2">
-          <button
-            className="btn btn-primary"
-            onClick={() => setGenerateOpen(true)}
-          >
-            <Icon icon={Plus} size={14} />
+    <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-surface">
+      {/* Header: wraps onto a second row in narrow windows instead of squashing */}
+      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-line px-4 py-3">
+        <div className="mr-auto flex min-w-0 items-baseline gap-2">
+          <h2 className="truncate text-heading-sm font-semibold text-fg">SSH Keychain</h2>
+          <span className="shrink-0 text-body-sm text-fg-muted">
+            {keys.length} key{keys.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button variant="primary" icon={Plus} onClick={() => setGenerateOpen(true)}>
             Generate Key
-          </button>
-          <button
-            className="btn btn-ghost"
-            style={{ border: '1px solid var(--color-border)' }}
-            onClick={() => setImportOpen(true)}
-          >
-            <Icon icon={Download} size={14} />
+          </Button>
+          <Button icon={Import} onClick={() => setImportOpen(true)}>
             Import Key
-          </button>
+          </Button>
         </div>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto scrollbar-thin p-5">
+      <div className="min-h-0 flex-1 overflow-y-auto p-4 scrollbar-thin">
         {keys.length === 0 ? (
-          /* Empty state */
-          <div className="flex flex-col items-center justify-center h-full gap-3">
-            <Icon icon={LockKeyhole} size={48} strokeWidth={1.5} color="var(--color-text-muted)" />
-            <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-              No SSH keys yet. Generate or import a key to get started.
-            </p>
-          </div>
+          <EmptyState
+            icon={KeyRound}
+            title="No SSH keys yet"
+            description={
+              <>
+                <span className="font-medium text-fg-secondary">Generate</span> a new key or{' '}
+                <span className="font-medium text-fg-secondary">import</span> one you already use to get
+                started.
+              </>
+            }
+            className="h-full"
+          />
         ) : (
-          /* Key list */
-          <div className="flex flex-col gap-2">
-            {keys.map((key) => {
-              const badge = getKeyTypeBadge(key);
-              const refs = keyReferences[key.id] || [];
-              const isDeleteConfirm = deleteConfirmId === key.id;
-
-              return (
-                <div
-                  key={key.id}
-                  onClick={() => setViewKeyId(key.id)}
-                  className="flex items-start gap-4 p-4 rounded-lg border transition-colors cursor-pointer hover:border-[var(--color-accent)]/50 hover:bg-[var(--color-bg-tertiary)]"
-                  style={{
-                    backgroundColor: 'var(--color-bg-secondary)',
-                    borderColor: 'var(--color-border)',
-                  }}
-                >
-                  {/* Key icon */}
-                  <div
-                    className="flex items-center justify-center w-9 h-9 rounded-md mt-0.5 shrink-0"
-                    style={{ backgroundColor: badge.bgColor }}
-                  >
-                    <Icon icon={KeyRound} size={18} color={badge.textColor} />
-                  </div>
-
-                  {/* Key info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span
-                        className="text-sm font-medium truncate"
-                        style={{ color: 'var(--color-text-primary)' }}
-                      >
-                        {key.name}
-                      </span>
-                      <span
-                        className="px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide shrink-0"
-                        style={{ backgroundColor: badge.bgColor, color: badge.textColor }}
-                      >
-                        {badge.label}
-                      </span>
-                    </div>
-
-                    {/* Fingerprint */}
-                    <div
-                      className="text-xs font-mono mb-1 truncate"
-                      style={{ color: 'var(--color-text-muted)' }}
-                      title={key.fingerprint}
-                    >
-                      {truncateFingerprint(key.fingerprint, 48)}
-                    </div>
-
-                    {/* References and date */}
-                    <div className="flex items-center gap-3 flex-wrap">
-                      {refs.length > 0 && (
-                        <span
-                          className="text-[11px]"
-                          style={{ color: 'var(--color-text-muted)' }}
-                          title={refs.join(', ')}
-                        >
-                          Used by: {refs.length === 1 ? refs[0] : `${refs.length} items`}
-                        </span>
-                      )}
-                      <span className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
-                        Created {formatDate(key.created_at)}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div
-                    className="flex items-center gap-1 shrink-0"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <button
-                      className="btn btn-ghost"
-                      onClick={() => handleCopyPublicKey(key)}
-                      title="Copy public key"
-                    >
-                      <Icon icon={Copy} size={14} />
-                      Copy Public Key
-                    </button>
-
-                    {isDeleteConfirm ? (
-                      <div className="flex items-center gap-1">
-                        <button
-                          className="btn btn-danger"
-                          onClick={() => handleDeleteKey(key.id)}
-                          disabled={deleting}
-                        >
-                          {deleting ? 'Deleting...' : 'Confirm'}
-                        </button>
-                        <button
-                          className="btn btn-ghost"
-                          onClick={() => setDeleteConfirmId(null)}
-                          disabled={deleting}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        className="btn btn-ghost"
-                        onClick={() => setDeleteConfirmId(key.id)}
-                        title="Delete key"
-                        style={{ color: 'var(--color-danger)' }}
-                      >
-                        <Icon icon={Trash2} size={14} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <ul aria-label="SSH keys" className="flex flex-col gap-2">
+            {keys.map((key) => (
+              <KeyRow
+                key={key.id}
+                sshKey={key}
+                refs={keyReferences[key.id] ?? []}
+                actions={keyActions(key)}
+                onOpen={() => setViewKeyId(key.id)}
+                onCopy={() => void handleCopyPublicKey(key)}
+              />
+            ))}
+          </ul>
         )}
       </div>
 
@@ -266,6 +150,112 @@ export const KeychainView: React.FC = () => {
       <GenerateKeyDialog open={generateOpen} onClose={() => setGenerateOpen(false)} />
       <ImportKeyDialog open={importOpen} onClose={() => setImportOpen(false)} />
       <KeyDetailsDialog keyId={viewKeyId} onClose={() => setViewKeyId(null)} />
+
+      <Dialog
+        open={deleteKey !== null}
+        onClose={() => {
+          if (!deleting) setDeleteKey(null);
+        }}
+        size="sm"
+        title={deleteKey ? `Delete ${deleteKey.name}?` : 'Delete key?'}
+        description="This permanently removes the key from the vault. Servers that trust its public key aren’t changed."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setDeleteKey(null)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              icon={Trash2}
+              loading={deleting}
+              onClick={() => deleteKey && void handleDeleteKey(deleteKey.id)}
+            >
+              Delete Key
+            </Button>
+          </>
+        }
+      >
+        {deleteRefs.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            <p className="text-body text-fg-secondary">
+              In use by {deleteRefs.length === 1 ? 'one item' : `${deleteRefs.length} items`}, which can no
+              longer sign in with it:
+            </p>
+            <ul className="flex flex-col gap-1 text-body-sm text-fg-muted">
+              {deleteRefs.map((ref) => (
+                <li key={ref} className="truncate" title={ref}>
+                  {ref}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : undefined}
+      </Dialog>
     </div>
   );
 };
+
+// ── Key row ─────────────────────────────────────────────────
+
+interface KeyRowProps {
+  sshKey: SSHKey;
+  refs: string[];
+  actions: MenuEntry[];
+  onOpen: () => void;
+  onCopy: () => void;
+}
+
+function KeyRow({ sshKey: key, refs, actions, onOpen, onCopy }: KeyRowProps): React.ReactElement {
+  const badge = keyTypeBadge(key);
+  return (
+    <li
+      className={cx(
+        'group relative min-w-0 rounded-lg border border-line bg-surface-raised shadow-raised',
+        'transition-colors duration-(--duration-fast) ease-standard hover:border-line-strong focus-within:border-line-strong',
+      )}
+    >
+      {/* The row itself opens the details; the actions sit on top of its right edge. */}
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex w-full min-w-0 items-start gap-3 rounded-lg p-3 pr-20 text-left transition-colors duration-(--duration-fast) hover:bg-surface-hover focus-ring"
+      >
+        <span className={cx('flex size-9 shrink-0 items-center justify-center rounded-md', badge.className)}>
+          <Icon icon={KeyRound} size={16} />
+        </span>
+
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-body font-semibold text-fg" title={key.name}>
+              {key.name}
+            </span>
+            <span className={cx('shrink-0 rounded-sm px-1.5 text-caption font-medium', badge.className)}>
+              {badge.label}
+            </span>
+          </span>
+          <span className="truncate font-code text-body-sm text-fg-muted" title={key.fingerprint}>
+            {key.fingerprint}
+          </span>
+          <span className="flex min-w-0 flex-wrap items-center gap-x-3 text-caption text-fg-muted">
+            {refs.length > 0 && (
+              <span className="min-w-0 truncate" title={refs.join(', ')}>
+                Used by: {refs.length === 1 ? refs[0] : `${refs.length} items`}
+              </span>
+            )}
+            <span className="shrink-0">Created {formatDate(key.created_at)}</span>
+          </span>
+        </span>
+      </button>
+
+      <div className="absolute top-3 right-3 flex items-center gap-1">
+        <IconButton icon={Copy} size="sm" label={`Copy public key of ${key.name}`} onClick={onCopy} />
+        <Menu
+          align="end"
+          label={`Actions for ${key.name}`}
+          items={actions}
+          trigger={(p) => <IconButton {...p} icon={Ellipsis} size="sm" label={`More actions for ${key.name}`} />}
+        />
+      </div>
+    </li>
+  );
+}

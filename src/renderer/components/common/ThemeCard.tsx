@@ -1,105 +1,100 @@
-import React from 'react';
-import type { NexusTheme } from '../../../shared/types';
+import type React from 'react';
 import { Check } from 'lucide-react';
+import type { NexusTheme } from '../../../shared/types';
+import { cx } from '../ui/cx';
 import { Icon } from './Icon';
 
 // ============================================================
-// ThemeCard — Small preview card for a theme
+// ThemeCard — a theme in the settings theme picker: a preview of its palette and its name.
+// It is one radio of a role="radiogroup" (SettingsPanel's ThemePicker handles the arrow keys).
 // ============================================================
 
-export interface ThemeCardProps {
+export interface ThemeCardProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onClick'> {
   theme: NexusTheme;
   selected: boolean;
   onClick: (theme: NexusTheme) => void;
+  ref?: React.Ref<HTMLButtonElement>;
 }
 
-export const ThemeCard: React.FC<ThemeCardProps> = ({ theme, selected, onClick }) => {
-  const { ui, terminal } = theme;
-
+export function ThemeCard({ theme, selected, onClick, className, ...rest }: ThemeCardProps) {
   return (
     <button
       type="button"
+      role="radio"
+      aria-checked={selected}
       onClick={() => onClick(theme)}
-      className="flex flex-col items-center gap-1.5 group focus-ring rounded-lg p-1.5 transition-all"
-      style={{
-        border: selected
-          ? `2px solid var(--color-accent)`
-          : '2px solid transparent',
-        backgroundColor: selected ? 'var(--color-accent-muted)' : 'transparent',
-      }}
-      title={theme.name}
+      className={cx(
+        'flex min-w-0 flex-col gap-2 rounded-lg border p-2 text-left focus-ring',
+        'transition-colors duration-(--duration-fast) ease-standard',
+        selected
+          ? 'border-accent bg-accent-soft'
+          : 'border-line hover:border-line-strong hover:bg-surface-hover',
+        className,
+      )}
+      {...rest}
     >
-      {/* Preview rectangle */}
-      <div
-        className="relative w-20 h-[60px] rounded overflow-hidden"
-        style={{ backgroundColor: ui.bgPrimary }}
-      >
-        {/* Sidebar strip */}
-        <div
-          className="absolute left-0 top-0 bottom-0 w-5"
-          style={{ backgroundColor: ui.bgSecondary }}
-        >
-          <div
-            className="mt-2 ml-1 w-3 h-1 rounded-sm"
-            style={{ backgroundColor: ui.textMuted }}
-          />
-          <div
-            className="mt-1 ml-1 w-3 h-1 rounded-sm"
-            style={{ backgroundColor: ui.accent }}
-          />
-          <div
-            className="mt-1 ml-1 w-3 h-1 rounded-sm"
-            style={{ backgroundColor: ui.textMuted }}
-          />
-        </div>
-
-        {/* Terminal area */}
-        <div
-          className="absolute left-5 top-0 right-0 bottom-0 p-1.5"
-          style={{ backgroundColor: terminal.background }}
-        >
-          <div className="flex flex-col gap-0.5">
-            <div className="flex gap-1">
-              <span className="text-[5px] font-mono" style={{ color: terminal.green }}>$</span>
-              <span className="text-[5px] font-mono" style={{ color: terminal.foreground }}>ssh</span>
-            </div>
-            <div className="flex gap-1">
-              <span className="text-[5px] font-mono" style={{ color: terminal.cyan }}>~</span>
-              <span className="text-[5px] font-mono" style={{ color: terminal.yellow }}>ls</span>
-            </div>
-            <div className="flex gap-1">
-              <span className="text-[5px] font-mono" style={{ color: terminal.red }}>err</span>
-              <span className="text-[5px] font-mono" style={{ color: terminal.blue }}>ok</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Accent bar at top */}
-        <div
-          className="absolute top-0 left-5 right-0 h-[3px]"
-          style={{ backgroundColor: ui.accent }}
-        />
-
-        {/* Selected checkmark */}
-        {selected && (
-          <div
-            className="absolute top-1 right-1 w-3.5 h-3.5 rounded-full flex items-center justify-center"
-            style={{ backgroundColor: 'var(--color-accent)' }}
-          >
-            <Icon icon={Check} size={8} strokeWidth={3} color="#fff" />
-          </div>
-        )}
-      </div>
-
-      {/* Theme name */}
+      <ThemePreview theme={theme} />
       <span
-        className="text-[11px] font-medium truncate max-w-20"
-        style={{
-          color: selected ? 'var(--color-accent)' : 'var(--color-text-secondary)',
-        }}
+        className={cx(
+          'flex min-w-0 items-center gap-1.5 text-body-sm font-medium',
+          selected ? 'text-accent' : 'text-fg-secondary',
+        )}
       >
-        {theme.name}
+        {selected && <Icon icon={Check} size={12} />}
+        <span className="truncate">{theme.name}</span>
       </span>
     </button>
   );
-};
+}
+
+/** A miniature window (sidebar, accent bar, terminal lines) painted in the theme's own colours. */
+function ThemePreview({ theme }: { theme: NexusTheme }) {
+  const { ui, terminal } = theme;
+  // The preview shows *that* theme's palette, not the active one, so its colours are data: they
+  // go in as custom properties on one element and the children read them with bg-(--…).
+  const palette = {
+    '--preview-app': ui.bgPrimary,
+    '--preview-sidebar': ui.bgSecondary,
+    '--preview-muted': ui.textMuted,
+    '--preview-accent': ui.accent,
+    '--preview-term': terminal.background,
+    '--preview-fg': terminal.foreground,
+    '--preview-green': terminal.green,
+    '--preview-cyan': terminal.cyan,
+    '--preview-yellow': terminal.yellow,
+    '--preview-red': terminal.red,
+    '--preview-blue': terminal.blue,
+  } as React.CSSProperties;
+
+  return (
+    <div
+      aria-hidden="true"
+      // eslint-disable-next-line no-restricted-syntax -- the theme's palette is data (see above)
+      style={palette}
+      className="flex aspect-video w-full overflow-hidden rounded-md border border-line bg-(--preview-app)"
+    >
+      <div className="flex w-1/4 flex-col gap-1 bg-(--preview-sidebar) p-1.5">
+        <span className="h-1 w-3/4 rounded-full bg-(--preview-muted)" />
+        <span className="h-1 w-3/4 rounded-full bg-(--preview-accent)" />
+        <span className="h-1 w-1/2 rounded-full bg-(--preview-muted)" />
+      </div>
+      <div className="flex flex-1 flex-col">
+        <div className="h-1 bg-(--preview-accent)" />
+        <div className="flex flex-1 flex-col gap-1 bg-(--preview-term) p-1.5">
+          <span className="flex gap-1">
+            <span className="h-1 w-1/6 rounded-full bg-(--preview-green)" />
+            <span className="h-1 w-1/3 rounded-full bg-(--preview-fg)" />
+          </span>
+          <span className="flex gap-1">
+            <span className="h-1 w-1/6 rounded-full bg-(--preview-cyan)" />
+            <span className="h-1 w-1/4 rounded-full bg-(--preview-yellow)" />
+          </span>
+          <span className="flex gap-1">
+            <span className="h-1 w-1/5 rounded-full bg-(--preview-red)" />
+            <span className="h-1 w-1/4 rounded-full bg-(--preview-blue)" />
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}

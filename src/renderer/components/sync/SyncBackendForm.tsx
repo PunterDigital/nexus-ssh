@@ -1,9 +1,10 @@
 import React from 'react';
-import { FormField } from '../common/FormField';
+import { FolderOpen } from 'lucide-react';
+import { Button, Field, Input, PasswordInput, Select } from '../ui';
 import type { BackendConfig, SyncBackendType } from '../../../shared/types';
 
 // ============================================================
-// SyncBackendForm — Dynamic form based on selected backend type
+// SyncBackendForm — the connection fields of the chosen sync backend (design system: #2367)
 // ============================================================
 
 interface SyncBackendFormProps {
@@ -11,6 +12,44 @@ interface SyncBackendFormProps {
   config: BackendConfig;
   onChange: (config: BackendConfig) => void;
   sshKeys?: Array<{ id: string; name: string }>;
+}
+
+/** Host + port on one row: the port keeps a fixed width and the host takes the rest. */
+function HostPortRow({
+  config,
+  update,
+  hostPlaceholder,
+  defaultPort,
+}: {
+  config: BackendConfig;
+  update: (patch: Partial<BackendConfig>) => void;
+  hostPlaceholder: string;
+  defaultPort: number;
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <Field label="Host" required className="min-w-0 flex-1">
+        <Input
+          code
+          type="text"
+          placeholder={hostPlaceholder}
+          spellCheck={false}
+          value={config.host || ''}
+          onChange={(e) => update({ host: e.target.value })}
+        />
+      </Field>
+      <Field label="Port" className="w-28 shrink-0">
+        <Input
+          type="number"
+          min={1}
+          max={65535}
+          placeholder={String(defaultPort)}
+          value={config.port ?? defaultPort}
+          onChange={(e) => update({ port: Number(e.target.value) || defaultPort })}
+        />
+      </Field>
+    </div>
+  );
 }
 
 export const SyncBackendForm: React.FC<SyncBackendFormProps> = ({
@@ -26,237 +65,198 @@ export const SyncBackendForm: React.FC<SyncBackendFormProps> = ({
   switch (backendType) {
     case 'sftp':
       return (
-        <div className="flex flex-col gap-3">
-          <div className="grid grid-cols-[1fr_120px] gap-3">
-            <FormField label="Host" required>
-              <input
-                className="input"
-                type="text"
-                placeholder="server.example.com"
-                value={config.host || ''}
-                onChange={(e) => update({ host: e.target.value })}
-              />
-            </FormField>
-            <FormField label="Port">
-              <input
-                className="input"
-                type="number"
-                placeholder="22"
-                value={config.port ?? 22}
-                onChange={(e) => update({ port: Number(e.target.value) || 22 })}
-              />
-            </FormField>
-          </div>
+        <div className="flex flex-col gap-4">
+          <HostPortRow config={config} update={update} hostPlaceholder="server.example.com" defaultPort={22} />
 
-          <FormField label="Username" required>
-            <input
-              className="input"
+          <Field label="Username" required>
+            <Input
               type="text"
               placeholder="username"
+              spellCheck={false}
               value={config.username || ''}
               onChange={(e) => update({ username: e.target.value })}
             />
-          </FormField>
+          </Field>
 
-          <FormField label="Authentication">
-            <div className="flex flex-col gap-2">
-              <input
-                className="input"
-                type="password"
-                placeholder="Password (optional if using key)"
-                value={config.password || ''}
-                onChange={(e) => update({ password: e.target.value })}
+          <Field label="Password" hint={sshKeys.length > 0 ? 'Leave empty to sign in with an SSH key.' : undefined}>
+            <PasswordInput
+              placeholder="Password (optional if using key)"
+              value={config.password || ''}
+              onChange={(e) => update({ password: e.target.value })}
+            />
+          </Field>
+
+          {sshKeys.length > 0 && (
+            <Field label="SSH key">
+              <Select
+                value={config.privateKeyId || ''}
+                onChange={(e) => update({ privateKeyId: e.target.value || undefined })}
+                options={[
+                  { value: '', label: 'No SSH key (use password)' },
+                  ...sshKeys.map((k) => ({ value: k.id, label: k.name })),
+                ]}
               />
-              {sshKeys.length > 0 && (
-                <select
-                  className="input"
-                  value={config.privateKeyId || ''}
-                  onChange={(e) => update({ privateKeyId: e.target.value || undefined })}
-                >
-                  <option value="">No SSH key (use password)</option>
-                  {sshKeys.map((k) => (
-                    <option key={k.id} value={k.id}>
-                      {k.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-          </FormField>
+            </Field>
+          )}
 
-          <FormField label="Remote Path" required>
-            <input
-              className="input"
+          <Field label="Remote path" required hint="Folder on the server. Created on the first push.">
+            <Input
+              code
               type="text"
               placeholder="/home/user/nexus-sync"
+              spellCheck={false}
               value={config.remotePath || ''}
               onChange={(e) => update({ remotePath: e.target.value })}
             />
-          </FormField>
+          </Field>
         </div>
       );
 
     case 'ftp':
       return (
-        <div className="flex flex-col gap-3">
-          <div className="grid grid-cols-[1fr_120px] gap-3">
-            <FormField label="Host" required>
-              <input
-                className="input"
-                type="text"
-                placeholder="ftp.example.com"
-                value={config.host || ''}
-                onChange={(e) => update({ host: e.target.value })}
-              />
-            </FormField>
-            <FormField label="Port">
-              <input
-                className="input"
-                type="number"
-                placeholder="21"
-                value={config.port ?? 21}
-                onChange={(e) => update({ port: Number(e.target.value) || 21 })}
-              />
-            </FormField>
-          </div>
+        <div className="flex flex-col gap-4">
+          <HostPortRow config={config} update={update} hostPlaceholder="ftp.example.com" defaultPort={21} />
 
-          <FormField label="Username" required>
-            <input
-              className="input"
+          <Field label="Username" required>
+            <Input
               type="text"
               placeholder="username"
+              spellCheck={false}
               value={config.username || ''}
               onChange={(e) => update({ username: e.target.value })}
             />
-          </FormField>
+          </Field>
 
-          <FormField label="Password">
-            <input
-              className="input"
-              type="password"
+          <Field label="Password">
+            <PasswordInput
               placeholder="password"
               value={config.password || ''}
               onChange={(e) => update({ password: e.target.value })}
             />
-          </FormField>
+          </Field>
 
-          <FormField label="Remote Path" required>
-            <input
-              className="input"
+          <Field label="Remote path" required hint="Folder on the server. Created on the first push.">
+            <Input
+              code
               type="text"
               placeholder="/sync/nexus"
+              spellCheck={false}
               value={config.remotePath || ''}
               onChange={(e) => update({ remotePath: e.target.value })}
             />
-          </FormField>
+          </Field>
         </div>
       );
 
     case 's3':
       return (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-4">
           <div className="grid grid-cols-2 gap-3">
-            <FormField label="Bucket" required>
-              <input
-                className="input"
+            <Field label="Bucket" required className="min-w-0">
+              <Input
+                code
                 type="text"
                 placeholder="my-nexus-bucket"
+                spellCheck={false}
                 value={config.bucket || ''}
                 onChange={(e) => update({ bucket: e.target.value })}
               />
-            </FormField>
-            <FormField label="Region" required>
-              <input
-                className="input"
+            </Field>
+            <Field label="Region" required className="min-w-0">
+              <Input
+                code
                 type="text"
                 placeholder="us-east-1"
+                spellCheck={false}
                 value={config.region || ''}
                 onChange={(e) => update({ region: e.target.value })}
               />
-            </FormField>
+            </Field>
           </div>
 
-          <FormField label="Access Key ID" required>
-            <input
-              className="input"
+          <Field label="Access key ID" required>
+            <Input
+              code
               type="text"
               placeholder="AKIA..."
+              spellCheck={false}
+              autoComplete="off"
               value={config.accessKeyId || ''}
               onChange={(e) => update({ accessKeyId: e.target.value })}
             />
-          </FormField>
+          </Field>
 
-          <FormField label="Secret Access Key" required>
-            <input
-              className="input"
-              type="password"
+          <Field label="Secret access key" required>
+            <PasswordInput
+              code
               placeholder="Secret access key"
               value={config.secretAccessKey || ''}
               onChange={(e) => update({ secretAccessKey: e.target.value })}
             />
-          </FormField>
+          </Field>
 
-          <FormField label="Prefix" helperText="Optional path prefix within the bucket.">
-            <input
-              className="input"
+          <Field label="Prefix" hint="Optional path prefix within the bucket.">
+            <Input
+              code
               type="text"
               placeholder="nexus/"
+              spellCheck={false}
               value={config.prefix || ''}
               onChange={(e) => update({ prefix: e.target.value })}
             />
-          </FormField>
+          </Field>
 
-          <FormField label="Custom Endpoint" helperText="Optional. For MinIO, Backblaze B2, Cloudflare R2, etc.">
-            <input
-              className="input"
+          <Field label="Custom endpoint" hint="Optional. For MinIO, Backblaze B2, Cloudflare R2, etc.">
+            <Input
+              code
               type="text"
               placeholder="https://s3.example.com"
+              spellCheck={false}
               value={config.endpoint || ''}
               onChange={(e) => update({ endpoint: e.target.value })}
             />
-          </FormField>
+          </Field>
         </div>
       );
 
     case 'filesystem':
       return (
-        <div className="flex flex-col gap-3">
-          <FormField label="Directory Path" required>
-            <div className="flex gap-2">
-              <input
-                className="input flex-1"
+        <Field
+          label="Directory path"
+          required
+          hint="A local, USB or network folder. Point it at a Dropbox / OneDrive folder to sync through them."
+        >
+          <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <Input
+                code
                 type="text"
                 placeholder="/path/to/sync/directory"
+                spellCheck={false}
                 value={config.directoryPath || ''}
                 onChange={(e) => update({ directoryPath: e.target.value })}
               />
-              <button
-                className="btn btn-ghost shrink-0"
-                style={{ border: '1px solid var(--color-border)' }}
-                onClick={async () => {
-                  try {
-                    const chosen = await window.nexus.fs.pickDirectory();
-                    if (chosen) {
-                      update({ directoryPath: chosen });
-                    }
-                  } catch {
-                    // ignore cancel / permission errors
-                  }
-                }}
-                type="button"
-              >
-                Browse
-              </button>
             </div>
-          </FormField>
-        </div>
+            <Button
+              icon={FolderOpen}
+              onClick={async () => {
+                try {
+                  const chosen = await window.nexus.fs.pickDirectory();
+                  if (chosen) {
+                    update({ directoryPath: chosen });
+                  }
+                } catch {
+                  // ignore cancel / permission errors
+                }
+              }}
+            >
+              Browse
+            </Button>
+          </div>
+        </Field>
       );
 
     default:
-      return (
-        <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-          Select a backend type to configure.
-        </p>
-      );
+      return <p className="text-body-sm text-fg-muted">Select a backend type to configure.</p>;
   }
 };

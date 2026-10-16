@@ -136,3 +136,27 @@ test('themes change colours only, and button text stays readable', async () => {
   expect(contrast(tokyo.fg, tokyo.bg)).toBeGreaterThanOrEqual(4.5);
   expect(contrast(dracula.fg, dracula.bg)).toBeGreaterThanOrEqual(4.5);
 });
+
+test('switch, checkbox and radio group work from the keyboard (#2367)', async () => {
+  const autoSync = page.getByRole('switch', { name: 'Auto-sync' });
+  await expect(autoSync).toHaveAttribute('aria-checked', 'true');
+  await expect(autoSync).toHaveAccessibleDescription('Switch: applies immediately.');
+  await autoSync.focus();
+  await page.keyboard.press('Space');
+  await expect(autoSync).toHaveAttribute('aria-checked', 'false');
+  await expect(page.getByRole('switch', { name: 'Disabled switch' })).toBeDisabled();
+
+  const keepTimes = page.getByRole('checkbox', { name: /Preserve timestamps/ });
+  await keepTimes.click();
+  await expect(keepTimes).toBeChecked();
+
+  const cursor = page.getByRole('radiogroup', { name: 'Cursor style' });
+  await cursor.getByRole('radio', { name: 'Block' }).focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(cursor.getByRole('radio', { name: 'Underline' })).toBeChecked();
+
+  const conflict = page.getByRole('radiogroup', { name: 'Conflict resolution' });
+  await conflict.getByRole('radio', { name: /Keep local/ }).click();
+  await expect(conflict.getByRole('radio', { name: /Keep local/ })).toBeChecked();
+  await expect(conflict.getByRole('radio', { name: /Keep remote/ })).toBeDisabled();
+});

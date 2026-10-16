@@ -1,72 +1,77 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useId, useRef } from 'react';
+import { ArrowDown, ArrowUp, Check, CircleCheck, CircleX, LoaderCircle, PlugZap } from 'lucide-react';
 import { SyncBackendForm } from './SyncBackendForm';
 import { SyncHistoryLog, type SyncEvent } from './SyncHistoryLog';
 import { useVaultStore } from '../../stores/vault-store';
 import { useUIStore } from '../../stores/ui-store';
 import { useSyncStatus } from '../../hooks/use-ipc';
 import type { BackendConfig, SyncBackendType, SyncInterval, ConflictResolution } from '../../../shared/types';
-import { ArrowDown, ArrowUp, Check, CircleCheck, CircleX, Database, Folder, LoaderCircle, LockKeyhole, Server } from 'lucide-react';
 import { Icon } from '../common/Icon';
+import { Button, Card, Field, RadioGroup, Select, Switch } from '../ui';
+import type { RadioOption, SelectOption } from '../ui';
 
 // ============================================================
-// SyncSettingsView — Full sync settings panel (per-vault)
+// SyncSettingsView — per-vault sync settings (design system: #2367)
+//
+// Embedded in Settings → Vault Sync. Four cards: Connection (backend, its fields, Test
+// Connection), Schedule (interval, sync on lock / launch, conflicts), Sync now (Push / Pull) and
+// History. Every change auto-saves (debounced); the line at the top says when it has.
 // ============================================================
 
-interface BackendOption {
-  type: SyncBackendType;
-  label: string;
-  description: string;
-  icon: React.ReactNode;
-}
-
-const BACKEND_OPTIONS: BackendOption[] = [
-  {
-    type: 'sftp',
-    label: 'SFTP',
-    description: 'Sync via SSH file transfer protocol',
-    icon: (
-      <Icon icon={LockKeyhole} size={20} />
-    ),
-  },
-  {
-    type: 'ftp',
-    label: 'FTP',
-    description: 'Sync via FTP with optional TLS',
-    icon: (
-      <Icon icon={Server} size={20} />
-    ),
-  },
-  {
-    type: 's3',
-    label: 'S3',
-    description: 'Amazon S3, MinIO, B2, R2 compatible',
-    icon: (
-      <Icon icon={Database} size={20} />
-    ),
-  },
-  {
-    type: 'filesystem',
-    label: 'Local Filesystem',
-    description: 'Sync to a local or network-mounted directory',
-    icon: (
-      <Icon icon={Folder} size={20} />
-    ),
-  },
+const BACKEND_OPTIONS: Array<SelectOption & { value: SyncBackendType; description: string }> = [
+  { value: 'sftp', label: 'SFTP', description: 'Sync via SSH file transfer protocol.' },
+  { value: 'ftp', label: 'FTP', description: 'Sync via FTP with optional TLS.' },
+  { value: 's3', label: 'S3', description: 'Amazon S3, MinIO, B2, R2 compatible.' },
+  { value: 'filesystem', label: 'Local Filesystem', description: 'Sync to a local or network-mounted directory.' },
 ];
 
 const SYNC_INTERVAL_OPTIONS: Array<{ value: SyncInterval; label: string }> = [
-  { value: 60, label: '1 minute' },
-  { value: 300, label: '5 minutes' },
-  { value: 900, label: '15 minutes' },
-  { value: 1800, label: '30 minutes' },
+  { value: 60, label: 'Every minute' },
+  { value: 300, label: 'Every 5 minutes' },
+  { value: 900, label: 'Every 15 minutes' },
+  { value: 1800, label: 'Every 30 minutes' },
   { value: 0, label: 'Manual only' },
 ];
 
-const CONFLICT_OPTIONS: Array<{ value: ConflictResolution; label: string; description: string }> = [
+const CONFLICT_OPTIONS: RadioOption<ConflictResolution>[] = [
   { value: 'ask', label: 'Ask every time', description: 'Prompt when conflicts are detected' },
   { value: 'keep_local', label: 'Always keep local', description: 'Local changes take priority' },
   { value: 'keep_remote', label: 'Always keep remote', description: 'Remote changes take priority' },
 ];
+
+/** A labelled on/off row: the label and description on the left, the switch on the right. */
+function SwitchRow({
+  label,
+  description,
+  checked,
+  onChange,
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  const id = useId();
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div className="flex min-w-0 flex-col">
+        <label htmlFor={id} className="cursor-pointer text-body font-medium text-fg">
+          {label}
+        </label>
+        <p id={`${id}-description`} className="text-body-sm text-fg-muted">
+          {description}
+        </p>
+      </div>
+      <Switch
+        id={id}
+        checked={checked}
+        onChange={onChange}
+        aria-describedby={`${id}-description`}
+        className="mt-0.5"
+      />
+    </div>
+  );
+}
 
 export const SyncSettingsView: React.FC = () => {
   const keys = useVaultStore((s) => s.keys);
@@ -89,6 +94,8 @@ export const SyncSettingsView: React.FC = () => {
 
   // Sync status / history
   const [syncing, setSyncing] = useState(false);
+  // Which button started the running sync (for its spinner); null for a background sync.
+  const [manualDirection, setManualDirection] = useState<'push' | 'pull' | null>(null);
   const [syncHistory, setSyncHistory] = useState<SyncEvent[]>([]);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
 
@@ -170,6 +177,12 @@ export const SyncSettingsView: React.FC = () => {
     addNotification,
   ]);
 
+  // The latest saveConfig, for the unmount flush below.
+  const saveConfigRef = useRef(saveConfig);
+  useEffect(() => {
+    saveConfigRef.current = saveConfig;
+  }, [saveConfig]);
+
   // Debounced auto-save whenever any setting changes
   useEffect(() => {
     if (!loadedRef.current) return;
@@ -177,22 +190,24 @@ export const SyncSettingsView: React.FC = () => {
 
     setSaveState('saving');
     saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null;
       saveConfig();
     }, 400);
   }, [saveConfig]);
 
-  // On unmount, flush any pending debounced save so we don't lose changes
-  // when the user navigates away from the sync settings tab quickly.
+  // On unmount, flush any pending debounced save so we don't lose changes when the user
+  // navigates away from the sync settings quickly. Runs on unmount only: as a cleanup of an
+  // effect on [saveConfig] it also fired on every edit and saved the previous values at once.
   useEffect(() => {
     return () => {
       if (saveTimerRef.current) {
         clearTimeout(saveTimerRef.current);
         saveTimerRef.current = null;
         // Fire and forget — can't await in cleanup
-        saveConfig();
+        saveConfigRef.current();
       }
     };
-  }, [saveConfig]);
+  }, []);
 
   const handleBackendChange = (type: SyncBackendType) => {
     setSelectedBackend(type);
@@ -218,7 +233,15 @@ export const SyncSettingsView: React.FC = () => {
 
   const handleSyncNow = async (direction: 'push' | 'pull') => {
     setSyncing(true);
+    setManualDirection(direction);
     try {
+      // An edit made in the last 400 ms is still waiting to be saved: save it first, or the
+      // sync would run with the previous backend settings.
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+        await saveConfig();
+      }
       if (direction === 'push') {
         await window.nexus.sync.push();
       } else {
@@ -229,303 +252,144 @@ export const SyncSettingsView: React.FC = () => {
       addNotification('error', `Sync ${direction} failed: ${(err as Error).message}`);
     } finally {
       setSyncing(false);
+      setManualDirection(null);
     }
   };
 
   const sshKeyList = keys.map((k) => ({ id: k.id, name: k.name }));
+  const backend = BACKEND_OPTIONS.find((o) => o.value === selectedBackend);
 
   return (
-    <div className="flex flex-col" style={{ backgroundColor: 'var(--color-bg-primary)' }}>
+    <div className="flex min-w-0 flex-col gap-4">
       {/* Auto-save indicator */}
-      <div className="flex items-center justify-end gap-1.5 px-1 py-1 text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+      <div aria-live="polite" className="flex min-h-4 items-center justify-end gap-1.5 text-caption text-fg-muted">
         {saveState === 'saving' && (
           <>
-            <Icon icon={LoaderCircle} size={10} className="animate-spin" />
+            <Icon icon={LoaderCircle} size={12} className="animate-spin" />
             <span>Saving...</span>
           </>
         )}
         {saveState === 'saved' && (
-          <>
-            <Icon icon={Check} size={10} color="var(--color-success)" />
-            <span style={{ color: 'var(--color-success)' }}>Saved</span>
-          </>
+          <span className="flex items-center gap-1.5 text-success">
+            <Icon icon={Check} size={12} />
+            Saved
+          </span>
         )}
         {saveState === 'idle' && <span>Changes save automatically</span>}
       </div>
 
-      {/* Content */}
-      <div className="flex-1">
-        <div className="flex flex-col gap-8">
+      <Card title="Connection" description="Where this vault's encrypted copy is stored.">
+        <div className="flex flex-col gap-4">
+          <Field label="Backend" hint={backend?.description}>
+            <Select
+              value={selectedBackend}
+              onChange={(e) => handleBackendChange(e.target.value as SyncBackendType)}
+              options={BACKEND_OPTIONS.map(({ value, label }) => ({ value, label }))}
+            />
+          </Field>
 
-          {/* Section: Backend Selection */}
-          <section>
-            <h2 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--color-text-muted)' }}>
-              Backend
-            </h2>
-            <div className="grid grid-cols-2 gap-2">
-              {BACKEND_OPTIONS.map((opt) => (
-                <button
-                  key={opt.type}
-                  className="flex items-start gap-3 p-3 rounded-lg border text-left transition-colors"
-                  style={{
-                    borderColor: selectedBackend === opt.type ? 'var(--color-accent)' : 'var(--color-border)',
-                    backgroundColor: selectedBackend === opt.type ? 'var(--color-accent-muted)' : 'var(--color-bg-secondary)',
-                  }}
-                  onClick={() => handleBackendChange(opt.type)}
-                >
-                  <div
-                    className="shrink-0 mt-0.5"
-                    style={{ color: selectedBackend === opt.type ? 'var(--color-accent)' : 'var(--color-text-muted)' }}
-                  >
-                    {opt.icon}
-                  </div>
-                  <div className="flex flex-col">
-                    <span
-                      className="text-xs font-semibold"
-                      style={{ color: selectedBackend === opt.type ? 'var(--color-accent)' : 'var(--color-text-primary)' }}
-                    >
-                      {opt.label}
-                    </span>
-                    <span className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
-                      {opt.description}
-                    </span>
-                  </div>
-                </button>
-              ))}
+          <SyncBackendForm
+            backendType={selectedBackend}
+            config={backendConfig}
+            onChange={setBackendConfig}
+            sshKeys={sshKeyList}
+          />
+
+          <div className="flex flex-col gap-3 border-t border-line pt-4">
+            <div>
+              <Button icon={PlugZap} loading={testing} onClick={handleTestConnection}>
+                Test Connection
+              </Button>
             </div>
-          </section>
-
-          {/* Section: Backend Configuration */}
-          <section>
-            <h2 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--color-text-muted)' }}>
-              Configuration
-            </h2>
-            <div
-              className="p-4 rounded-lg border"
-              style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border)' }}
-            >
-              <SyncBackendForm
-                backendType={selectedBackend}
-                config={backendConfig}
-                onChange={setBackendConfig}
-                sshKeys={sshKeyList}
-              />
-            </div>
-          </section>
-
-          {/* Section: Connection Test */}
-          <section>
-            <h2 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--color-text-muted)' }}>
-              Connection Test
-            </h2>
-            <div className="flex items-center gap-3">
-              <button
-                className="btn btn-ghost"
-                style={{ border: '1px solid var(--color-border)' }}
-                onClick={handleTestConnection}
-                disabled={testing}
-              >
-                {testing ? (
-                  <>
-                    <Icon icon={LoaderCircle} size={14} className="animate-spin" />
-                    Testing...
-                  </>
-                ) : (
-                  'Test Connection'
-                )}
-              </button>
+            <div aria-live="polite">
               {testResult === 'success' && (
-                <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--color-success)' }}>
+                <p className="flex items-center gap-2 rounded-md bg-success-soft px-3 py-2 text-body-sm text-success">
                   <Icon icon={CircleCheck} size={14} />
                   Connection successful
-                </span>
+                </p>
               )}
               {testResult === 'fail' && (
-                <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--color-danger)' }}>
-                  <Icon icon={CircleX} size={14} />
-                  {testError ? `Connection failed: ${testError}` : 'Connection failed'}
-                </span>
+                <p className="flex items-start gap-2 rounded-md bg-danger-soft px-3 py-2 text-body-sm text-danger">
+                  <Icon icon={CircleX} size={14} className="mt-0.5" />
+                  <span className="min-w-0 break-words">
+                    {testError ? `Connection failed: ${testError}` : 'Connection failed'}
+                  </span>
+                </p>
               )}
             </div>
-          </section>
-
-          {/* Section: Sync Settings */}
-          <section>
-            <h2 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--color-text-muted)' }}>
-              Sync Schedule
-            </h2>
-            <div
-              className="flex flex-col gap-4 p-4 rounded-lg border"
-              style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border)' }}
-            >
-              {/* Sync interval */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-                  Sync Interval
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {SYNC_INTERVAL_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.value}
-                      className="px-3 py-1.5 rounded-md border text-xs font-medium transition-colors"
-                      style={{
-                        borderColor: syncInterval === opt.value ? 'var(--color-accent)' : 'var(--color-border)',
-                        backgroundColor: syncInterval === opt.value ? 'var(--color-accent-muted)' : 'transparent',
-                        color: syncInterval === opt.value ? 'var(--color-accent)' : 'var(--color-text-muted)',
-                      }}
-                      onClick={() => setSyncInterval(opt.value)}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Toggle: sync on lock */}
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-                    Sync on vault lock
-                  </span>
-                  <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
-                    Automatically push changes when locking the vault
-                  </p>
-                </div>
-                <button
-                  className="relative w-9 h-5 rounded-full transition-colors"
-                  style={{
-                    backgroundColor: syncOnLock ? 'var(--color-accent)' : 'var(--color-bg-tertiary)',
-                    border: `1px solid ${syncOnLock ? 'var(--color-accent)' : 'var(--color-border)'}`,
-                  }}
-                  onClick={() => setSyncOnLock(!syncOnLock)}
-                  role="switch"
-                  aria-checked={syncOnLock}
-                >
-                  <span
-                    className="absolute top-0.5 w-3.5 h-3.5 rounded-full transition-transform"
-                    style={{
-                      backgroundColor: '#fff',
-                      transform: syncOnLock ? 'translateX(17px)' : 'translateX(2px)',
-                    }}
-                  />
-                </button>
-              </div>
-
-              {/* Toggle: sync on launch */}
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-                    Sync on app launch
-                  </span>
-                  <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
-                    Automatically pull remote changes at startup
-                  </p>
-                </div>
-                <button
-                  className="relative w-9 h-5 rounded-full transition-colors"
-                  style={{
-                    backgroundColor: syncOnLaunch ? 'var(--color-accent)' : 'var(--color-bg-tertiary)',
-                    border: `1px solid ${syncOnLaunch ? 'var(--color-accent)' : 'var(--color-border)'}`,
-                  }}
-                  onClick={() => setSyncOnLaunch(!syncOnLaunch)}
-                  role="switch"
-                  aria-checked={syncOnLaunch}
-                >
-                  <span
-                    className="absolute top-0.5 w-3.5 h-3.5 rounded-full transition-transform"
-                    style={{
-                      backgroundColor: '#fff',
-                      transform: syncOnLaunch ? 'translateX(17px)' : 'translateX(2px)',
-                    }}
-                  />
-                </button>
-              </div>
-
-              {/* Conflict resolution */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-                  Conflict Resolution
-                </label>
-                <div className="flex flex-col gap-1">
-                  {CONFLICT_OPTIONS.map((opt) => (
-                    <label
-                      key={opt.value}
-                      className="flex items-start gap-2.5 p-2 rounded-md cursor-pointer transition-colors"
-                      style={{
-                        backgroundColor: conflictResolution === opt.value ? 'var(--color-accent-muted)' : 'transparent',
-                      }}
-                    >
-                      <input
-                        type="radio"
-                        name="conflictResolution"
-                        value={opt.value}
-                        checked={conflictResolution === opt.value}
-                        onChange={() => setConflictResolution(opt.value)}
-                        className="mt-0.5 accent-[var(--color-accent)]"
-                      />
-                      <div className="flex flex-col">
-                        <span
-                          className="text-xs font-medium"
-                          style={{ color: conflictResolution === opt.value ? 'var(--color-accent)' : 'var(--color-text-primary)' }}
-                        >
-                          {opt.label}
-                        </span>
-                        <span className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
-                          {opt.description}
-                        </span>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </section>
-
-          {/* Section: Manual Sync */}
-          <section>
-            <h2 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--color-text-muted)' }}>
-              Manual Sync
-            </h2>
-            <div className="flex items-center gap-2">
-              <button
-                className="btn btn-primary"
-                onClick={() => handleSyncNow('push')}
-                disabled={syncing}
-              >
-                {syncing ? (
-                  <>
-                    <Icon icon={LoaderCircle} size={14} className="animate-spin" />
-                    Syncing...
-                  </>
-                ) : (
-                  <>
-                    <Icon icon={ArrowUp} size={14} />
-                    Push
-                  </>
-                )}
-              </button>
-              <button
-                className="btn btn-ghost"
-                style={{ border: '1px solid var(--color-border)' }}
-                onClick={() => handleSyncNow('pull')}
-                disabled={syncing}
-              >
-                <Icon icon={ArrowDown} size={14} />
-                Pull
-              </button>
-            </div>
-          </section>
-
-          {/* Section: Sync History */}
-          <section>
-            <h2 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--color-text-muted)' }}>
-              Sync History
-            </h2>
-            <SyncHistoryLog events={syncHistory} />
-          </section>
-
+          </div>
         </div>
-      </div>
+      </Card>
+
+      <Card title="Schedule" description="When this vault syncs on its own, and what wins when both sides changed.">
+        <div className="flex flex-col gap-4">
+          <Field label="Sync interval">
+            <Select
+              value={String(syncInterval)}
+              onChange={(e) => setSyncInterval(Number(e.target.value) as SyncInterval)}
+              options={SYNC_INTERVAL_OPTIONS.map((o) => ({ value: String(o.value), label: o.label }))}
+            />
+          </Field>
+
+          <SwitchRow
+            label="Sync on vault lock"
+            description="Automatically push changes when locking the vault"
+            checked={syncOnLock}
+            onChange={setSyncOnLock}
+          />
+          <SwitchRow
+            label="Sync on app launch"
+            description="Automatically pull remote changes at startup"
+            checked={syncOnLaunch}
+            onChange={setSyncOnLaunch}
+          />
+
+          <RadioGroup
+            label="Conflict resolution"
+            showLabel
+            variant="list"
+            value={conflictResolution}
+            onChange={setConflictResolution}
+            options={CONFLICT_OPTIONS}
+          />
+        </div>
+      </Card>
+
+      <Card title="Sync now" description="Push uploads this vault to the backend. Pull downloads the copy stored there.">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="primary"
+            icon={ArrowUp}
+            loading={manualDirection === 'push'}
+            disabled={syncing}
+            onClick={() => handleSyncNow('push')}
+          >
+            Push
+          </Button>
+          <Button
+            icon={ArrowDown}
+            loading={manualDirection === 'pull'}
+            disabled={syncing}
+            onClick={() => handleSyncNow('pull')}
+          >
+            Pull
+          </Button>
+          <span aria-live="polite" className="flex items-center gap-1.5 text-body-sm text-fg-muted">
+            {syncing && (
+              <>
+                <Icon icon={LoaderCircle} size={12} className="animate-spin" />
+                Syncing...
+              </>
+            )}
+          </span>
+        </div>
+      </Card>
+
+      <Card title="History" description="The latest syncs of this vault, newest first.">
+        <div className="-mx-4 -mb-4 border-t border-line">
+          <SyncHistoryLog events={syncHistory} />
+        </div>
+      </Card>
     </div>
   );
 };

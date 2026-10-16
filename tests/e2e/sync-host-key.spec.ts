@@ -54,7 +54,7 @@ test('SFTP vault sync refuses an untrusted host key until Test Connection trusts
   // Settings → Vault Sync → SFTP, pointed at the local test server
   await page.getByTitle('Settings').click();
   await page.getByRole('button', { name: 'Vault Sync', exact: true }).click();
-  await page.getByRole('button', { name: /SFTP\s*Sync via SSH/ }).click();
+  await page.getByRole('combobox', { name: 'Backend' }).selectOption('sftp');
   await page.getByPlaceholder('server.example.com').fill(server.host);
   await page.getByPlaceholder('22').fill(String(server.port));
   await page.getByPlaceholder('username').fill(server.username);
