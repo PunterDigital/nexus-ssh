@@ -17,7 +17,7 @@ interface StoredPinData {
   pinSalt: string;
 }
 
-function getPinStorePath(): string {
+export function getPinStorePath(): string {
   return path.join(app.getPath('userData'), 'pin-store');
 }
 

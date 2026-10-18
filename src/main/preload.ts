@@ -44,6 +44,14 @@ const nexusAPI = {
       call<string | null>('vault:current'),
     changePassword: (oldPassword: string, newPassword: string) =>
       call('vault:change-password', oldPassword, newPassword),
+    /** Rename a locked vault's files (and its unlock data). Resolves to the new path. */
+    rename: (vaultPath: string, newName: string) =>
+      call<string>('vault:rename', vaultPath, newName),
+    /** Move a locked vault's files to the Recycle Bin / Trash. */
+    delete: (vaultPath: string) =>
+      call('vault:delete', vaultPath),
+    showInFolder: (vaultPath: string) =>
+      call('vault:show-in-folder', vaultPath),
   },
 
   // ── Hardware key (FIDO2/WebAuthn PRF) ─────────────────────

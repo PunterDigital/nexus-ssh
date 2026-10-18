@@ -16,6 +16,7 @@ import { hardwareKeyManager } from '../hardware-key/index';
 import { initSodium, zeroBuffer } from '../kdf';
 import { resolveVaultDir } from './fs-handlers';
 import * as crud from '../vault/crud';
+import { sanitizeVaultFilename } from '../vault/manage';
 
 function ok<T>(data: T) {
   return { success: true as const, data };
@@ -32,16 +33,6 @@ function fail(error: string) {
  */
 function vaultIdFromPath(vaultPath: string): string {
   return path.basename(vaultPath, VAULT_FILE_EXTENSION);
-}
-
-function sanitizeVaultFilename(name: string): string {
-  const cleaned = name
-    .trim()
-    // eslint-disable-next-line no-control-regex -- strip control characters from filenames
-    .replace(/[<>:"/\\|?*\x00-\x1f]+/g, '')
-    .replace(/\s+/g, ' ')
-    .slice(0, 80);
-  return cleaned || 'vault';
 }
 
 async function getDefaultVaultDir(): Promise<string> {

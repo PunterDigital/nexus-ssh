@@ -59,6 +59,9 @@ export const IPC = {
   VAULT_LIST: 'vault:list',
   VAULT_SWITCH: 'vault:switch',
   VAULT_CURRENT: 'vault:current',
+  VAULT_RENAME: 'vault:rename',
+  VAULT_DELETE: 'vault:delete',
+  VAULT_SHOW_IN_FOLDER: 'vault:show-in-folder',
 
   // Hardware key (FIDO2/WebAuthn PRF) unlock
   HWKEY_HAS: 'hwkey:has',
