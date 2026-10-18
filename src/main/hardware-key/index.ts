@@ -39,7 +39,7 @@ interface StoredHardwareKeyData extends HardwareKeyCredentialInfo {
   createdAt: string;
 }
 
-function getStoreDir(): string {
+export function getStoreDir(): string {
   return path.join(app.getPath('userData'), 'hwkey-store');
 }
 

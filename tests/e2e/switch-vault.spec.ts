@@ -104,7 +104,7 @@ test('switch between two vaults without restarting; each shows its own hosts', a
   await expect.poll(() => server.openConnections(), { timeout: 10_000 }).toBe(0);
 
   // Back into vault A: its host, not B's, and no session tabs carried over.
-  await page.getByRole('button', { name: /Work Vault/ }).click();
+  await page.getByRole('button', { name: /^Work Vault/ }).click();
   await page.getByPlaceholder('Master password').fill(PASSWORD_A);
   await page.getByRole('button', { name: 'Unlock', exact: true }).click();
   await expect(page.getByText(HOST_A).first()).toBeVisible({ timeout: 30_000 });
@@ -113,7 +113,7 @@ test('switch between two vaults without restarting; each shows its own hosts', a
 
   // And back to vault B: only its host.
   await switchVault(page);
-  await page.getByRole('button', { name: /Home Vault/ }).click();
+  await page.getByRole('button', { name: /^Home Vault/ }).click();
   await page.getByPlaceholder('Master password').fill(PASSWORD_B);
   await page.getByRole('button', { name: 'Unlock', exact: true }).click();
   await expect(page.getByText(HOST_B).first()).toBeVisible({ timeout: 30_000 });

@@ -3,16 +3,21 @@ import { useVaultStore, useUIStore } from '../../stores';
 import { APP_NAME } from '../../../shared/constants';
 import { CreateVaultDialog } from './CreateVaultDialog';
 import { PinUnlockForm } from './PinUnlockForm';
+import { DeleteVaultDialog, RenameVaultDialog, vaultDisplayName } from './VaultPickerDialogs';
 import {
   ChevronLeft,
   ChevronRight,
+  Ellipsis,
+  FolderOpen,
   LoaderCircle,
+  Pencil,
+  Trash2,
   LockKeyhole,
   Plus,
   Usb,
 } from 'lucide-react';
 import { Icon } from '../common/Icon';
-import { Button, Field, PasswordInput, cx } from '../ui';
+import { Button, Field, IconButton, Menu, PasswordInput, cx, type MenuEntry } from '../ui';
 import { LockCard, LockLayout, NexusLogo, UnlockError } from './LockLayout';
 
 // ============================================================
@@ -21,9 +26,6 @@ import { LockCard, LockLayout, NexusLogo, UnlockError } from './LockLayout';
 
 type LockScreenMode = 'loading' | 'no-vault' | 'picker' | 'unlock' | 'create';
 
-const vaultDisplayName = (file: string) =>
-  (file.split(/[/\\]/).pop() ?? file).replace(/\.db$/, '');
-
 export function LockScreen(): React.ReactElement {
   const unlockVault = useVaultStore((s) => s.unlockVault);
   const unlockWithHardwareKey = useVaultStore((s) => s.unlockWithHardwareKey);
@@ -31,6 +33,7 @@ export function LockScreen(): React.ReactElement {
   const vaultLoading = useVaultStore((s) => s.loading);
   const vaultError = useVaultStore((s) => s.error);
   const loadAll = useVaultStore((s) => s.loadAll);
+  const addNotification = useUIStore((s) => s.addNotification);
 
   const [mode, setMode] = useState<LockScreenMode>('loading');
   const [password, setPassword] = useState('');
@@ -41,6 +44,9 @@ export function LockScreen(): React.ReactElement {
   const [selectedVaultPath, setSelectedVaultPath] = useState<string>('');
   const [hwKeyAvailable, setHwKeyAvailable] = useState(false);
   const [hwKeyPasswordless, setHwKeyPasswordless] = useState(false);
+  // Vault picker actions (#2646)
+  const [renameTarget, setRenameTarget] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   const passwordRef = useRef<HTMLInputElement>(null);
 
@@ -119,6 +125,56 @@ export function LockScreen(): React.ReactElement {
       cancelled = true;
     };
   }, [selectedVaultPath]);
+
+  /** Re-read the vault folder after a rename or delete; the picker stays open while any are left. */
+  const refreshVaults = useCallback(async () => {
+    try {
+      const files = (await window.nexus.vault.list()) as string[];
+      setVaultFiles(files ?? []);
+      setMode(files && files.length > 0 ? 'picker' : 'no-vault');
+    } catch {
+      setMode('no-vault');
+    }
+  }, []);
+
+  const vaultActions = useCallback(
+    (file: string): MenuEntry[] => [
+      { id: 'rename', label: 'Rename…', icon: Pencil, onSelect: () => setRenameTarget(file) },
+      {
+        id: 'show',
+        label: 'Show in Folder',
+        icon: FolderOpen,
+        onSelect: () => {
+          window.nexus.vault.showInFolder(file).catch((err: unknown) => {
+            addNotification('error', err instanceof Error ? err.message : String(err));
+          });
+        },
+      },
+      { id: 'sep', separator: true },
+      { id: 'delete', label: 'Delete…', icon: Trash2, danger: true, onSelect: () => setDeleteTarget(file) },
+    ],
+    [addNotification]
+  );
+
+  const handleRenamed = useCallback(
+    async (from: string, to: string) => {
+      setRenameTarget(null);
+      if (selectedVaultPath === from) setSelectedVaultPath(to);
+      addNotification('success', `Renamed to ${vaultDisplayName(to)}`);
+      await refreshVaults();
+    },
+    [selectedVaultPath, addNotification, refreshVaults]
+  );
+
+  const handleDeleted = useCallback(
+    async (file: string) => {
+      setDeleteTarget(null);
+      if (selectedVaultPath === file) setSelectedVaultPath('');
+      addNotification('success', `Deleted ${vaultDisplayName(file)}`);
+      await refreshVaults();
+    },
+    [selectedVaultPath, addNotification, refreshVaults]
+  );
 
   const handleUnlock = useCallback(async () => {
     if (!password.trim() || vaultLoading) return;
@@ -200,9 +256,10 @@ export function LockScreen(): React.ReactElement {
             </p>
           </div>
 
-          <ul className="flex max-h-80 flex-col gap-2 overflow-y-auto">
+          {/* No scroll box here: a row's menu would be clipped. The backdrop scrolls instead. */}
+          <ul className="flex flex-col gap-2">
             {vaultFiles.map((file) => (
-              <li key={file}>
+              <li key={file} className="group relative">
                 <button
                   type="button"
                   onClick={() => {
@@ -233,7 +290,25 @@ export function LockScreen(): React.ReactElement {
                     size={14}
                     className="shrink-0 text-fg-muted group-hover:text-fg"
                   />
+                  {/* Room for the actions button, which sits on top of the row */}
+                  <span className="size-7 shrink-0" aria-hidden="true" />
                 </button>
+                {/* No transform here: it would trap the menu under the next row */}
+                <div className="absolute inset-y-0 right-3 flex items-center">
+                  <Menu
+                    align="end"
+                    label={`Actions for ${vaultDisplayName(file)}`}
+                    items={vaultActions(file)}
+                    trigger={(p) => (
+                      <IconButton
+                        {...p}
+                        icon={Ellipsis}
+                        label={`More actions for ${vaultDisplayName(file)}`}
+                        size="sm"
+                      />
+                    )}
+                  />
+                </div>
               </li>
             ))}
           </ul>
@@ -249,6 +324,16 @@ export function LockScreen(): React.ReactElement {
             </Button>
           </div>
         </LockCard>
+        <RenameVaultDialog
+          vaultPath={renameTarget}
+          onClose={() => setRenameTarget(null)}
+          onRenamed={(from, to) => void handleRenamed(from, to)}
+        />
+        <DeleteVaultDialog
+          vaultPath={deleteTarget}
+          onClose={() => setDeleteTarget(null)}
+          onDeleted={(file) => void handleDeleted(file)}
+        />
       </LockLayout>
     );
   }
@@ -372,19 +457,18 @@ export function LockScreen(): React.ReactElement {
 
         {/* Footer links. ("Use PIN instead" stays hidden until PIN unlock exists.) */}
         <div className="flex flex-wrap items-center justify-center gap-2 border-t border-line pt-4">
-          {vaultFiles.length > 1 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={ChevronLeft}
-              onClick={() => {
-                setPassword('');
-                setMode('picker');
-              }}
-            >
-              Choose a different vault
-            </Button>
-          )}
+          {/* With one vault this is the way to rename or delete it (#2646). */}
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={ChevronLeft}
+            onClick={() => {
+              setPassword('');
+              setMode('picker');
+            }}
+          >
+            {vaultFiles.length > 1 ? 'Choose a different vault' : 'Manage vaults'}
+          </Button>
           <Button variant="ghost" size="sm" icon={Plus} onClick={() => setMode('create')}>
             Create New Vault
           </Button>

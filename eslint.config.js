@@ -80,6 +80,7 @@ export default [
       'src/renderer/components/vault/SwitchVaultHost.tsx',
       'src/renderer/components/vault/HostForm.tsx',
       'src/renderer/components/vault/GroupForm.tsx',
+      'src/renderer/components/vault/VaultPickerDialogs.tsx', // #2646
       // #2367 part 1
       'src/renderer/components/sync/**/*.{ts,tsx}',
       'src/renderer/components/keychain/**/*.{ts,tsx}',

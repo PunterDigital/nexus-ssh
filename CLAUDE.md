@@ -134,6 +134,14 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   and no emoji as icons. A brand logo Lucide doesn't ship (the GitHub mark) stays an `<svg data-logo>`.
   `tests/unit/icons.test.ts` fails on any of these. The emoji a user types as a group icon is data,
   not an app icon, and stays.
+- Vault management (#2646): each vault picker row has a "More actions for <name>" Menu (Rename…,
+  Show in Folder, Delete…; `vault/VaultPickerDialogs.tsx`). Single-vault unlock screens reach the
+  picker via "Manage vaults". Main-side logic is `src/main/vault/manage.ts` (no Electron imports,
+  unit-tested): only `.db` files directly in the picker's folder, never the open vault. A vault's
+  files are `<name>.db`, `<name>.db.salt`, SQLite `-journal/-wal/-shm`, plus `hwkey-store/<name>.hwkey`
+  and `pin-store/<name>.pin` (unlock data keyed by file name): rename moves them all, delete sends
+  them all to the OS trash (`shell.trashItem`). Test profiles can set `NEXUS_TRASH_DIR` to move them
+  into a folder instead of the real Recycle Bin. Sync settings live inside the `.db`.
 - Vault = SQLCipher DB + `.salt` file under `userData/vaults`. Keys: Argon2id (libsodium) →
   XSalsa20-Poly1305 key wrapping (`src/main/kdf`). Optional PIN and hardware-key (WebAuthn PRF) unlock.
 

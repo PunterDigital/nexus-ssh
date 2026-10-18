@@ -2,7 +2,7 @@
 // Nexus SSH Client — Vault IPC Handlers
 // ============================================================
 
-import { ipcMain } from 'electron';
+import { ipcMain, shell } from 'electron';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { IPC, VAULT_FILE_EXTENSION } from '../../shared/constants';
@@ -12,6 +12,15 @@ import { resolveVaultDir } from './fs-handlers';
 import * as crud from '../vault/crud';
 import { sshManager } from '../ssh';
 import { sftpManager } from '../sftp';
+import { getStoreDir as hardwareKeyStoreDir } from '../hardware-key/index';
+import { getPinStorePath } from '../vault/pin-manager';
+import {
+  deleteVault,
+  renameVault,
+  resolveListedVault,
+  sanitizeVaultFilename,
+  type VaultFileContext,
+} from '../vault/manage';
 
 /** Wrap a handler result in a standardised envelope. */
 function ok<T>(data: T) {
@@ -30,20 +39,30 @@ async function getDefaultVaultDir(): Promise<string> {
 }
 
 /**
- * Turn a vault name into a safe filename while preserving spaces and
- * capitalization. Only strips characters that are invalid on common
- * filesystems (Windows is the strictest: <>:"/\|?*).
+ * Move a file to the OS Recycle Bin / Trash. A test profile can set NEXUS_TRASH_DIR so E2E runs
+ * check what was thrown away without filling the real Recycle Bin.
  */
-function sanitizeVaultFilename(name: string): string {
-  const cleaned = name
-    .trim()
-    // Remove filesystem-invalid characters
-    // eslint-disable-next-line no-control-regex -- control characters are invalid in filenames
-    .replace(/[<>:"/\\|?*\x00-\x1f]+/g, '')
-    // Collapse repeated spaces
-    .replace(/\s+/g, ' ')
-    .slice(0, 80);
-  return cleaned || 'vault';
+async function trash(file: string): Promise<void> {
+  const testTrash = process.env.NEXUS_USER_DATA_DIR ? process.env.NEXUS_TRASH_DIR : undefined;
+  if (!testTrash) {
+    await shell.trashItem(file);
+    return;
+  }
+  await fs.mkdir(testTrash, { recursive: true });
+  await fs.rename(file, path.join(testTrash, `${Date.now()}-${path.basename(file)}`));
+}
+
+/** What rename / delete / show-in-folder need to know about the vault picker's folder. */
+async function vaultFileContext(): Promise<VaultFileContext> {
+  return {
+    vaultDir: await getDefaultVaultDir(),
+    sideStores: [
+      { dir: hardwareKeyStoreDir(), ext: '.hwkey' },
+      { dir: getPinStorePath(), ext: '.pin' },
+    ],
+    openVaultPath: vaultEngine.isUnlocked() ? vaultEngine.getVaultPath() : null,
+    trash,
+  };
 }
 
 export function registerVaultHandlers(): void {
@@ -212,6 +231,34 @@ export function registerVaultHandlers(): void {
       }
     },
   );
+
+  // ── VAULT_RENAME / VAULT_DELETE / VAULT_SHOW_IN_FOLDER (#2646) ──
+  // Vault picker actions. Only for vaults in the picker's folder, and never the open vault.
+  ipcMain.handle(IPC.VAULT_RENAME, async (_event, vaultPath: string, newName: string) => {
+    try {
+      return ok(await renameVault(vaultPath, newName, await vaultFileContext()));
+    } catch (err: unknown) {
+      return fail(err instanceof Error ? err.message : String(err));
+    }
+  });
+
+  ipcMain.handle(IPC.VAULT_DELETE, async (_event, vaultPath: string) => {
+    try {
+      await deleteVault(vaultPath, await vaultFileContext());
+      return ok(null);
+    } catch (err: unknown) {
+      return fail(err instanceof Error ? err.message : String(err));
+    }
+  });
+
+  ipcMain.handle(IPC.VAULT_SHOW_IN_FOLDER, async (_event, vaultPath: string) => {
+    try {
+      shell.showItemInFolder(await resolveListedVault(vaultPath, await vaultFileContext()));
+      return ok(null);
+    } catch (err: unknown) {
+      return fail(err instanceof Error ? err.message : String(err));
+    }
+  });
 
   // ── VAULT_LIST ──────────────────────────────────────────────
   ipcMain.handle(IPC.VAULT_LIST, async () => {
