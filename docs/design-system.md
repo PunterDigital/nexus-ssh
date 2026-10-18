@@ -214,3 +214,18 @@ Bold = below WCAG AA 4.5:1. Primary text passes everywhere and the primitives' t
 danger fills is computed, so it passes too. Muted text fails on raised surfaces (inputs, cards)
 in every theme and on the base surface in four, and plain `border` is 1.2–1.6:1 (so controls
 use `line-strong`). Fixing the palettes is a theme colour change: #2645.
+
+**Fixed in #2645:** each theme's `textMuted` got the smallest lightness increase (hue and saturation
+kept) that reaches 4.5:1 on `bgPrimary`, `bgSecondary` and `bgTertiary`; the lowest is now 4.52
+(on `bgTertiary`). `tests/unit/design-tokens.test.ts` checks it for every bundled theme, so a new
+theme has to pass too. Borders and terminal palettes are unchanged.
+
+| Theme | Muted before → after | On bg / secondary / tertiary (after) |
+|---|---|---|
+| Dracula | `#8591b8` → `#aeb6d0` | 7.05 / 8.11 / 4.53 |
+| Nord | `#737b8b` → `#a9aeb8` | 5.61 / 6.29 / 4.52 |
+| Monokai | `#939081` → `#a9a79b` | 6.15 / 6.85 / 4.53 |
+| Gruvbox | `#88807a` → `#a7a19c` | 5.77 / 6.42 / 4.54 |
+| One Dark | `#80858f` → `#9498a0` | 4.84 / 5.32 / 4.52 |
+| Solarized Dark | `#7d8e93` → `#8c9b9f` | 5.22 / 6.02 / 4.52 |
+| Tokyo Night | `#7b82a3` → `#888eac` | 5.30 / 5.58 / 4.52 |
