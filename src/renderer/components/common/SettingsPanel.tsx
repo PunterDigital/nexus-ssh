@@ -17,6 +17,7 @@ import { useUIStore } from '../../stores/ui-store';
 import { useUpdateStore } from '../../stores/update-store';
 import { Button, Card, Input, RadioGroup, Select, Switch, cx, type RadioOption } from '../ui';
 import { NexusLogo } from '../vault/LockLayout';
+import { PinUnlockControls } from '../vault/PinSetupDialog';
 import { ThemeCard } from './ThemeCard';
 import { SyncSettingsView } from '../sync/SyncSettingsView';
 import {
@@ -331,6 +332,12 @@ export const SettingsPanel: React.FC = () => {
                       }
                     />
                   )}
+                </SettingRow>
+                <SettingRow
+                  label="PIN unlock"
+                  description="Unlock this vault with a 4–8 digit PIN until Nexus quits. After 5 wrong PINs you need your master password or hardware key."
+                >
+                  <PinUnlockControls />
                 </SettingRow>
               </SettingsGroup>
 

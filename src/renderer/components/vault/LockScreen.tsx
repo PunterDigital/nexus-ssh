@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Ellipsis,
   FolderOpen,
+  KeyRound,
   LoaderCircle,
   Pencil,
   Trash2,
@@ -26,6 +27,9 @@ import { LockCard, LockLayout, NexusLogo, UnlockError } from './LockLayout';
 
 type LockScreenMode = 'loading' | 'no-vault' | 'picker' | 'unlock' | 'create';
 
+/** How the open unlock card asks for the vault: PIN, password (or the hardware-key button), or a picker. */
+type UnlockMethod = 'pin' | 'password' | 'choose';
+
 export function LockScreen(): React.ReactElement {
   const unlockVault = useVaultStore((s) => s.unlockVault);
   const unlockWithHardwareKey = useVaultStore((s) => s.unlockWithHardwareKey);
@@ -38,8 +42,10 @@ export function LockScreen(): React.ReactElement {
   const [mode, setMode] = useState<LockScreenMode>('loading');
   const [password, setPassword] = useState('');
   const [shakeError, setShakeError] = useState(false);
-  // PIN unlock isn't wired up in the main process yet; nothing turns this on.
-  const [usePinMode, setUsePinMode] = useState(false);
+  // PIN quick-unlock (#2653): on for a vault once set up in Settings, until Nexus quits
+  const [method, setMethod] = useState<UnlockMethod>('password');
+  const [pinEnabled, setPinEnabled] = useState(false);
+  const [pinNotice, setPinNotice] = useState<string | null>(null);
   const [vaultFiles, setVaultFiles] = useState<string[]>([]);
   const [selectedVaultPath, setSelectedVaultPath] = useState<string>('');
   const [hwKeyAvailable, setHwKeyAvailable] = useState(false);
@@ -93,10 +99,30 @@ export function LockScreen(): React.ReactElement {
 
   // Focus password input when entering unlock mode
   useEffect(() => {
-    if (mode === 'unlock' && !usePinMode) {
+    if (mode === 'unlock' && method === 'password') {
       passwordRef.current?.focus();
     }
-  }, [mode, usePinMode]);
+  }, [mode, method]);
+
+  // Ask main whether the selected vault has PIN unlock, each time its unlock card opens
+  useEffect(() => {
+    let cancelled = false;
+    setPinEnabled(false);
+    setPinNotice(null);
+    setMethod('password');
+    if (!selectedVaultPath || mode !== 'unlock') return;
+    window.nexus.pin
+      .status(selectedVaultPath)
+      .then((status) => {
+        if (cancelled || !status.enabled) return;
+        setPinEnabled(true);
+        setMethod('pin');
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedVaultPath, mode]);
 
   // Detect whether a hardware key has been registered for the selected vault
   useEffect(() => {
@@ -206,10 +232,16 @@ export function LockScreen(): React.ReactElement {
     }
   }, [selectedVaultPath, vaultLoading, unlockWithHardwareKey, setLockScreenVisible]);
 
-  const handlePinSuccess = useCallback(async () => {
-    await loadAll();
+  // unlockWithPin already loads the vault's data
+  const handlePinSuccess = useCallback(() => {
     setLockScreenVisible(false);
-  }, [loadAll, setLockScreenVisible]);
+  }, [setLockScreenVisible]);
+
+  const handlePinDisabled = useCallback((notice: string) => {
+    setPinEnabled(false);
+    setPinNotice(notice);
+    setMethod('choose');
+  }, []);
 
   const handleCreateSuccess = useCallback(async () => {
     await loadAll();
@@ -361,11 +393,20 @@ export function LockScreen(): React.ReactElement {
   }
 
   // --- Unlock existing vault ---
-  const prompt = hwKeyPasswordless
-    ? 'Touch your hardware key to unlock'
-    : usePinMode
-      ? 'Enter your PIN to unlock'
-      : 'Enter password to unlock';
+  const prompt =
+    method === 'choose'
+      ? 'Choose how to unlock'
+      : method === 'pin' && pinEnabled
+        ? 'Enter your PIN to unlock'
+        : hwKeyPasswordless
+          ? 'Touch your hardware key to unlock'
+          : 'Enter password to unlock';
+
+  const anotherMethod = pinEnabled && (
+    <Button variant="ghost" size="sm" disabled={vaultLoading} onClick={() => setMethod('choose')}>
+      Use another method
+    </Button>
+  );
 
   return (
     <LockLayout>
@@ -388,7 +429,52 @@ export function LockScreen(): React.ReactElement {
           </div>
         </div>
 
-        {hwKeyPasswordless ? (
+        {method === 'choose' ? (
+          <div className="flex flex-col gap-3">
+            {pinNotice && <UnlockError message={pinNotice} />}
+            <ul className="flex flex-col gap-2" aria-label="Unlock methods">
+              {pinEnabled && (
+                <li>
+                  <Button fullWidth icon={KeyRound} onClick={() => setMethod('pin')}>
+                    PIN
+                  </Button>
+                </li>
+              )}
+              {!hwKeyPasswordless && (
+                <li>
+                  <Button
+                    fullWidth
+                    variant={pinEnabled ? 'secondary' : 'primary'}
+                    icon={LockKeyhole}
+                    onClick={() => setMethod('password')}
+                  >
+                    Master Password
+                  </Button>
+                </li>
+              )}
+              {hwKeyAvailable && (
+                <li>
+                  <Button
+                    fullWidth
+                    icon={Usb}
+                    loading={vaultLoading}
+                    onClick={handleHardwareKeyUnlock}
+                  >
+                    Hardware Key
+                  </Button>
+                </li>
+              )}
+            </ul>
+            <UnlockError message={vaultError} />
+          </div>
+        ) : method === 'pin' && pinEnabled ? (
+          <PinUnlockForm
+            vaultPath={selectedVaultPath}
+            onUnlocked={handlePinSuccess}
+            onPinDisabled={handlePinDisabled}
+            onUseAnotherMethod={() => setMethod('choose')}
+          />
+        ) : hwKeyPasswordless ? (
           /* Hardware-key-only (passwordless) vault */
           <div className="flex flex-col gap-3">
             <Button
@@ -402,12 +488,8 @@ export function LockScreen(): React.ReactElement {
               {vaultLoading ? 'Touch your key…' : 'Unlock with Hardware Key'}
             </Button>
             <UnlockError message={vaultError} />
+            {anotherMethod}
           </div>
-        ) : usePinMode ? (
-          <PinUnlockForm
-            onSuccess={handlePinSuccess}
-            onSwitchToPassword={() => setUsePinMode(false)}
-          />
         ) : (
           <form
             className="flex flex-col gap-3"
@@ -452,10 +534,11 @@ export function LockScreen(): React.ReactElement {
                 Use Hardware Key Instead
               </Button>
             )}
+            {anotherMethod}
           </form>
         )}
 
-        {/* Footer links. ("Use PIN instead" stays hidden until PIN unlock exists.) */}
+        {/* Footer links */}
         <div className="flex flex-wrap items-center justify-center gap-2 border-t border-line pt-4">
           {/* With one vault this is the way to rename or delete it (#2646). */}
           <Button

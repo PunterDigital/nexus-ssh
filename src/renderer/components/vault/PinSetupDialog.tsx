@@ -1,207 +1,170 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { KeySquare, LoaderCircle } from 'lucide-react';
-import { Icon } from '../common/Icon';
+import React, { useCallback, useEffect, useState } from 'react';
+import { KeyRound } from 'lucide-react';
+import { useUIStore } from '../../stores';
+import { Button, Dialog, Field, Input } from '../ui';
+import { pinDigits } from './PinUnlockForm';
 
 // ============================================================
-// PinSetupDialog — modal for setting up PIN quick-unlock
+// PIN unlock settings (#2653): Settings → General → Security. The PIN is kept in memory by main
+// until Nexus quits, so it only ever applies to the open vault in this session.
 // ============================================================
 
-interface PinSetupDialogProps {
-  onSetPin: (pin: string) => void | Promise<void>;
-  onSkip: () => void;
-}
+const PIN_PATTERN = /^\d{4,8}$/;
 
-export function PinSetupDialog({
-  onSetPin,
-  onSkip,
-}: PinSetupDialogProps): React.ReactElement {
-  const [pin, setPin] = useState('');
-  const [confirmPin, setConfirmPin] = useState('');
-  const [step, setStep] = useState<'enter' | 'confirm'>('enter');
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
-  const inputRef = useRef<HTMLInputElement>(null);
+/** The buttons in the "PIN unlock" settings row, and the dialog they open. */
+export function PinUnlockControls(): React.ReactElement {
+  const addNotification = useUIStore((s) => s.addNotification);
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  const refresh = useCallback(async () => {
+    try {
+      const vaultPath = await window.nexus.vault.current();
+      setEnabled(vaultPath ? (await window.nexus.pin.status(vaultPath)).enabled : false);
+    } catch {
+      setEnabled(false);
+    }
+  }, []);
 
   useEffect(() => {
-    inputRef.current?.focus();
-  }, [step]);
+    void refresh();
+  }, [refresh]);
 
-  const isValidPin = (value: string) => /^\d{4,8}$/.test(value);
-
-  const handlePinChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const value = e.target.value.replace(/\D/g, '').slice(0, 8);
-      setError(null);
-
-      if (step === 'enter') {
-        setPin(value);
-      } else {
-        setConfirmPin(value);
-      }
-    },
-    [step],
-  );
-
-  const handleNext = useCallback(() => {
-    if (step === 'enter') {
-      if (!isValidPin(pin)) {
-        setError('PIN must be 4-8 digits');
-        return;
-      }
-      setStep('confirm');
-      setConfirmPin('');
-    }
-  }, [step, pin]);
-
-  const handleConfirm = useCallback(async () => {
-    if (pin !== confirmPin) {
-      setError('PINs do not match');
-      setConfirmPin('');
-      return;
-    }
-
-    setLoading(true);
+  const turnOff = async () => {
     try {
-      await onSetPin(pin);
+      await window.nexus.pin.clear();
+      addNotification('success', 'PIN unlock is off');
     } catch (err) {
-      setError((err as Error).message || 'Failed to set PIN');
-      setLoading(false);
+      addNotification('error', message(err));
     }
-  }, [pin, confirmPin, onSetPin]);
+    await refresh();
+  };
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter') {
-        if (step === 'enter' && isValidPin(pin)) {
-          handleNext();
-        } else if (step === 'confirm' && isValidPin(confirmPin)) {
-          handleConfirm();
-        }
-      }
-    },
-    [step, pin, confirmPin, handleNext, handleConfirm],
-  );
-
-  const currentValue = step === 'enter' ? pin : confirmPin;
+  if (enabled === null) return <span className="text-body-sm text-fg-muted">Checking…</span>;
 
   return (
-    <div className="modal-overlay">
-      <div className="modal-content w-[380px] p-6">
-        {/* Header */}
-        <div className="mb-5 flex flex-col items-center gap-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--color-accent)]/15">
-            <Icon icon={KeySquare} size={20} color="var(--color-accent)" />
-          </div>
-          <h3 className="text-lg font-semibold text-[var(--color-text-primary)]">
-            Set Up Quick Unlock
-          </h3>
-          <p className="text-center text-xs text-[var(--color-text-muted)]">
-            {step === 'enter'
-              ? 'Choose a 4-8 digit PIN for fast vault access'
-              : 'Confirm your PIN'}
-          </p>
-        </div>
-
-        {/* PIN visual dots */}
-        <div className="mb-4 flex justify-center gap-2">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div
-              key={i}
-              className={`h-3 w-3 rounded-full transition-all duration-150 ${
-                i < currentValue.length
-                  ? 'scale-110 bg-[var(--color-accent)]'
-                  : i < 4
-                    ? 'border border-[var(--color-border)] bg-transparent'
-                    : 'border border-[var(--color-border)] bg-transparent opacity-40'
-              }`}
-            />
-          ))}
-        </div>
-
-        {/* Hidden numeric input */}
-        <input
-          ref={inputRef}
-          type="text"
-          inputMode="numeric"
-          pattern="[0-9]*"
-          value={currentValue}
-          onChange={handlePinChange}
-          onKeyDown={handleKeyDown}
-          className="input mb-2 text-center text-lg tracking-[0.5em]"
-          placeholder={step === 'enter' ? 'Enter PIN' : 'Confirm PIN'}
-          disabled={loading}
-          autoComplete="off"
-          style={{ caretColor: 'var(--color-accent)' }}
+    <>
+      {enabled ? (
+        <>
+          <Button size="sm" variant="ghost" onClick={() => void turnOff()}>
+            Turn Off
+          </Button>
+          <Button size="sm" onClick={() => setDialogOpen(true)}>
+            Change PIN…
+          </Button>
+        </>
+      ) : (
+        <Button size="sm" icon={KeyRound} onClick={() => setDialogOpen(true)}>
+          Set Up PIN…
+        </Button>
+      )}
+      {dialogOpen && (
+        <PinSetupDialog
+          changing={enabled}
+          onClose={() => setDialogOpen(false)}
+          onSaved={() => {
+            setDialogOpen(false);
+            addNotification('success', enabled ? 'PIN changed' : 'PIN unlock is on');
+            void refresh();
+          }}
         />
-
-        {/* Length indicator */}
-        <div className="mb-4 text-center text-xs text-[var(--color-text-muted)]">
-          {currentValue.length}/8 digits (min 4)
-        </div>
-
-        {/* Error */}
-        {error && (
-          <div className="mb-4 rounded bg-[var(--color-danger)]/10 px-3 py-2 text-center text-xs text-[var(--color-danger)]">
-            {error}
-          </div>
-        )}
-
-        {/* Buttons */}
-        <div className="flex gap-3">
-          <button
-            onClick={onSkip}
-            disabled={loading}
-            className="btn btn-ghost flex-1 py-2"
-          >
-            Skip
-          </button>
-          {step === 'enter' ? (
-            <button
-              onClick={handleNext}
-              disabled={!isValidPin(pin)}
-              className="btn btn-primary flex-1 py-2"
-            >
-              Next
-            </button>
-          ) : (
-            <div className="flex flex-1 gap-2">
-              <button
-                onClick={() => {
-                  setStep('enter');
-                  setConfirmPin('');
-                  setError(null);
-                }}
-                disabled={loading}
-                className="btn btn-ghost flex-1 py-2"
-              >
-                Back
-              </button>
-              <button
-                onClick={handleConfirm}
-                disabled={!isValidPin(confirmPin) || loading}
-                className="btn btn-primary flex-1 py-2"
-              >
-                {loading ? (
-                  <span className="flex items-center gap-2">
-                    <SmallSpinner />
-                    Setting...
-                  </span>
-                ) : (
-                  'Set PIN'
-                )}
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+      )}
+    </>
   );
 }
 
-function SmallSpinner(): React.ReactElement {
+interface PinSetupDialogProps {
+  /** A PIN is already set: this changes it. */
+  changing: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+}
+
+export function PinSetupDialog({ changing, onClose, onSaved }: PinSetupDialogProps): React.ReactElement {
+  const [pin, setPin] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    setPinError(null);
+    setConfirmError(null);
+    if (!PIN_PATTERN.test(pin)) {
+      setPinError('Use 4 to 8 digits');
+      return;
+    }
+    if (confirm !== pin) {
+      setConfirmError("The PINs don't match");
+      return;
+    }
+    setSaving(true);
+    try {
+      await window.nexus.pin.setup(pin);
+      onSaved();
+    } catch (err) {
+      setPinError(message(err));
+      setSaving(false);
+    }
+  };
+
+  const pinInput = (value: string, set: (v: string) => void, placeholder: string) => (
+    <Input
+      type="password"
+      inputMode="numeric"
+      autoComplete="off"
+      maxLength={8}
+      placeholder={placeholder}
+      value={value}
+      disabled={saving}
+      onChange={(e) => set(pinDigits(e.target.value))}
+      className="font-code tracking-widest"
+    />
+  );
+
   return (
-    <Icon icon={LoaderCircle} size={14} className="animate-spin" />
+    <Dialog
+      open
+      onClose={() => !saving && onClose()}
+      size="sm"
+      title={changing ? 'Change PIN' : 'Set Up PIN Unlock'}
+      description="Unlock this vault with a PIN until Nexus quits. After a restart you need your master password or hardware key once, and after 5 wrong PINs PIN unlock turns off."
+      dismissOnBackdrop={false}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button variant="primary" loading={saving} onClick={() => void submit()}>
+            {changing ? 'Change PIN' : 'Turn On'}
+          </Button>
+        </>
+      }
+    >
+      <form
+        className="flex flex-col gap-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit();
+        }}
+        // Two fields and no submit button inside the form: Enter in either one saves
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            void submit();
+          }
+        }}
+      >
+        <Field label={changing ? 'New PIN' : 'PIN'} hint="4 to 8 digits" error={pinError ?? undefined}>
+          {pinInput(pin, setPin, '4–8 digits')}
+        </Field>
+        <Field label="Confirm PIN" error={confirmError ?? undefined}>
+          {pinInput(confirm, setConfirm, 'Type it again')}
+        </Field>
+      </form>
+    </Dialog>
   );
 }
 

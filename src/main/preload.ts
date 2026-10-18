@@ -85,6 +85,18 @@ const nexusAPI = {
     remove: (vaultPath: string) => call('hwkey:remove', vaultPath),
   },
 
+  // ── PIN quick-unlock (#2653) ──────────────────────────────
+  pin: {
+    /** Whether the vault can be unlocked with a PIN this session, and the wrong tries left. */
+    status: (vaultPath: string) =>
+      call<{ enabled: boolean; attemptsLeft: number }>('pin:status', vaultPath),
+    /** Turn PIN unlock on, or change the PIN, for the open vault. */
+    setup: (pin: string) => call<{ enabled: boolean; attemptsLeft: number }>('pin:setup', pin),
+    /** Turn PIN unlock off for the open vault. */
+    clear: () => call('pin:clear'),
+    unlock: (vaultPath: string, pin: string) => call<string>('pin:unlock', vaultPath, pin),
+  },
+
   // ── CRUD ──────────────────────────────────────────────────
   vaults: {
     list: () => call('vaults:list'),
