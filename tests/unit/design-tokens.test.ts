@@ -44,6 +44,18 @@ describe.each(BUNDLED_THEMES.map((t) => [t.name, t.ui] as const))('%s', (_name, 
       expect(contrastRatio(ui.textPrimary, bg)).toBeGreaterThanOrEqual(4.5);
     }
   });
+
+  // #2645: muted text (hints, placeholders, timestamps) sits on inputs and cards as well as the
+  // base surface, so it has to pass on all three.
+  it('muted text on every surface meets WCAG AA (4.5:1)', () => {
+    for (const bg of [ui.bgPrimary, ui.bgSecondary, ui.bgTertiary]) {
+      expect(contrastRatio(ui.textMuted, bg)).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it('muted text stays quieter than primary text', () => {
+    expect(contrastRatio(ui.textMuted, ui.bgPrimary)).toBeLessThan(contrastRatio(ui.textPrimary, ui.bgPrimary));
+  });
 });
 
 describe('tokens.css', () => {
