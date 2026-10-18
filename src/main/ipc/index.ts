@@ -4,6 +4,7 @@
 
 import { registerVaultHandlers } from './vault-handlers';
 import { registerHardwareKeyHandlers } from './hardware-key-handlers';
+import { registerPinHandlers } from './pin-handlers';
 import { registerCrudHandlers } from './crud-handlers';
 import { registerSSHHandlers } from './ssh-handlers';
 import { registerSFTPHandlers } from './sftp-handlers';
@@ -23,6 +24,7 @@ import { registerShellHandlers } from './shell-handlers';
 export function registerAllHandlers(): void {
   registerVaultHandlers();
   registerHardwareKeyHandlers();
+  registerPinHandlers();
   registerCrudHandlers();
   registerSSHHandlers();
   registerSFTPHandlers();

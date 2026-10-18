@@ -256,9 +256,14 @@ class VaultEngine {
 
   // -----------------------------------------------------------------------
   // Unlock with a raw 32-byte DEK. Used by the hardware-key path after
-  // unwrapping the DEK from the encrypted .hwkey blob.
+  // unwrapping the DEK from the encrypted .hwkey blob, and by PIN unlock,
+  // which also hands back the master password so sync can reopen the vault.
   // -----------------------------------------------------------------------
-  async unlockWithKey(vaultPath: string, dbKey: Buffer): Promise<void> {
+  async unlockWithKey(
+    vaultPath: string,
+    dbKey: Buffer,
+    options: { password?: string | null; wrongKeyMessage?: string } = {},
+  ): Promise<void> {
     await initSodium();
 
     if (dbKey.length !== 32) {
@@ -286,7 +291,10 @@ class VaultEngine {
         message.includes('file is not a database') ||
         message.includes('not a database')
       ) {
-        throw new Error('Hardware key did not unlock the vault. The credential may have been re-enrolled or the vault was created with a different key.');
+        throw new Error(
+          options.wrongKeyMessage ??
+            'Hardware key did not unlock the vault. The credential may have been re-enrolled or the vault was created with a different key.',
+        );
       }
       throw err;
     }
@@ -294,7 +302,7 @@ class VaultEngine {
     this.db = db;
     this.dbKey = Buffer.from(dbKey);
     this.vaultPath = vaultPath;
-    this.cachedPassword = null;
+    this.cachedPassword = options.password ?? null;
 
     this.notifyUnlocked();
   }

@@ -15,7 +15,7 @@ export interface VaultFileContext {
   vaultDir: string;
   /**
    * Per-vault files Nexus keeps outside the vault folder, named `<vault name><ext>`
-   * (hardware-key and PIN unlock data). They follow a rename and go with a delete.
+   * (hardware-key unlock data). They follow a rename and go with a delete.
    */
   sideStores: Array<{ dir: string; ext: string }>;
   /** The vault that is open right now (it can't be renamed or deleted), or null. */

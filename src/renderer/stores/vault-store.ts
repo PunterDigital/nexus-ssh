@@ -50,6 +50,8 @@ export interface VaultActions {
   // Hardware key (FIDO2 / WebAuthn PRF) unlock
   createPasswordlessVault: (name: string) => Promise<void>;
   unlockWithHardwareKey: (vaultPath: string) => Promise<void>;
+  /** PIN quick-unlock (#2653). Errors are thrown for the PIN form to show, not kept in `error`. */
+  unlockWithPin: (vaultPath: string, pin: string) => Promise<void>;
   enrollHardwareKey: (displayName: string) => Promise<void>;
 
   // Load all data after unlock
@@ -155,6 +157,18 @@ export const useVaultStore = create<VaultState & VaultActions>()((set, get) => (
 
   checkVaultExists: async () => {
     return await window.nexus.vault.exists();
+  },
+
+  unlockWithPin: async (vaultPath: string, pin: string) => {
+    set({ loading: true, error: null });
+    try {
+      await window.nexus.pin.unlock(vaultPath, pin);
+    } catch (err) {
+      set({ loading: false });
+      throw err;
+    }
+    set({ unlocked: true, loading: false });
+    await get().loadAll();
   },
 
   // ── Hardware-key unlock (FIDO2 / WebAuthn PRF) ─────────────

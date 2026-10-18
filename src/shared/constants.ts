@@ -11,7 +11,7 @@ export const ARGON2_KEY_BYTES = 32;
 // PIN unlock uses lighter params
 export const PIN_ARGON2_OPS_LIMIT = 1;
 export const PIN_ARGON2_MEM_LIMIT = 67108864; // 64 MiB
-export const PIN_MAX_ATTEMPTS = 3;
+export const PIN_MAX_ATTEMPTS = 5;
 
 // --- SQLCipher ---
 export const SQLCIPHER_PAGE_SIZE = 4096;
@@ -70,6 +70,12 @@ export const IPC = {
   HWKEY_CREATE_PASSWORDLESS: 'hwkey:create-passwordless',
   HWKEY_UNLOCK: 'hwkey:unlock',
   HWKEY_REMOVE: 'hwkey:remove',
+
+  // PIN quick-unlock (#2653)
+  PIN_STATUS: 'pin:status',
+  PIN_SETUP: 'pin:setup',
+  PIN_CLEAR: 'pin:clear',
+  PIN_UNLOCK: 'pin:unlock',
 
   // Vaults (organisational containers inside the DB)
   VAULTS_LIST: 'vaults:list',

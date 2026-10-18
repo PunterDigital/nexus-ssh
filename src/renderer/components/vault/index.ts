@@ -1,6 +1,6 @@
 export { LockScreen } from './LockScreen';
 export { CreateVaultDialog } from './CreateVaultDialog';
-export { PinSetupDialog } from './PinSetupDialog';
+export { PinSetupDialog, PinUnlockControls } from './PinSetupDialog';
 export { PinUnlockForm } from './PinUnlockForm';
 export { SwitchVaultHost } from './SwitchVaultHost';
 export { VaultTree } from './VaultTree';

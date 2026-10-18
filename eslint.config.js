@@ -81,6 +81,8 @@ export default [
       'src/renderer/components/vault/HostForm.tsx',
       'src/renderer/components/vault/GroupForm.tsx',
       'src/renderer/components/vault/VaultPickerDialogs.tsx', // #2646
+      'src/renderer/components/vault/PinUnlockForm.tsx', // #2653
+      'src/renderer/components/vault/PinSetupDialog.tsx',
       // #2367 part 1
       'src/renderer/components/sync/**/*.{ts,tsx}',
       'src/renderer/components/keychain/**/*.{ts,tsx}',

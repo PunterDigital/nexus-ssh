@@ -78,8 +78,15 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   host (`connectSession` reuses an open one), so E2E needing N tabs creates N hosts.
 - Lock screen (#2366): `LockScreen` + `CreateVaultDialog` share `vault/LockLayout.tsx` (backdrop that
   scrolls when the window is short, card, logo, error). `Button` defaults to `secondary`: pass
-  `variant="primary"` for the main action. PIN unlock is UI only (no `unlockWithPin` in main;
-  `PinUnlockForm` is unreachable and `PinSetupDialog` unused): GroundStation card #2653.
+  `variant="primary"` for the main action.
+- PIN unlock (#2653): Settings → General → Security → "PIN unlock" (`PinUnlockControls` +
+  `PinSetupDialog`) for the open vault. Main (`src/main/vault/pin-unlock.ts`, no Electron imports,
+  unit-tested; `ipc/pin-handlers.ts`) wraps the vault key *and* the master password (so a sync pull
+  can still reopen the vault) with an Argon2id PIN key, **in memory only**: a restart forgets every
+  PIN. Wrong PINs are counted in main; the 5th (`PIN_MAX_ATTEMPTS`) drops the PIN. The lock screen
+  opens on PIN when `pin:status` says enabled; "Use another method" / a lockout shows the method
+  picker (PIN, Master Password unless passwordless, Hardware Key if registered). Changing the
+  password, deleting the vault or a key that no longer opens the file clears the PIN; rename keeps it.
 - Hosts view + forms (#2366 part 2): `ConnectionsView` (grid uses the `grid-cols-cards` utility in
   tokens.css; the list is an `@container`), each host is a button (click connects, right-click
   edits) plus a "More actions for <label>" `Menu`. `HostForm` / `GroupForm` are `ui/Dialog` forms
@@ -139,7 +146,7 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   picker via "Manage vaults". Main-side logic is `src/main/vault/manage.ts` (no Electron imports,
   unit-tested): only `.db` files directly in the picker's folder, never the open vault. A vault's
   files are `<name>.db`, `<name>.db.salt`, SQLite `-journal/-wal/-shm`, plus `hwkey-store/<name>.hwkey`
-  and `pin-store/<name>.pin` (unlock data keyed by file name): rename moves them all, delete sends
+  (unlock data keyed by file name): rename moves them all, delete sends
   them all to the OS trash (`shell.trashItem`). Test profiles can set `NEXUS_TRASH_DIR` to move them
   into a folder instead of the real Recycle Bin. Sync settings live inside the `.db`.
 - Vault = SQLCipher DB + `.salt` file under `userData/vaults`. Keys: Argon2id (libsodium) →

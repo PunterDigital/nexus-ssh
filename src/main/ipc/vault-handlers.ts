@@ -13,7 +13,7 @@ import * as crud from '../vault/crud';
 import { sshManager } from '../ssh';
 import { sftpManager } from '../sftp';
 import { getStoreDir as hardwareKeyStoreDir } from '../hardware-key/index';
-import { getPinStorePath } from '../vault/pin-manager';
+import { pinStore } from '../vault/pin-unlock';
 import {
   deleteVault,
   renameVault,
@@ -56,10 +56,7 @@ async function trash(file: string): Promise<void> {
 async function vaultFileContext(): Promise<VaultFileContext> {
   return {
     vaultDir: await getDefaultVaultDir(),
-    sideStores: [
-      { dir: hardwareKeyStoreDir(), ext: '.hwkey' },
-      { dir: getPinStorePath(), ext: '.pin' },
-    ],
+    sideStores: [{ dir: hardwareKeyStoreDir(), ext: '.hwkey' }],
     openVaultPath: vaultEngine.isUnlocked() ? vaultEngine.getVaultPath() : null,
     trash,
   };
@@ -220,6 +217,9 @@ export function registerVaultHandlers(): void {
         const saltPath = currentPath + '.salt';
         await fs.writeFile(saltPath, newSalt.toString('base64'), 'utf-8');
 
+        // The PIN unlocks a copy of the old key, which no longer opens the vault (#2653)
+        pinStore.clear(currentPath);
+
         // Lock and re-unlock with the new password to verify
         vaultEngine.lock();
         zeroBuffer(newKey);
@@ -236,7 +236,9 @@ export function registerVaultHandlers(): void {
   // Vault picker actions. Only for vaults in the picker's folder, and never the open vault.
   ipcMain.handle(IPC.VAULT_RENAME, async (_event, vaultPath: string, newName: string) => {
     try {
-      return ok(await renameVault(vaultPath, newName, await vaultFileContext()));
+      const renamed = await renameVault(vaultPath, newName, await vaultFileContext());
+      pinStore.rename(vaultPath, renamed);
+      return ok(renamed);
     } catch (err: unknown) {
       return fail(err instanceof Error ? err.message : String(err));
     }
@@ -245,6 +247,7 @@ export function registerVaultHandlers(): void {
   ipcMain.handle(IPC.VAULT_DELETE, async (_event, vaultPath: string) => {
     try {
       await deleteVault(vaultPath, await vaultFileContext());
+      pinStore.clear(vaultPath);
       return ok(null);
     } catch (err: unknown) {
       return fail(err instanceof Error ? err.message : String(err));
