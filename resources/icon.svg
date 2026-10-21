@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Nexus app icon. Source for resources/icon.{png,ico,icns}: run scripts/make-icons.mjs after editing.
+       A terminal prompt on a Tokyo Night tile, echoing the in-app NexusLogo (terminal in a rounded square).
+       Colours are the default theme's bgPrimary/bgTertiary and accent (src/renderer/styles/themes.ts). -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a2f48"/>
+      <stop offset="1" stop-color="#1a1b26"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7aa2f7"/>
+      <stop offset="1" stop-color="#5a84e6"/>
+    </linearGradient>
+  </defs>
+  <!-- macOS icon grid: 824 px tile with a 100 px margin. -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#tile)"/>
+  <!-- Thin inner edge so the tile reads on dark backgrounds too. -->
+  <rect x="112" y="112" width="800" height="800" rx="173" fill="none" stroke="#7aa2f7" stroke-opacity="0.22" stroke-width="12"/>
+  <!-- Prompt chevron -->
+  <path d="M312 352 L488 512 L312 672" fill="none" stroke="url(#glow)" stroke-width="88" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Cursor -->
+  <rect x="528" y="610" width="200" height="88" rx="30" fill="#7aa2f7"/>
+</svg>
