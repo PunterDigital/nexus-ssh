@@ -79,6 +79,20 @@ jobs:
             export NEXUS_E2E_EXECUTABLE="$(ls -d "$PWD"/dist-release/mac-arm64/Nexus.app)/Contents/MacOS/Nexus"
           fi
           pnpm exec playwright test
+      - name: Verify app icon (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $v = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          ./scripts/check-win-icon.ps1 dist-release/win-unpacked/Nexus.exe "dist-release/Nexus-Setup-$v.exe"
+      - name: Verify app icon (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          for app in dist-release/mac*/Nexus.app; do
+            icon=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIconFile" "$app/Contents/Info.plist")
+            echo "== $app: CFBundleIconFile=$icon"
+            cmp resources/icon.icns "$app/Contents/Resources/${icon%.icns}.icns"
+          done
       - name: Verify macOS signature
         if: runner.os == 'macOS'
         run: |

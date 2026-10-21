@@ -205,6 +205,11 @@ touching it.
   `.dmg` (x64 + arm64), then creates the GitHub Release with `latest.yml` for electron-updater.
 - macOS builds are ad-hoc signed by `scripts/after-pack.js` (kept from electron-builder 25, which could not ad-hoc sign itself;
   `identity: null`, hardened runtime off). CI runs `codesign --verify --deep --strict`. Windows unsigned.
+- App icon (#2733): `resources/icon.svg` is the source; `scripts/make-icons.mjs` renders `icon.png` /
+  `icon.ico` / `icon.icns` next to it (run it from a scratch folder with `sharp` + `png2icons`
+  installed, see the script header). `win.signAndEditExecutable: true` stamps the .ico into the
+  .exe (rcedit, no signing). CI checks the packaged exe + installer icon (`scripts/check-win-icon.ps1`,
+  compares 32 px pixels against `resources/icon.ico`) and that each `.app` bundles `icon.icns` byte for byte.
 
 ## Known debt
 
