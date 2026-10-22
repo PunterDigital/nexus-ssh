@@ -93,6 +93,11 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   that mount only while open, validate on submit (errors under the field) and save host tags.
   The one inline style is `ColourMark` (a host colour is user data). `VaultTree`, `TreeNode`,
   `TagManager` and `IdentityForm` are not imported anywhere (only re-exported) and were left as is.
+  Deleting a host (#3098): "Delete host…" in the card menu and "Delete…" in the Edit host footer
+  (`HostForm` `onDelete`) both open `vault/DeleteHostDialog`, which closes the host's open
+  terminal/SFTP tabs (`lib/host-tabs.ts` `tabsForHost`, unit-tested; `removeTab` disconnects them)
+  before `deleteHost`. E2E `host-delete.spec.ts` (uses the test SSH server for the connected case;
+  xterm renders with WebGL there, so it waits on the server's connection count, not `.xterm-rows`).
 - Settings, sync, keychain (#2367 part 1): `SettingsPanel` has a vertical section nav
   (`<nav aria-label="Settings sections">`, buttons with `aria-current`), `SettingRow`s in titled
   Cards, and stacks controls under labels in narrow containers (`@container`). The theme picker is a

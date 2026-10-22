@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { Check, ChevronDown, Circle, CircleAlert, CircleCheck, PlugZap } from 'lucide-react';
+import { Check, ChevronDown, Circle, CircleAlert, CircleCheck, PlugZap, Trash2 } from 'lucide-react';
 import { ColourPicker } from '../common/ColourPicker';
 import { Icon } from '../common/Icon';
 import { Button, Dialog, Field, Input, PasswordInput, Select, Textarea, cx } from '../ui';
@@ -42,6 +42,8 @@ export interface HostFormProps {
   open: boolean;
   onClose: () => void;
   host?: Host;
+  /** Editing only: shows a Delete button in the footer; the caller opens the confirmation. */
+  onDelete?: () => void;
   /** Tags already on the host. When editing without it, the form loads them itself. */
   hostTagIds?: string[];
 }
@@ -75,7 +77,7 @@ export function HostForm(props: HostFormProps): React.ReactElement | null {
   return <HostFormDialog {...props} />;
 }
 
-function HostFormDialog({ onClose, host, hostTagIds }: HostFormProps): React.ReactElement {
+function HostFormDialog({ onClose, onDelete, host, hostTagIds }: HostFormProps): React.ReactElement {
   const groups = useVaultStore((s) => s.groups);
   const identities = useVaultStore((s) => s.identities);
   const keys = useVaultStore((s) => s.keys);
@@ -323,10 +325,21 @@ function HostFormDialog({ onClose, host, hostTagIds }: HostFormProps): React.Rea
             onClick={() => void handleTestConnection()}
             loading={testing}
             disabled={saving}
-            className="mr-auto"
+            className={isEditing && onDelete ? undefined : 'mr-auto'}
           >
             Test Connection
           </Button>
+          {isEditing && onDelete && (
+            <Button
+              variant="ghost"
+              icon={Trash2}
+              onClick={onDelete}
+              disabled={saving || testing}
+              className="mr-auto text-danger hover:text-danger"
+            >
+              Delete…
+            </Button>
+          )}
           <Button variant="ghost" onClick={onClose} disabled={saving}>
             Cancel
           </Button>

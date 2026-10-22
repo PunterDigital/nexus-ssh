@@ -3,6 +3,7 @@ import { useVaultStore, useTerminalStore, useUIStore } from '../../stores';
 import type { Host, Group } from '../../../shared/types';
 import { HostForm } from './HostForm';
 import { GroupForm } from './GroupForm';
+import { DeleteHostDialog } from './DeleteHostDialog';
 import {
   Apple,
   Ellipsis,
@@ -17,6 +18,7 @@ import {
   SearchX,
   Server,
   SquareTerminal,
+  Trash2,
 } from 'lucide-react';
 import { Icon } from '../common/Icon';
 import { Button, EmptyState, IconButton, Input, Menu, Select, Toolbar, cx, type MenuEntry } from '../ui';
@@ -54,6 +56,7 @@ export function ConnectionsView({ mode = 'ssh' }: ConnectionsViewProps = {}): Re
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const [showNewHost, setShowNewHost] = useState(false);
   const [editingHost, setEditingHost] = useState<Host | null>(null);
+  const [deletingHost, setDeletingHost] = useState<Host | null>(null);
   const [showNewGroup, setShowNewGroup] = useState(false);
   const [editingGroup, setEditingGroup] = useState<Group | null>(null);
 
@@ -138,6 +141,8 @@ export function ConnectionsView({ mode = 'ssh' }: ConnectionsViewProps = {}): Re
       { id: 'sftp', label: 'Open SFTP', icon: FolderSync, onSelect: () => openSftp(host) },
       { separator: true, id: 'sep' },
       { id: 'edit', label: 'Edit host…', icon: Pencil, onSelect: () => setEditingHost(host) },
+      { separator: true, id: 'sep-danger' },
+      { id: 'delete', label: 'Delete host…', icon: Trash2, danger: true, onSelect: () => setDeletingHost(host) },
     ],
     [openTerminal, openSftp],
   );
@@ -289,7 +294,21 @@ export function ConnectionsView({ mode = 'ssh' }: ConnectionsViewProps = {}): Re
       <HostForm open={showNewHost} onClose={() => setShowNewHost(false)} />
 
       {/* Edit Host modal */}
-      {editingHost && <HostForm open={true} host={editingHost} onClose={() => setEditingHost(null)} />}
+      {editingHost && (
+        <HostForm
+          open={true}
+          host={editingHost}
+          onClose={() => setEditingHost(null)}
+          onDelete={() => {
+            setDeletingHost(editingHost);
+            setEditingHost(null);
+          }}
+        />
+      )}
+
+      {/* Delete Host confirmation (from the menu or the Edit host dialog) */}
+      <DeleteHostDialog host={deletingHost} onClose={() => setDeletingHost(null)} />
+
 
       {/* New Group modal */}
       <GroupForm open={showNewGroup} onClose={() => setShowNewGroup(false)} />
