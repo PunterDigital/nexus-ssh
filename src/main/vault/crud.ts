@@ -57,7 +57,13 @@ function dbAll<T>(sql: string, params: unknown[] = []): Promise<T[]> {
 // Row-mapping helpers for boolean fields stored as INTEGER (0/1)
 // ---------------------------------------------------------------------------
 
-function mapHostRow(row: any): Host | undefined {
+/** A table row as SQLite returns it: booleans are still 0/1. */
+type HostRow = Omit<Host, 'compression'> & { compression: number };
+type KnownHostRow = Omit<KnownHost, 'trusted'> & { trusted: number };
+type SnippetRow = Omit<Snippet, 'run_on_connect'> & { run_on_connect: number };
+type SyncStateRow = Omit<SyncState, 'enabled'> & { enabled: number };
+
+function mapHostRow(row: HostRow | undefined): Host | undefined {
   if (!row) return undefined;
   return {
     ...row,
@@ -65,7 +71,7 @@ function mapHostRow(row: any): Host | undefined {
   };
 }
 
-function mapKnownHostRow(row: any): KnownHost | undefined {
+function mapKnownHostRow(row: KnownHostRow | undefined): KnownHost | undefined {
   if (!row) return undefined;
   return {
     ...row,
@@ -73,7 +79,7 @@ function mapKnownHostRow(row: any): KnownHost | undefined {
   };
 }
 
-function mapSnippetRow(row: any): Snippet | undefined {
+function mapSnippetRow(row: SnippetRow | undefined): Snippet | undefined {
   if (!row) return undefined;
   return {
     ...row,
@@ -81,7 +87,7 @@ function mapSnippetRow(row: any): Snippet | undefined {
   };
 }
 
-function mapSyncStateRow(row: any): SyncState | undefined {
+function mapSyncStateRow(row: SyncStateRow | undefined): SyncState | undefined {
   if (!row) return undefined;
   return {
     ...row,
@@ -246,7 +252,7 @@ export async function deleteGroup(id: string): Promise<void> {
 // ============================================================
 
 export async function listHosts(vaultId: string): Promise<Host[]> {
-  const rows = await dbAll<any>(
+  const rows = await dbAll<HostRow>(
     'SELECT * FROM hosts WHERE vault_id = ? ORDER BY sort_order ASC, label ASC',
     [vaultId],
   );
@@ -254,7 +260,7 @@ export async function listHosts(vaultId: string): Promise<Host[]> {
 }
 
 export async function getHost(id: string): Promise<Host | undefined> {
-  const row = await dbGet<any>('SELECT * FROM hosts WHERE id = ?', [id]);
+  const row = await dbGet<HostRow>('SELECT * FROM hosts WHERE id = ?', [id]);
   return mapHostRow(row);
 }
 
@@ -312,16 +318,16 @@ export async function updateHost(
   const fields: string[] = [];
   const params: unknown[] = [];
 
-  const directFields: string[] = [
+  const directFields = [
     'vault_id', 'group_id', 'label', 'hostname', 'port', 'username',
     'password', 'identity_id', 'key_id', 'keepalive_interval', 'os_type', 'notes',
     'colour', 'sort_order', 'last_connected',
-  ];
+  ] as const;
 
   for (const key of directFields) {
-    if ((data as any)[key] !== undefined) {
+    if (data[key] !== undefined) {
       fields.push(`${key} = ?`);
-      params.push((data as any)[key]);
+      params.push(data[key]);
     }
   }
 
@@ -490,9 +496,9 @@ export async function updateIdentity(
   const allowedFields = ['vault_id', 'name', 'username', 'password', 'key_id'] as const;
 
   for (const key of allowedFields) {
-    if ((data as any)[key] !== undefined) {
+    if (data[key] !== undefined) {
       fields.push(`${key} = ?`);
-      params.push((data as any)[key]);
+      params.push(data[key]);
     }
   }
 
@@ -632,12 +638,12 @@ export async function getHostTags(hostId: string): Promise<Tag[]> {
 // ============================================================
 
 export async function listKnownHosts(): Promise<KnownHost[]> {
-  const rows = await dbAll<any>('SELECT * FROM known_hosts ORDER BY hostname ASC, port ASC');
+  const rows = await dbAll<KnownHostRow>('SELECT * FROM known_hosts ORDER BY hostname ASC, port ASC');
   return rows.map((r) => mapKnownHostRow(r)!);
 }
 
 export async function findKnownHost(hostname: string, port: number): Promise<KnownHost[]> {
-  const rows = await dbAll<any>(
+  const rows = await dbAll<KnownHostRow>(
     'SELECT * FROM known_hosts WHERE hostname = ? AND port = ?',
     [hostname, port],
   );
@@ -653,7 +659,7 @@ export async function upsertKnownHost(data: {
   const now = new Date().toISOString();
 
   // Check if an entry already exists for this unique combination
-  const existing = await dbGet<any>(
+  const existing = await dbGet<KnownHostRow>(
     'SELECT * FROM known_hosts WHERE hostname = ? AND port = ? AND key_type = ?',
     [data.hostname, data.port, data.key_type],
   );
@@ -674,7 +680,7 @@ export async function upsertKnownHost(data: {
     );
   }
 
-  const row = await dbGet<any>('SELECT * FROM known_hosts WHERE id = ?', [id]);
+  const row = await dbGet<KnownHostRow>('SELECT * FROM known_hosts WHERE id = ?', [id]);
   return mapKnownHostRow(row)!;
 }
 
@@ -691,7 +697,7 @@ export async function trustKnownHost(id: string, trusted: boolean): Promise<void
 // ============================================================
 
 export async function listSnippets(vaultId: string): Promise<Snippet[]> {
-  const rows = await dbAll<any>(
+  const rows = await dbAll<SnippetRow>(
     'SELECT * FROM snippets WHERE vault_id = ? ORDER BY sort_order ASC, name ASC',
     [vaultId],
   );
@@ -721,7 +727,7 @@ export async function createSnippet(data: {
       now,
     ],
   );
-  const rows = await dbAll<any>('SELECT * FROM snippets WHERE id = ?', [id]);
+  const rows = await dbAll<SnippetRow>('SELECT * FROM snippets WHERE id = ?', [id]);
   return mapSnippetRow(rows[0])!;
 }
 
@@ -735,9 +741,9 @@ export async function updateSnippet(
   const directFields = ['vault_id', 'name', 'command', 'description', 'sort_order'] as const;
 
   for (const key of directFields) {
-    if ((data as any)[key] !== undefined) {
+    if (data[key] !== undefined) {
       fields.push(`${key} = ?`);
-      params.push((data as any)[key]);
+      params.push(data[key]);
     }
   }
 
@@ -748,7 +754,7 @@ export async function updateSnippet(
   }
 
   if (fields.length === 0) {
-    const row = await dbGet<any>('SELECT * FROM snippets WHERE id = ?', [id]);
+    const row = await dbGet<SnippetRow>('SELECT * FROM snippets WHERE id = ?', [id]);
     if (!row) throw new Error(`Snippet not found: ${id}`);
     return mapSnippetRow(row)!;
   }
@@ -758,7 +764,7 @@ export async function updateSnippet(
   params.push(id);
 
   await dbRun(`UPDATE snippets SET ${fields.join(', ')} WHERE id = ?`, params);
-  const row = await dbGet<any>('SELECT * FROM snippets WHERE id = ?', [id]);
+  const row = await dbGet<SnippetRow>('SELECT * FROM snippets WHERE id = ?', [id]);
   if (!row) throw new Error(`Snippet not found: ${id}`);
   return mapSnippetRow(row)!;
 }
@@ -771,10 +777,10 @@ export async function deleteSnippet(id: string): Promise<void> {
 // Sync State
 // ============================================================
 
-export async function getSyncState(vaultId?: string): Promise<SyncState | undefined> {
+export async function getSyncState(_vaultId?: string): Promise<SyncState | undefined> {
   // The sync_state table does not have a vault_id column — it's a singleton-style table.
   // If vaultId is provided we ignore it (kept for API compatibility); we return the first row.
-  const row = await dbGet<any>('SELECT * FROM sync_state LIMIT 1');
+  const row = await dbGet<SyncStateRow>('SELECT * FROM sync_state LIMIT 1');
   return mapSyncStateRow(row);
 }
 
@@ -783,7 +789,7 @@ export async function upsertSyncState(
 ): Promise<SyncState> {
   const now = new Date().toISOString();
 
-  const existing = await dbGet<any>('SELECT * FROM sync_state LIMIT 1');
+  const existing = await dbGet<SyncStateRow>('SELECT * FROM sync_state LIMIT 1');
 
   let id: string;
   if (existing) {
@@ -839,6 +845,6 @@ export async function upsertSyncState(
     );
   }
 
-  const row = await dbGet<any>('SELECT * FROM sync_state WHERE id = ?', [id]);
+  const row = await dbGet<SyncStateRow>('SELECT * FROM sync_state WHERE id = ?', [id]);
   return mapSyncStateRow(row)!;
 }

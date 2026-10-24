@@ -55,12 +55,6 @@ function bufToBase64Url(buf: ArrayBuffer | Uint8Array): string {
     .replace(/=+$/, '');
 }
 
-function base64UrlToBuf(b64url: string): Uint8Array {
-  const padded = b64url.replace(/-/g, '+').replace(/_/g, '/');
-  const padding = padded.length % 4 === 0 ? '' : '='.repeat(4 - (padded.length % 4));
-  return base64ToBuf(padded + padding);
-}
-
 function randomBytes(n: number): Uint8Array {
   const out = new Uint8Array(n);
   crypto.getRandomValues(out);

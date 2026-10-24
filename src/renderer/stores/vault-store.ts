@@ -196,30 +196,18 @@ export const useVaultStore = create<VaultState & VaultActions>()((set, get) => (
   unlockWithHardwareKey: async (vaultPath: string) => {
     set({ loading: true, error: null });
     try {
-      const t0 = performance.now();
       const info = await window.nexus.hardwareKey.getInfo(vaultPath);
-      const t1 = performance.now();
       const assertion = await webauthnPrf.assertWithCredential({
         credentialId: info.credentialId,
         prfSalt: info.prfSalt,
         rpId: info.rpId,
       });
-      const t2 = performance.now();
       await window.nexus.hardwareKey.unlock({
         vaultPath,
         prfOutput: assertion.prfOutput,
       });
-      const t3 = performance.now();
       set({ unlocked: true, loading: false });
       await get().loadAll();
-      const t4 = performance.now();
-      console.debug(
-        '[hwkey] unlock timing: ' +
-          `getInfo ${Math.round(t1 - t0)}ms, ` +
-          `WebAuthn prompt ${Math.round(t2 - t1)}ms, ` +
-          `unwrap+open ${Math.round(t3 - t2)}ms, ` +
-          `loadAll ${Math.round(t4 - t3)}ms`,
-      );
     } catch (err) {
       set({ loading: false, error: (err as Error).message });
       throw err;

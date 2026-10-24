@@ -18,7 +18,7 @@ Design doc: `ssh-client-spec.md` (read the relevant section before changing a fe
 ```bash
 pnpm install --frozen-lockfile
 pnpm typecheck     # tsc --noEmit
-pnpm lint          # 0 errors required; warnings are tolerated (existing debt)
+pnpm lint          # 0 errors and 0 warnings (--max-warnings 0 since #2357)
 pnpm test          # vitest unit tests in tests/unit
 pnpm test:e2e      # builds, then Playwright drives the real Electron app (tests/e2e)
 pnpm dev           # Vite :5173 + esbuild watch + Electron (opens devtools)
@@ -218,5 +218,7 @@ touching it.
 
 ## Known debt
 
-See the `Audit: Nexus SSH` card in GroundStation and its follow-up cards. 54 lint warnings
-(mostly `no-explicit-any`, unused vars) — fix opportunistically when touching a file.
+See the `Audit: Nexus SSH` card in GroundStation and its follow-up cards. Lint is at 0 warnings
+and `--max-warnings 0` keeps it there (#2357): type SQLite rows (`HostRow` & co. in `vault/crud.ts`)
+instead of `any`, and prefix a deliberately unused argument with `_`. The one `console.log` left is
+the updater's main-process log (disabled with a reason).

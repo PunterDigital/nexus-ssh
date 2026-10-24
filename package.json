@@ -16,7 +16,7 @@
     "build:preload": "esbuild src/main/preload.ts --bundle --platform=node --outdir=dist/main --external:electron --format=cjs --sourcemap",
     "build:renderer": "vite build",
     "package": "pnpm build && electron-builder",
-    "lint": "eslint src/",
+    "lint": "eslint src/ --max-warnings 0",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:e2e": "pnpm build && playwright test"

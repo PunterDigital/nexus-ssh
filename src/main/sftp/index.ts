@@ -4,7 +4,7 @@
  * tracking over SSH connections (reused or standalone).
  */
 
-import type { SFTPWrapper } from 'ssh2';
+import type { Attributes, FileEntry, SFTPWrapper, Stats } from 'ssh2';
 import { Client } from 'ssh2';
 import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
@@ -142,7 +142,7 @@ class SFTPManager {
   async listDirectory(connectionId: string, remotePath: string): Promise<SFTPEntry[]> {
     const sftp = await this.getSFTP(connectionId);
 
-    const list = await new Promise<any[]>((resolve, reject) => {
+    const list = await new Promise<FileEntry[]>((resolve, reject) => {
       sftp.readdir(remotePath, (err, entries) => {
         if (err) return reject(err);
         resolve(entries ?? []);
@@ -295,7 +295,7 @@ class SFTPManager {
   async download(connectionId: string, remotePath: string, localPath: string): Promise<string> {
     // Get remote file size for progress tracking
     const sftp = await this.getSFTP(connectionId);
-    const remoteStats = await new Promise<any>((resolve, reject) => {
+    const remoteStats = await new Promise<Stats>((resolve, reject) => {
       sftp.stat(remotePath, (err, stats) => {
         if (err) return reject(err);
         resolve(stats);
@@ -467,8 +467,8 @@ class SFTPManager {
   }
 
   /** Map an ssh2 readdir entry to our SFTPEntry type. */
-  private toSFTPEntry(item: any): SFTPEntry {
-    const attrs = item.attrs ?? {};
+  private toSFTPEntry(item: FileEntry): SFTPEntry {
+    const attrs: Partial<Attributes> = item.attrs ?? {};
     const mode = attrs.mode ?? 0;
 
     return {
@@ -487,7 +487,7 @@ class SFTPManager {
 
   /** Recursively delete a remote directory and all its contents. */
   private async deleteDirectoryRecursive(sftp: SFTPWrapper, dirPath: string): Promise<void> {
-    const entries = await new Promise<any[]>((resolve, reject) => {
+    const entries = await new Promise<FileEntry[]>((resolve, reject) => {
       sftp.readdir(dirPath, (err, list) => {
         if (err) return reject(err);
         resolve(list ?? []);

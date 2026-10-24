@@ -90,7 +90,6 @@ export const useTerminalStore = create<TerminalState & TerminalActions>()((set, 
   // ── Sessions ───────────────────────────────────────────────
 
   connectSession: async (hostId: string) => {
-    console.log(`[store] connectSession called for hostId=${hostId}`);
     // Look up host info from the vault store before connecting
     const vaultStore = (await import('./vault-store')).useVaultStore.getState();
     const host = vaultStore.hosts.find((h) => h.id === hostId);
@@ -176,7 +175,6 @@ export const useTerminalStore = create<TerminalState & TerminalActions>()((set, 
   },
 
   openSftpSession: async (hostId: string) => {
-    console.log(`[store] openSftpSession called for hostId=${hostId}`);
     // Look up host info from the vault store
     const vaultStore = (await import('./vault-store')).useVaultStore.getState();
     const host = vaultStore.hosts.find((h) => h.id === hostId);
@@ -312,7 +310,6 @@ export const useTerminalStore = create<TerminalState & TerminalActions>()((set, 
   addTab: (tab) => {
     const id = generateTabId();
     const newTab: TerminalTab = { ...tab, id };
-    console.log(`[store] addTab type=${tab.type} label=${tab.label} id=${id}`);
     set((state) => ({
       tabs: [...state.tabs, newTab],
       activeTabId: id,

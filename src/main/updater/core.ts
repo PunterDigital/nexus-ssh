@@ -55,7 +55,8 @@ export function resolveUpdateMode(input: UpdateModeInput): UpdateMode {
 export interface InstallUpdater {
   autoDownload: boolean;
   autoInstallOnAppQuit: boolean;
-  on(event: string, listener: (...args: any[]) => void): unknown;
+  // never[] accepts a listener of any shape; each call site types the payload it expects.
+  on(event: string, listener: (...args: never[]) => void): unknown;
   checkForUpdates(): Promise<unknown>;
   quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): void;
 }

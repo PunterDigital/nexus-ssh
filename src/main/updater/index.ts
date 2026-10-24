@@ -27,6 +27,7 @@ let mainWindow: BrowserWindow | null = null;
 
 const testFeedUrl = process.env.NEXUS_UPDATE_TEST_URL || undefined;
 
+// eslint-disable-next-line no-console -- updater progress belongs in the main-process log
 const log = (message: string) => console.log(message);
 
 export const updater = new Updater({
@@ -42,7 +43,6 @@ export const updater = new Updater({
   loadInstaller: async () => {
     // require, not import(): esbuild's ESM interop on the external CJS package loses the
     // autoUpdater getter (undefined in the packaged app). Lazy, so dev/E2E never load it.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { autoUpdater } = require('electron-updater') as { autoUpdater: AppUpdater };
     // Releases ship the full NSIS installer, never a web installer.
     autoUpdater.disableWebInstaller = true;
