@@ -9,6 +9,11 @@ Design doc: `ssh-client-spec.md` (read the relevant section before changing a fe
 - Electron 44, main process bundled by esbuild (`src/main` → `dist/main`, CJS)
 - Renderer: React 19 + Zustand + Tailwind 4, built by Vite (`src/renderer` → `dist/renderer`)
 - `src/shared`: types and constants (incl. every IPC channel name in `IPC`)
+- Renderer chunks (#2357): `App.tsx` lazy-loads the terminal (xterm + addons), SFTP browser,
+  keychain, snippets and settings views with `React.lazy` inside one `Suspense`; `main.tsx` does the
+  same for the design-system gallery, and `TerminalInstance` imports the WebGL addon on demand. The
+  start-up chunk must stay under 400 kB: `pnpm check:bundle` (CI runs it after `pnpm build`) fails
+  otherwise, so a new heavy dependency belongs in a lazy view, not in the shell.
 - Native/heavy deps are esbuild externals: `ssh2`, `@journeyapps/sqlcipher`, `basic-ftp`,
   `@aws-sdk/client-s3`, `libsodium-wrappers-sumo`
 - pnpm 10 (`packageManager` pinned), Node 24

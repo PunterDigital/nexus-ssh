@@ -1,16 +1,38 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect } from 'react';
 import { useUIStore, useTerminalStore, useVaultStore, useSFTPStore } from './stores';
 import { useTerminalPrefsCache, useVaultLocked } from './hooks';
 import { applyTheme } from './styles/themes';
 import { LockScreen, ConnectionsView, SwitchVaultHost } from './components/vault';
 import { AppHeader, Sidebar, StatusBar } from './components/shell';
-import { TerminalView, ConnectionStatus, HostKeyPromptHost } from './components/terminal';
-import { SFTPBrowser } from './components/sftp/SFTPBrowser';
-import { KeychainView } from './components/keychain/KeychainView';
-import { SnippetsPanel } from './components/snippets/SnippetsPanel';
-import { SettingsPanel } from './components/common/SettingsPanel';
+import { ConnectionStatus } from './components/terminal/ConnectionStatus';
+import { HostKeyPromptHost } from './components/terminal/HostKeyPromptHost';
 import { ToastHost } from './components/common/ToastHost';
 import { UpdateBanner } from './components/common/UpdateBanner';
+
+// The heavy views load on first use (#2357), so the start-up chunk holds only the shell, the lock
+// screen and the hosts view: xterm and its addons come with the terminal, and the SFTP browser,
+// keychain, snippets and settings each get their own chunk. `scripts/check-bundle-size.mjs` keeps
+// the entry chunk under its budget.
+const TerminalView = lazy(() =>
+  import('./components/terminal/TerminalView').then((m) => ({ default: m.TerminalView })),
+);
+const SFTPBrowser = lazy(() =>
+  import('./components/sftp/SFTPBrowser').then((m) => ({ default: m.SFTPBrowser })),
+);
+const KeychainView = lazy(() =>
+  import('./components/keychain/KeychainView').then((m) => ({ default: m.KeychainView })),
+);
+const SnippetsPanel = lazy(() =>
+  import('./components/snippets/SnippetsPanel').then((m) => ({ default: m.SnippetsPanel })),
+);
+const SettingsPanel = lazy(() =>
+  import('./components/common/SettingsPanel').then((m) => ({ default: m.SettingsPanel })),
+);
+
+/** Shown for the few milliseconds a view's chunk takes to load from disk. */
+function ViewLoading(): React.ReactElement {
+  return <div className="flex-1 bg-surface" aria-busy="true" />;
+}
 
 // ============================================================
 // Nexus SSH Client — App Shell (layout: components/shell, #2365)
@@ -152,7 +174,9 @@ export default function App(): React.ReactElement {
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <Sidebar />
         <main className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-          <MainContent />
+          <Suspense fallback={<ViewLoading />}>
+            <MainContent />
+          </Suspense>
         </main>
       </div>
 

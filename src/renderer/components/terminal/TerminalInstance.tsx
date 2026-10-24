@@ -4,7 +4,6 @@ import '@xterm/xterm/css/xterm.css';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
-import { WebglAddon } from '@xterm/addon-webgl';
 import type { TerminalTheme } from '../../../shared/types';
 import { useSSHData, useSSHClose, useSettingsChanged } from '../../hooks/use-ipc';
 import { useTerminalStore } from '../../stores/terminal-store';
@@ -124,17 +123,22 @@ export const TerminalInstance: React.FC<TerminalInstanceProps> = ({
     // Open the terminal in the container
     terminal.open(containerRef.current);
 
-    // WebGL renderer when GPU acceleration is on; otherwise (or if it fails) xterm's DOM renderer
+    // WebGL renderer when GPU acceleration is on; otherwise (or if it fails) xterm's DOM renderer.
+    // The addon is its own chunk, loaded only when it is wanted (#2357).
     if (prefs.gpuAcceleration) {
-      try {
-        const webgl = new WebglAddon();
-        webgl.onContextLoss(() => {
-          webgl.dispose();
-        });
-        terminal.loadAddon(webgl);
-      } catch {
-        // WebGL not available — xterm keeps its DOM renderer
-      }
+      void import('@xterm/addon-webgl').then(({ WebglAddon }) => {
+        // The terminal was disposed (view switch, tab closed) before the chunk arrived.
+        if (terminalRef.current !== terminal) return;
+        try {
+          const webgl = new WebglAddon();
+          webgl.onContextLoss(() => {
+            webgl.dispose();
+          });
+          terminal.loadAddon(webgl);
+        } catch {
+          // WebGL not available — xterm keeps its DOM renderer
+        }
+      });
     }
 
     // Initial fit

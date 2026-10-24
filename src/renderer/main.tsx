@@ -1,8 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
-import { DesignSystemGallery } from './components/ui/DesignSystemGallery';
 import './styles/globals.css';
+
+// Developer-only page: loaded on demand so it never ships in the start-up chunk (#2357).
+const DesignSystemGallery = lazy(() =>
+  import('./components/ui/DesignSystemGallery').then((m) => ({ default: m.DesignSystemGallery })),
+);
 
 const rootEl = document.getElementById('root');
 if (!rootEl) throw new Error('Root element not found');
@@ -17,7 +21,13 @@ function Root() {
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
-  return gallery ? <DesignSystemGallery /> : <App />;
+  return gallery ? (
+    <Suspense fallback={null}>
+      <DesignSystemGallery />
+    </Suspense>
+  ) : (
+    <App />
+  );
 }
 
 ReactDOM.createRoot(rootEl).render(

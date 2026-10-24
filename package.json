@@ -15,6 +15,7 @@
     "build:main": "esbuild src/main/index.ts --bundle --platform=node --outdir=dist/main --external:electron --external:ssh2 --external:@journeyapps/sqlcipher --external:basic-ftp --external:@aws-sdk/client-s3 --external:libsodium-wrappers-sumo --external:electron-updater --format=cjs --sourcemap",
     "build:preload": "esbuild src/main/preload.ts --bundle --platform=node --outdir=dist/main --external:electron --format=cjs --sourcemap",
     "build:renderer": "vite build",
+    "check:bundle": "node scripts/check-bundle-size.mjs",
     "package": "pnpm build && electron-builder",
     "lint": "eslint src/ --max-warnings 0",
     "typecheck": "tsc --noEmit -p tsconfig.json",
