@@ -4,7 +4,6 @@
 // create, unlock, lock, destroy.
 // ============================================================
 
-import path from 'path';
 import { promises as fs } from 'fs';
 const { Database } = require('@journeyapps/sqlcipher');
 // eslint-disable-next-line @typescript-eslint/no-redeclare -- type alias for the runtime class

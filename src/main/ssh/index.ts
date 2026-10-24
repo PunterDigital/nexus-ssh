@@ -5,7 +5,6 @@
  */
 
 import { Client, type ConnectConfig, type ClientChannel } from 'ssh2';
-import type { ParsedKey } from 'ssh2';
 import type { BrowserWindow} from 'electron';
 import { IPC, DEFAULT_KEEPALIVE_INTERVAL } from '../../shared/constants';
 import type { ResolvedCredentials, SSHSession } from '../../shared/types';

@@ -157,7 +157,7 @@ controls follow the control size (sm → 12 px, md → 13 px, lg → 14 px).
 
 ## Rules
 
-Lint (`eslint.config.js`, files in `src/renderer/components/ui/**`) fails on:
+Lint (`eslint.config.mjs`, files in `src/renderer/components/ui/**`) fails on:
 
 - raw hex colours (`#7aa2f7`): use a colour token;
 - Tailwind arbitrary values (`p-[7px]`, `text-[var(--x)]`, `w-[180px]`): use the scale or a

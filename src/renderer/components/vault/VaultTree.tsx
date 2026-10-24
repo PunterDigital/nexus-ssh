@@ -114,12 +114,6 @@ function filterTree(
 ): VaultTreeNode[] {
   const lower = text.toLowerCase();
 
-  function matches(node: VaultTreeNode): boolean {
-    if (node.label.toLowerCase().includes(lower)) return true;
-    if (node.children) return node.children.some(matches);
-    return false;
-  }
-
   function prune(node: VaultTreeNode): VaultTreeNode | null {
     if (node.type === 'host') {
       return node.label.toLowerCase().includes(lower) ? node : null;
@@ -154,7 +148,6 @@ export const VaultTree: React.FC<VaultTreeProps> = ({ filterText }) => {
   const vaults = useVaultStore((s) => s.vaults);
   const groups = useVaultStore((s) => s.groups);
   const hosts = useVaultStore((s) => s.hosts);
-  const selectedHostId = useVaultStore((s) => s.selectedHostId);
   const setSelectedHostId = useVaultStore((s) => s.setSelectedHostId);
   const setSelectedGroupId = useVaultStore((s) => s.setSelectedGroupId);
   const setSelectedVaultId = useVaultStore((s) => s.setSelectedVaultId);

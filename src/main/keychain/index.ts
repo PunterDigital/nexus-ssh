@@ -279,11 +279,10 @@ class KeychainManager {
    */
   private async parsePPKManually(
     ppkContent: string,
-    passphrase?: string,
+    _passphrase?: string,
   ): Promise<{ privateKey: string; publicKey: string }> {
     const lines = ppkContent.split(/\r?\n/);
 
-    let algorithm = '';
     let encryption = '';
     const publicLines: string[] = [];
     const privateLines: string[] = [];
@@ -293,7 +292,7 @@ class KeychainManager {
 
     for (const line of lines) {
       if (line.startsWith('PuTTY-User-Key-File-2:') || line.startsWith('PuTTY-User-Key-File-3:')) {
-        algorithm = line.split(':')[1]?.trim() || '';
+        // The header's algorithm isn't needed: we only get as far as the encryption check.
         continue;
       }
       if (line.startsWith('Encryption:')) {
@@ -333,34 +332,14 @@ class KeychainManager {
       );
     }
 
-    // Build the public key in OpenSSH format
-    const publicKeyBlob = publicLines.join('');
-    const sshAlgorithm = this.ppkAlgorithmToSSH(algorithm);
-    const publicKey = `${sshAlgorithm} ${publicKeyBlob}`;
-
-    // For the private key, we cannot trivially reconstruct an OpenSSH private key
-    // from PPK's raw private blob without a full ASN.1 / OpenSSH serializer.
-    // Write a combined temp file and attempt ssh-keygen conversion as a last ditch effort.
+    // The public key could be rebuilt from publicLines, but we cannot trivially reconstruct
+    // an OpenSSH private key from PPK's raw private blob without a full ASN.1 / OpenSSH
+    // serializer, so there is nothing to return yet.
     throw new Error(
       'Manual PPK private key conversion is not supported. ' +
       'Please install puttygen or convert the key to OpenSSH format using: ' +
       'ssh-keygen -i -f key.ppk',
     );
-  }
-
-  /**
-   * Map PPK algorithm names to OpenSSH algorithm prefixes.
-   */
-  private ppkAlgorithmToSSH(algo: string): string {
-    switch (algo) {
-      case 'ssh-rsa': return 'ssh-rsa';
-      case 'ssh-dss': return 'ssh-dss';
-      case 'ssh-ed25519': return 'ssh-ed25519';
-      case 'ecdsa-sha2-nistp256': return 'ecdsa-sha2-nistp256';
-      case 'ecdsa-sha2-nistp384': return 'ecdsa-sha2-nistp384';
-      case 'ecdsa-sha2-nistp521': return 'ecdsa-sha2-nistp521';
-      default: return algo;
-    }
   }
 
   /**
