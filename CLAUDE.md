@@ -207,6 +207,8 @@ sqlcipher 5.3.1 still asks for `@mapbox/node-pre-gyp` 1.x (tar 6, old brace-expa
 advisories); `pnpm-workspace.yaml` overrides it to 2.x, which keeps the same `find()` / `install` CLI.
 The packaged app loads it at runtime (`lib/sqlite3-binding.js`), so test the packaged build after
 touching it.
+Stay on 5.3.x: sqlcipher 6.0 dropped Windows and all prebuilt binaries (source builds on macOS/Linux
+only), so Dependabot ignores its majors (#3271). Replacing it means a vault-format check, so ask first.
 
 ## CI / release
 

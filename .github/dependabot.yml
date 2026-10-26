@@ -9,6 +9,10 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # 6.0 dropped Windows and prebuilt binaries (source builds on macOS/Linux only).
+      - dependency-name: "@journeyapps/sqlcipher"
+        update-types: [version-update:semver-major]
   - package-ecosystem: github-actions
     directory: /
     schedule:
