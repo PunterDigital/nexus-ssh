@@ -14,7 +14,7 @@
     "declarationMap": true,
     "sourceMap": true,
     "outDir": "./dist",
-    "baseUrl": ".",
+    "types": ["vite/client"],
     "paths": {
       "@shared/*": ["./src/shared/*"],
       "@main/*": ["./src/main/*"],
