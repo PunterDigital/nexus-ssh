@@ -113,6 +113,7 @@ export const IPC = {
 
   // SSH
   SSH_CONNECT: 'ssh:connect',
+  SSH_RECONNECT: 'ssh:reconnect',
   SSH_TEST_CONNECT: 'ssh:test-connect',
   SSH_MARK_READY: 'ssh:mark-ready',
   SSH_DISCONNECT: 'ssh:disconnect',

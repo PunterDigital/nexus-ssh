@@ -3,6 +3,7 @@ import { useTerminalStore } from '../../stores/terminal-store';
 import { useUIStore } from '../../stores/ui-store';
 import { TerminalInstance } from './TerminalInstance';
 import { ConnectionStatus } from './ConnectionStatus';
+import { ReconnectDialog } from './ReconnectDialog';
 import { SquareTerminal } from 'lucide-react';
 import { Icon } from '../common/Icon';
 
@@ -16,6 +17,7 @@ export const TerminalView: React.FC = () => {
   const activeTabId = useTerminalStore((s) => s.activeTabId);
   const sessions = useTerminalStore((s) => s.sessions);
   const removeTab = useTerminalStore((s) => s.removeTab);
+  const reconnects = useTerminalStore((s) => s.reconnects);
   const theme = useUIStore((s) => s.theme);
 
   const terminalTabs = tabs.filter(
@@ -26,6 +28,8 @@ export const TerminalView: React.FC = () => {
   const activeSession = activeTab
     ? sessions.find((s) => s.id === activeTab.sessionId)
     : null;
+
+  const reconnect = activeTab?.sessionId ? reconnects[activeTab.sessionId] : undefined;
 
   const showOverlay =
     activeSession &&
@@ -68,6 +72,16 @@ export const TerminalView: React.FC = () => {
           phase={activeSession.status === 'error' ? 'error' : 'connecting'}
           error={activeSession.error}
           onCancel={() => activeTab && removeTab(activeTab.id)}
+        />
+      )}
+
+      {activeTab && reconnect && (
+        <ReconnectDialog
+          key={activeTab.sessionId!}
+          sessionId={activeTab.sessionId!}
+          tabId={activeTab.id}
+          label={activeTab.label}
+          state={reconnect}
         />
       )}
     </div>

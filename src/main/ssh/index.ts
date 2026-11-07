@@ -9,6 +9,7 @@ import type { BrowserWindow} from 'electron';
 import { IPC, DEFAULT_KEEPALIVE_INTERVAL } from '../../shared/constants';
 import type { ResolvedCredentials, SSHSession } from '../../shared/types';
 import { createHostVerifier } from './host-key';
+import { classifyClose, closeMarker, RECONNECTED_MARKER } from './session-close';
 
 // ---------------------------------------------------------------------------
 // Internal state type
@@ -27,6 +28,33 @@ interface SSHSessionState {
   scrollbackBuffer: string[];
   /** True once the renderer's xterm instance has mounted and called markReady. */
   rendererReady: boolean;
+  /** Last PTY size, so a reconnect opens the shell at the terminal's size. */
+  cols: number;
+  rows: number;
+  /** The shell is open and connect() has resolved: a close from now on is reported. */
+  established: boolean;
+  /** The session has ended (either side); later events are ignored. */
+  finished: boolean;
+  exitCode?: number;
+  exitSignal?: string;
+  lastError?: string;
+}
+
+/**
+ * What is kept of a session after it closed on its own (#4322): its output, so the terminal can
+ * still replay it after a view switch, and what a reconnect needs. Dropped when the user closes
+ * the tab (disconnect) or every session goes (lock, vault switch, quit).
+ */
+interface RetainedSession {
+  hostId: string;
+  label: string;
+  colour: string | null;
+  scrollbackBuffer: string[];
+  rendererReady: boolean;
+  cols: number;
+  rows: number;
+  /** Only a lost connection reconnects; a shell that exited stays closed. */
+  reconnectable: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -38,6 +66,7 @@ export const HANDSHAKE_TIMEOUT_MS = 60_000;
 
 class SSHManager {
   private sessions: Map<string, SSHSessionState> = new Map();
+  private retained: Map<string, RetainedSession> = new Map();
   private mainWindow: BrowserWindow | null = null;
 
   /** Register the main BrowserWindow so IPC events can be sent to the renderer. */
@@ -57,6 +86,8 @@ class SSHManager {
     credentials: ResolvedCredentials;
     cols: number;
     rows: number;
+    /** Reconnect a dropped session under its old id, keeping its output (#4322). */
+    reconnect?: boolean;
   }): Promise<string> {
     const {
       sessionId,
@@ -64,11 +95,20 @@ class SSHManager {
       label,
       colour,
       credentials,
-      cols,
-      rows,
+      reconnect,
     } = options;
 
+    if (this.sessions.has(sessionId)) {
+      throw new Error('This session is already connecting or connected');
+    }
+    const previous = reconnect ? this.retained.get(sessionId) : undefined;
+    if (reconnect && !previous?.reconnectable) {
+      throw new Error('This session can no longer reconnect');
+    }
+
     const client = new Client();
+    const cols = previous?.cols ?? options.cols;
+    const rows = previous?.rows ?? options.rows;
 
     const state: SSHSessionState = {
       id: sessionId,
@@ -79,8 +119,13 @@ class SSHManager {
       channel: null,
       connected: false,
       startedAt: new Date().toISOString(),
-      scrollbackBuffer: [],
-      rendererReady: false,
+      // A reconnect continues the old output, so a remount replays all of it.
+      scrollbackBuffer: previous ? [...previous.scrollbackBuffer] : [],
+      rendererReady: previous?.rendererReady ?? false,
+      cols,
+      rows,
+      established: false,
+      finished: false,
     };
 
     this.sessions.set(sessionId, state);
@@ -100,12 +145,15 @@ class SSHManager {
           },
           (err, channel) => {
             if (err) {
-              this.sendToRenderer(IPC.SSH_CLOSE, {
-                sessionId,
-                error: err.message,
-              });
-              this.cleanup(sessionId);
+              state.lastError = err.message;
+              this.finish(state);
               return reject(err);
+            }
+
+            if (state.finished) {
+              // The connection went away while the shell was opening.
+              try { channel.close(); } catch { /* ignore */ }
+              return reject(new Error(state.lastError ?? 'The connection closed'));
             }
 
             state.channel = channel;
@@ -114,21 +162,25 @@ class SSHManager {
             // renderer's xterm instance re-mounts (React Strict Mode, tab
             // switch, etc.) it can replay the full history via markReady().
             const forwardOrBuffer = (data: Buffer) => {
-              const text = data.toString('utf8');
-              state.scrollbackBuffer.push(text);
-              if (state.rendererReady) {
-                this.sendToRenderer(IPC.SSH_DATA, { sessionId, data: text });
-              }
+              this.output(state, data.toString('utf8'));
             };
 
             channel.on('data', forwardOrBuffer);
             channel.stderr.on('data', forwardOrBuffer);
 
-            channel.on('close', () => {
-              this.sendToRenderer(IPC.SSH_CLOSE, { sessionId });
-              this.cleanup(sessionId);
+            // An exit status means the shell ended on purpose; a signal means it was killed.
+            channel.on('exit', (code: number | null, signal?: string) => {
+              if (typeof code === 'number') state.exitCode = code;
+              else if (signal) state.exitSignal = signal;
             });
 
+            channel.on('close', () => this.finish(state));
+
+            state.established = true;
+            if (previous) {
+              this.retained.delete(sessionId);
+              this.output(state, RECONNECTED_MARKER);
+            }
             resolve(sessionId);
           },
         );
@@ -141,19 +193,22 @@ class SSHManager {
         const err = hostKey.rejected
           ? new Error(`Host key for ${credentials.hostname}:${credentials.port} was not trusted`)
           : rawErr;
-        this.sendToRenderer(IPC.SSH_CLOSE, {
-          sessionId,
-          error: err.message,
-        });
-        this.cleanup(sessionId);
+        state.lastError = err.message;
+        this.finish(state);
         reject(err);
       });
 
-      // ---- Event: end -------------------------------------------------------
+      // ---- Event: end / close -------------------------------------------------
+      // Rejecting after connect() resolved does nothing, so these only matter mid-handshake.
       client.on('end', () => {
         hostKey.dismiss();
-        this.sendToRenderer(IPC.SSH_CLOSE, { sessionId });
-        this.cleanup(sessionId);
+        this.finish(state);
+        reject(new Error(state.lastError ?? 'The server closed the connection'));
+      });
+      client.on('close', () => {
+        hostKey.dismiss();
+        this.finish(state);
+        reject(new Error(state.lastError ?? 'The connection closed'));
       });
 
       // ---- Build ConnectConfig ----------------------------------------------
@@ -203,20 +258,30 @@ class SSHManager {
       try {
         client.connect(connectConfig);
       } catch (err: unknown) {
-        this.cleanup(sessionId);
+        state.finished = true;
+        this.cleanup(state);
         reject(err);
       }
     });
   }
 
+  /** The host a dropped session belongs to, if it can still reconnect. */
+  reconnectTarget(sessionId: string): { hostId: string } | null {
+    if (this.sessions.has(sessionId)) return null;
+    const retained = this.retained.get(sessionId);
+    return retained?.reconnectable ? { hostId: retained.hostId } : null;
+  }
+
   // -----------------------------------------------------------------------
-  // disconnect
+  // disconnect — the user closed the session: no close event, nothing kept
   // -----------------------------------------------------------------------
 
   disconnect(sessionId: string): void {
+    this.retained.delete(sessionId);
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
+    session.finished = true;
     try {
       if (session.channel) {
         session.channel.close();
@@ -226,7 +291,7 @@ class SSHManager {
       // Ignore errors during teardown
     }
 
-    this.cleanup(sessionId);
+    this.cleanup(session);
   }
 
   // -----------------------------------------------------------------------
@@ -237,7 +302,8 @@ class SSHManager {
   // -----------------------------------------------------------------------
 
   markRendererReady(sessionId: string): string {
-    const session = this.sessions.get(sessionId);
+    // A closed session still replays its output (and the close line) after a view switch.
+    const session = this.sessions.get(sessionId) ?? this.retained.get(sessionId);
     if (!session) return '';
     // Return the full scrollback so the renderer can replay history.
     // We leave the buffer in place so subsequent remounts (Strict Mode,
@@ -267,8 +333,11 @@ class SSHManager {
   // -----------------------------------------------------------------------
 
   resize(sessionId: string, cols: number, rows: number): void {
-    const session = this.sessions.get(sessionId);
-    if (!session?.channel) return;
+    const session = this.sessions.get(sessionId) ?? this.retained.get(sessionId);
+    if (!session) return;
+    session.cols = cols;
+    session.rows = rows;
+    if (!('channel' in session) || !session.channel) return;
 
     try {
       session.channel.setWindow(rows, cols, 0, 0);
@@ -310,22 +379,63 @@ class SSHManager {
   // -----------------------------------------------------------------------
 
   destroyAll(): void {
-    for (const sessionId of this.sessions.keys()) {
+    for (const sessionId of [...this.sessions.keys()]) {
       this.disconnect(sessionId);
     }
+    this.retained.clear();
   }
 
   // -----------------------------------------------------------------------
   // Internal helpers
   // -----------------------------------------------------------------------
 
-  private cleanup(sessionId: string): void {
-    const session = this.sessions.get(sessionId);
-    if (!session) return;
+  /** PTY output (or a status line): kept for replay, streamed once the xterm is ready. */
+  private output(state: SSHSessionState, text: string): void {
+    state.scrollbackBuffer.push(text);
+    if (state.rendererReady) {
+      this.sendToRenderer(IPC.SSH_DATA, { sessionId: state.id, data: text });
+    }
+  }
 
-    session.connected = false;
-    session.channel = null;
-    this.sessions.delete(sessionId);
+  /**
+   * The session ended on its own (shell exit, lost connection, error). Runs once per session.
+   * Before the shell is open, connect() rejects instead and nothing is reported.
+   */
+  private finish(state: SSHSessionState): void {
+    if (state.finished) return;
+    state.finished = true;
+    try {
+      state.client.end();
+    } catch {
+      // already closed
+    }
+    this.cleanup(state);
+    if (!state.established) return;
+
+    const info = classifyClose(state.id, {
+      exitCode: state.exitCode,
+      exitSignal: state.exitSignal,
+      error: state.lastError,
+    });
+    this.output(state, closeMarker(info));
+    this.retained.set(state.id, {
+      hostId: state.hostId,
+      label: state.label,
+      colour: state.colour,
+      scrollbackBuffer: state.scrollbackBuffer,
+      rendererReady: state.rendererReady,
+      cols: state.cols,
+      rows: state.rows,
+      reconnectable: info.reason === 'dropped',
+    });
+    this.sendToRenderer(IPC.SSH_CLOSE, info);
+  }
+
+  private cleanup(state: SSHSessionState): void {
+    state.connected = false;
+    state.channel = null;
+    // A late event from an old connection must not remove a newer one with the same id.
+    if (this.sessions.get(state.id) === state) this.sessions.delete(state.id);
   }
 
   private sendToRenderer(channel: string, data: unknown): void {

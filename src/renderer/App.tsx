@@ -1,6 +1,6 @@
 import React, { Suspense, lazy, useCallback, useEffect } from 'react';
 import { useUIStore, useTerminalStore, useVaultStore, useSFTPStore } from './stores';
-import { useTerminalPrefsCache, useVaultLocked } from './hooks';
+import { useSSHClose, useTerminalPrefsCache, useVaultLocked } from './hooks';
 import { applyTheme } from './styles/themes';
 import { LockScreen, ConnectionsView, SwitchVaultHost } from './components/vault';
 import { AppHeader, Sidebar, StatusBar } from './components/shell';
@@ -152,6 +152,8 @@ export default function App(): React.ReactElement {
   }, [setView, setLockScreenVisible]);
 
   useVaultLocked(handleVaultLocked);
+  // A session that ends on its own (shell exit, lost connection) wherever its tab is (#4322).
+  useSSHClose(useTerminalStore.getState().handleSessionClosed);
   useTerminalPrefsCache(!lockScreenVisible);
 
   if (lockScreenVisible) {

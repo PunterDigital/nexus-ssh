@@ -1,7 +1,8 @@
 import { create } from 'zustand';
-import type { SSHSession } from '../../shared/types';
+import type { SSHCloseInfo, SSHSession } from '../../shared/types';
 import { setCachedTerminalPrefs } from '../lib/terminal-options';
 import { planAutoRun, skippedMessage } from '../lib/snippet-auto-run';
+import { ReconnectLoop, type ReconnectState } from '../lib/reconnect';
 
 // ============================================================
 // Terminal Store — manages SSH sessions and terminal tabs
@@ -20,6 +21,8 @@ export interface TerminalState {
   tabs: TerminalTab[];
   activeSessionId: string | null;
   activeTabId: string | null;
+  /** Dropped terminal sessions that are reconnecting or gave up (#4322), by session id. */
+  reconnects: Record<string, ReconnectState>;
 }
 
 export interface TerminalActions {
@@ -38,6 +41,15 @@ export interface TerminalActions {
   setActiveTab: (tabId: string | null) => void;
   reorderTabs: (fromIndex: number, toIndex: number) => void;
   updateTab: (tabId: string, updates: Partial<TerminalTab>) => void;
+
+  // Lost connections (#4322)
+  /** Main says a session ended on its own: a dropped terminal starts reconnecting. */
+  handleSessionClosed: (info: SSHCloseInfo) => void;
+  reconnectNow: (sessionId: string) => void;
+  stopReconnect: (sessionId: string) => void;
+  retryReconnect: (sessionId: string) => void;
+  /** Hide the dialog and stop retrying; the tab stays with its output. */
+  dismissReconnect: (sessionId: string) => void;
 
   // Terminal I/O
   writeToSession: (sessionId: string, data: string) => void;
@@ -82,7 +94,23 @@ const initialState: TerminalState = {
   tabs: [],
   activeSessionId: null,
   activeTabId: null,
+  reconnects: {},
 };
+
+/** The running reconnect loop of each dropped session (not state: it holds timers). */
+const reconnectLoops = new Map<string, ReconnectLoop>();
+
+function endReconnect(sessionId: string): void {
+  reconnectLoops.get(sessionId)?.dispose();
+  reconnectLoops.delete(sessionId);
+}
+
+function withoutKey<T>(record: Record<string, T>, key: string): Record<string, T> {
+  if (!(key in record)) return record;
+  const next = { ...record };
+  delete next[key];
+  return next;
+}
 
 export const useTerminalStore = create<TerminalState & TerminalActions>()((set, get) => ({
   ...initialState,
@@ -97,10 +125,13 @@ export const useTerminalStore = create<TerminalState & TerminalActions>()((set, 
     const colour = host?.colour ?? null;
     const hostname = host?.hostname ?? '';
 
-    // Check if there's already a connected tab for this host
+    // Check if there's already a connected (or reconnecting) tab for this host
     const existingTab = get().tabs.find(
       (t) => t.type === 'terminal' && get().sessions.find(
-        (s) => s.id === t.sessionId && s.hostId === hostId && s.connected,
+        (s) =>
+          s.id === t.sessionId &&
+          s.hostId === hostId &&
+          (s.connected || reconnectLoops.has(s.id)),
       ),
     );
     if (existingTab) {
@@ -322,6 +353,7 @@ export const useTerminalStore = create<TerminalState & TerminalActions>()((set, 
     // disconnect the backend SSH connection.
     const tab = get().tabs.find((t) => t.id === tabId);
     const sessionIdToClose = tab?.sessionId ?? null;
+    if (sessionIdToClose) endReconnect(sessionIdToClose);
 
     set((state) => {
       const idx = state.tabs.findIndex((t) => t.id === tabId);
@@ -351,6 +383,7 @@ export const useTerminalStore = create<TerminalState & TerminalActions>()((set, 
         sessions: newSessions,
         activeTabId: newActiveTabId,
         activeSessionId: newActiveSessionId,
+        reconnects: sessionIdToClose ? withoutKey(state.reconnects, sessionIdToClose) : state.reconnects,
       };
     });
 
@@ -389,6 +422,54 @@ export const useTerminalStore = create<TerminalState & TerminalActions>()((set, 
     }));
   },
 
+  // ── Lost connections (#4322) ───────────────────────────────
+
+  handleSessionClosed: (info) => {
+    const { sessionId } = info;
+    get().updateSession(sessionId, { connected: false });
+    const tab = get().tabs.find((t) => t.sessionId === sessionId);
+    // SFTP tabs keep today's behaviour; a shell that exited stays closed.
+    if (!tab || tab.type !== 'terminal' || info.reason !== 'dropped') return;
+
+    endReconnect(sessionId);
+    const loop = new ReconnectLoop({
+      connect: async () => {
+        await window.nexus.ssh.reconnect(sessionId);
+      },
+      onChange: (state) => {
+        if (state === null) {
+          // Connected again under the same id: the xterm stays, main wrote "Reconnected".
+          reconnectLoops.delete(sessionId);
+          set((s) => ({
+            reconnects: withoutKey(s.reconnects, sessionId),
+            sessions: s.sessions.map((x) =>
+              x.id === sessionId ? { ...x, connected: true, status: 'connected', error: null } : x,
+            ),
+          }));
+          return;
+        }
+        set((s) => ({ reconnects: { ...s.reconnects, [sessionId]: state } }));
+      },
+    });
+    reconnectLoops.set(sessionId, loop);
+    loop.start(info.error ?? 'The connection was lost');
+  },
+
+  reconnectNow: (sessionId) => reconnectLoops.get(sessionId)?.skipWait(),
+
+  stopReconnect: (sessionId) => reconnectLoops.get(sessionId)?.stop(),
+
+  retryReconnect: (sessionId) => {
+    const loop = reconnectLoops.get(sessionId);
+    const state = get().reconnects[sessionId];
+    if (loop && state) loop.start(state.error);
+  },
+
+  dismissReconnect: (sessionId) => {
+    endReconnect(sessionId);
+    set((s) => ({ reconnects: withoutKey(s.reconnects, sessionId) }));
+  },
+
   // ── Terminal I/O ───────────────────────────────────────────
 
   writeToSession: (sessionId, data) => {
@@ -404,6 +485,7 @@ export const useTerminalStore = create<TerminalState & TerminalActions>()((set, 
   reset: () => {
     // The next vault may have other terminal settings: new terminals load them again.
     setCachedTerminalPrefs(null);
+    for (const sessionId of [...reconnectLoops.keys()]) endReconnect(sessionId);
     set(initialState);
   },
 }));

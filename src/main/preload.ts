@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
-import type { HostKeyPrompt, HostKeyVerification, UpdateStatus } from '../shared/types';
+import type { HostKeyPrompt, HostKeyVerification, SSHCloseInfo, UpdateStatus } from '../shared/types';
 
 /**
  * Nexus preload script.
@@ -163,11 +163,11 @@ const nexusAPI = {
         ipcRenderer.removeListener('ssh:data', listener);
       };
     },
-    onClose: (callback: (sessionId: string, code: number) => void) => {
-      const listener = (
-        _event: Electron.IpcRendererEvent,
-        payload: { sessionId: string; error?: string },
-      ) => callback(payload.sessionId, payload.error ? 1 : 0);
+    /** Connect a dropped terminal session again under the same id (#4322). */
+    reconnect: (sessionId: string) => call<string>('ssh:reconnect', sessionId),
+    /** A session ended on its own: the shell exited or the connection was lost. */
+    onClose: (callback: (info: SSHCloseInfo) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: SSHCloseInfo) => callback(payload);
       ipcRenderer.on('ssh:close', listener);
       return () => {
         ipcRenderer.removeListener('ssh:close', listener);

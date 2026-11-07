@@ -3,7 +3,8 @@
  *
  * - Password auth with a fixed test user.
  * - A minimal line shell: echoes keystrokes, records each entered line in
- *   `commands`, and answers `echo <text>` with `<text>`.
+ *   `commands`, answers `echo <text>` with `<text>`, and ends the session with
+ *   exit status 0 on `exit` (like a real shell).
  * - An SFTP subsystem backed by a real directory (`root`), so tests can check
  *   transferred files byte for byte.
  * - Optional per-request delays so transfers are slow enough to pause.
@@ -35,6 +36,10 @@ export interface TestServer {
   commands: string[];
   /** Client connections that are still open. */
   openConnections: () => number;
+  /** Hang up on every client without ending their shells (a lost connection). */
+  dropConnections: () => void;
+  /** While true, every login is refused (the host is "down" for reconnects). */
+  refuseLogins: (refuse: boolean) => void;
   close: () => Promise<void>;
 }
 
@@ -46,6 +51,7 @@ export async function startTestServer(opts: TestServerOptions): Promise<TestServ
   const hostKey = utils.generateKeyPairSync('ed25519').private;
   const clients = new Set<Connection>();
   const commands: string[] = [];
+  let refusing = false;
 
   const server = new Server({ hostKeys: [hostKey] }, (client) => {
     clients.add(client);
@@ -54,6 +60,7 @@ export async function startTestServer(opts: TestServerOptions): Promise<TestServ
 
     client.on('authentication', (ctx) => {
       if (
+        !refusing &&
         ctx.method === 'password' &&
         ctx.username === username &&
         ctx.password === password
@@ -79,6 +86,12 @@ export async function startTestServer(opts: TestServerOptions): Promise<TestServ
             for (const ch of data.toString('utf8')) {
               if (ch === '\r' || ch === '\n') {
                 commands.push(line);
+                if (line === 'exit') {
+                  stream.write('\r\nlogout\r\n');
+                  stream.exit(0);
+                  stream.end();
+                  return;
+                }
                 const out = line.startsWith('echo ') ? `${line.slice(5)}\r\n` : '';
                 stream.write(`\r\n${out}${PROMPT}`);
                 line = '';
@@ -107,6 +120,12 @@ export async function startTestServer(opts: TestServerOptions): Promise<TestServ
     password,
     commands,
     openConnections: () => clients.size,
+    dropConnections: () => {
+      for (const c of clients) c.end();
+    },
+    refuseLogins: (refuse: boolean) => {
+      refusing = refuse;
+    },
     close: () =>
       new Promise<void>((resolve) => {
         for (const c of clients) c.end();

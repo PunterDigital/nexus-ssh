@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import type { SSHCloseInfo } from '../../shared/types';
 
 // ============================================================
 // IPC Hooks — event listener hooks for main → renderer events
@@ -26,24 +27,14 @@ export function useSSHData(
 }
 
 /**
- * Listen for SSH close events for a specific session.
- * Sets up the listener on mount and cleans up on unmount.
+ * Listen for every session that ends on its own (shell exit or lost connection). Mounted once in
+ * App, so a terminal that isn't on screen (another view is open) still hears about it.
  */
-export function useSSHClose(
-  sessionId: string | null,
-  callback: (code: number) => void
-): void {
+export function useSSHClose(callback: (info: SSHCloseInfo) => void): void {
   useEffect(() => {
-    if (!sessionId) return;
-
-    const cleanup = window.nexus.ssh.onClose((sid, code) => {
-      if (sid === sessionId) {
-        callback(code);
-      }
-    });
-
+    const cleanup = window.nexus.ssh.onClose(callback);
     return cleanup;
-  }, [sessionId, callback]);
+  }, [callback]);
 }
 
 /**

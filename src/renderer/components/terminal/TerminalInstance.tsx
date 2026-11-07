@@ -5,8 +5,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import type { TerminalTheme } from '../../../shared/types';
-import { useSSHData, useSSHClose, useSettingsChanged } from '../../hooks/use-ipc';
-import { useTerminalStore } from '../../stores/terminal-store';
+import { useSSHData, useSettingsChanged } from '../../hooks/use-ipc';
 import {
   cachedTerminalPrefs,
   isTerminalPrefKey,
@@ -62,9 +61,6 @@ export const TerminalInstance: React.FC<TerminalInstanceProps> = ({
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
-  const closedRef = useRef(false);
-
-  const updateSession = useTerminalStore((s) => s.updateSession);
 
   // Apply terminal settings to the open terminal and refit: a new font size changes cols/rows.
   const applyPrefs = useCallback(
@@ -228,23 +224,9 @@ export const TerminalInstance: React.FC<TerminalInstanceProps> = ({
     terminalRef.current?.write(data);
   }, []);
 
+  // A close is handled app-wide (terminal-store.handleSessionClosed); main writes the
+  // "Connection closed / lost / Reconnected" lines into the output stream itself (#4322).
   useSSHData(sessionId, handleSSHData);
-
-  // Connection close
-  const handleSSHClose = useCallback(
-    (code: number) => {
-      closedRef.current = true;
-      const msg =
-        code === 0
-          ? '\r\n\x1b[90m--- Connection closed ---\x1b[0m\r\n'
-          : `\r\n\x1b[31m--- Connection closed (exit code: ${code}) ---\x1b[0m\r\n`;
-      terminalRef.current?.write(msg);
-      updateSession(sessionId, { connected: false });
-    },
-    [sessionId, updateSession]
-  );
-
-  useSSHClose(sessionId, handleSSHClose);
 
   // Signal the main process that the xterm is ready to receive data.
   // This flushes any PTY output that arrived before the terminal mounted
