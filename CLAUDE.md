@@ -137,6 +137,18 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   rebuilds each xterm from the cache, and main replays the output (`markReady` → `scrollbackBuffer`).
   Main's settings `DEFAULTS` must list every vault setting: `getAll` returns only those keys
   (cursor style/blink were missing until #2662).
+- Lost connections (#4322): main (`src/main/ssh/index.ts`) reports a session that ends **on its own**
+  once, as `ssh:close` with an `SSHCloseInfo`: `exit` when the shell sent an exit status (typed
+  `exit`), `dropped` otherwise (`ssh/session-close.ts`, unit-tested). A user close (tab closed,
+  lock, vault switch: `disconnect`/`destroyAll`) sends nothing. Main writes the "Connection closed /
+  lost / Reconnected" lines into the output itself and keeps a closed session's scrollback
+  (`retained`) until the tab closes, so a remount still replays it. App mounts one `useSSHClose`
+  → `terminal-store.handleSessionClosed`; a dropped **terminal** tab gets a `ReconnectLoop`
+  (`lib/reconnect.ts`, 1 s / 2 s / 4 s, unit-tested) that calls `ssh:reconnect`, which connects again
+  under the **same session id** (host taken from main's record, last PTY size reused), so the xterm
+  and tab stay. `ReconnectDialog` shows the active tab's loop; closing it stops retrying. SFTP tabs and
+  "Run on connect" snippets don't reconnect / rerun. The test SSH server has `dropConnections()`,
+  `refuseLogins()` and an `exit` command (`tests/e2e/reconnect.spec.ts`).
 - External links (#2664): `window.nexus.shell.openExternal(url)` → `shell:open-external`, which opens only
   https URLs under `REPOSITORY_URL` / `DOWNLOADS_PAGE_URL` (`src/main/shell/external-links.ts`, unit-tested).
   Add a URL to that allow-list rather than a new open-anything call. The window itself never navigates.

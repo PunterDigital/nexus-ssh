@@ -55,6 +55,35 @@ export function registerSSHHandlers(): void {
     }
   });
 
+  // ── SSH_RECONNECT ───────────────────────────────────────────
+  // A dropped terminal session connects again under the same id, so its tab and output stay
+  // (#4322). The host comes from main's record of the session, not from the renderer.
+  ipcMain.handle(IPC.SSH_RECONNECT, async (_event, sessionId: string) => {
+    try {
+      const target = sshManager.reconnectTarget(sessionId);
+      if (!target) throw new Error('This session can no longer reconnect');
+
+      const credentials = await crud.resolveCredentials(target.hostId);
+      const host = await crud.getHost(target.hostId);
+      if (!host) throw new Error('The host was deleted');
+
+      await sshManager.connect({
+        sessionId,
+        hostId: target.hostId,
+        label: host.label,
+        colour: host.colour,
+        credentials,
+        cols: 80,
+        rows: 24,
+        reconnect: true,
+      });
+      await crud.updateLastConnected(target.hostId);
+      return ok(sessionId);
+    } catch (err: unknown) {
+      return fail(err instanceof Error ? err.message : String(err));
+    }
+  });
+
   // ── SSH_TEST_CONNECT ────────────────────────────────────────
   // Quick test with raw credentials — no saved host required
   ipcMain.handle(

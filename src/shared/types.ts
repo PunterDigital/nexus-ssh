@@ -209,6 +209,22 @@ export interface SSHSession {
   startedAt: string;
 }
 
+/**
+ * Why a terminal session closed (#4322). `exit`: the remote shell ended (the user typed `exit`, or
+ * the shell's command finished), so nothing reconnects. `dropped`: the connection went away
+ * without the shell exiting (network loss, server restart, keepalive timeout, SSH error).
+ * A session the user closes (tab closed, vault locked or switched) sends no close event.
+ */
+export type SSHCloseReason = 'exit' | 'dropped';
+
+export interface SSHCloseInfo {
+  sessionId: string;
+  reason: SSHCloseReason;
+  error?: string;
+  /** The shell's exit status, when it sent one. */
+  exitCode?: number;
+}
+
 export type HostKeyVerification = 'accept' | 'reject' | 'always';
 
 export interface HostKeyPrompt {
