@@ -60,7 +60,7 @@
     "esbuild": "^0.28.2",
     "eslint": "^9.39.5",
     "eslint-plugin-react": "^7.37.5",
-    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "postcss": "^8.5.32",
     "prettier": "^3.9.10",
     "tailwindcss": "^4.3.4",
