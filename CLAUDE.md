@@ -9,8 +9,12 @@ Design doc: `ssh-client-spec.md` (read the relevant section before changing a fe
 - Electron 45, main process bundled by esbuild (`src/main` → `dist/main`, CJS). The preload is
   sandboxed (`sandbox: true`): since Electron 45 its `require` loads only `electron`, and
   `Buffer` / `setImmediate` are gone, so the bundled `dist/main/preload.js` must not use them.
-  `hardware-key/index.ts` still uses the sync `safeStorage` calls, deprecated in 45 and removed
-  in 46: move to the `*Async` methods before an Electron 46 bump.
+  `hardware-key/index.ts` uses only the async `safeStorage` calls (#4377; the sync ones are
+  deprecated in 45 and removed in 46). `decryptStringAsync` reads files the old `encryptString`
+  wrote, and a `shouldReEncrypt` result rewrites the file (temp file + rename). Electron prints
+  `(electron) '…' is deprecated` on the main process stderr: `hardware-key.spec.ts` fails on it.
+  The WebAuthn ceremony needs a real key, so that spec hands main a fixed PRF output through
+  `window.nexus.hardwareKey.*`. `window.nexus.vault.isUnlocked` has no handler: use `vault.current()`.
 - Renderer: React 19 + Zustand + Tailwind 4, built by Vite (`src/renderer` → `dist/renderer`)
 - `src/shared`: types and constants (incl. every IPC channel name in `IPC`)
 - Renderer chunks (#2357): `App.tsx` lazy-loads the terminal (xterm + addons), SFTP browser,

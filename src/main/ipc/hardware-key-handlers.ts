@@ -76,7 +76,7 @@ export function registerHardwareKeyHandlers(): void {
   ipcMain.handle(IPC.HWKEY_GET_INFO, async (_event, vaultPath: string) => {
     try {
       const vaultId = vaultIdFromPath(vaultPath);
-      const info = hardwareKeyManager.getCredentialInfo(vaultId);
+      const info = await hardwareKeyManager.getCredentialInfo(vaultId);
       if (!info) throw new Error('Hardware key is not set up for this vault.');
       return ok(info);
     } catch (err: unknown) {
@@ -194,7 +194,7 @@ export function registerHardwareKeyHandlers(): void {
   ipcMain.handle(IPC.HWKEY_REMOVE, async (_event, vaultPath: string) => {
     try {
       const vaultId = vaultIdFromPath(vaultPath);
-      const info = hardwareKeyManager.getCredentialInfo(vaultId);
+      const info = await hardwareKeyManager.getCredentialInfo(vaultId);
       if (info?.passwordless) {
         throw new Error(
           'Cannot remove the hardware key from a passwordless vault — there would be no way left to unlock it. Set a master password first.',

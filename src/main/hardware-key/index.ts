@@ -10,7 +10,9 @@
 //   wrappedDbKey     = secretbox(dbKey,        wrappingKey)
 //   wrappedWrapKey   = secretbox(wrappingKey,  prfOutput)
 //
-// Storage layout per vault, encrypted with safeStorage:
+// Storage layout per vault, encrypted with safeStorage's async API
+// (#4377: the sync calls are deprecated in Electron 45 and removed in 46;
+// decryptStringAsync also reads files written by the old encryptString):
 //   ${userData}/hwkey-store/${vaultId}.hwkey
 // ============================================================
 
@@ -54,23 +56,43 @@ function ensureDir(): void {
   }
 }
 
-function storeEncrypted(vaultId: string, data: string): void {
-  if (!safeStorage.isEncryptionAvailable()) {
+/**
+ * Write through a temp file and rename, so a crash mid-write can't leave a
+ * truncated .hwkey (for a passwordless vault that file is the only way in).
+ */
+async function writeAtomic(filePath: string, data: Buffer): Promise<void> {
+  const tmp = `${filePath}.tmp`;
+  await fs.promises.writeFile(tmp, data);
+  await fs.promises.rename(tmp, filePath);
+}
+
+async function storeEncrypted(vaultId: string, data: string): Promise<void> {
+  if (!(await safeStorage.isAsyncEncryptionAvailable())) {
     throw new Error('OS encryption is not available. Cannot store hardware-key data securely.');
   }
   ensureDir();
-  const encrypted = safeStorage.encryptString(data);
-  fs.writeFileSync(getFilePath(vaultId), encrypted);
+  const encrypted = await safeStorage.encryptStringAsync(data);
+  await writeAtomic(getFilePath(vaultId), encrypted);
 }
 
-function loadEncrypted(vaultId: string): string | null {
+async function loadEncrypted(vaultId: string): Promise<string | null> {
   const filePath = getFilePath(vaultId);
   if (!fs.existsSync(filePath)) return null;
-  if (!safeStorage.isEncryptionAvailable()) {
+  if (!(await safeStorage.isAsyncEncryptionAvailable())) {
     throw new Error('OS encryption is not available. Cannot read hardware-key data.');
   }
-  const encrypted = fs.readFileSync(filePath);
-  return safeStorage.decryptString(encrypted);
+  const encrypted = await fs.promises.readFile(filePath);
+  const { result, shouldReEncrypt } = await safeStorage.decryptStringAsync(encrypted);
+  if (shouldReEncrypt) {
+    // The OS key was rotated (or a stronger one is available): store the data
+    // under the new key. If that fails, the old file still decrypts.
+    try {
+      await writeAtomic(filePath, await safeStorage.encryptStringAsync(result));
+    } catch {
+      /* keep the existing file */
+    }
+  }
+  return result;
 }
 
 function deleteEncrypted(vaultId: string): void {
@@ -128,7 +150,7 @@ class HardwareKeyManager {
         createdAt: new Date().toISOString(),
       };
 
-      storeEncrypted(options.vaultId, JSON.stringify(payload));
+      await storeEncrypted(options.vaultId, JSON.stringify(payload));
     } finally {
       kdf.zeroBuffer(wrappingKey);
     }
@@ -142,7 +164,7 @@ class HardwareKeyManager {
   async unwrapDbKey(vaultId: string, prfOutput: Buffer): Promise<Buffer> {
     await kdf.initSodium();
 
-    const raw = loadEncrypted(vaultId);
+    const raw = await loadEncrypted(vaultId);
     if (!raw) {
       throw new Error('Hardware key is not set up for this vault.');
     }
@@ -185,8 +207,8 @@ class HardwareKeyManager {
    * Public credential metadata required by the renderer to perform the
    * WebAuthn assertion (allowCredentials, PRF salt, RP id).
    */
-  getCredentialInfo(vaultId: string): HardwareKeyCredentialInfo | null {
-    const raw = loadEncrypted(vaultId);
+  async getCredentialInfo(vaultId: string): Promise<HardwareKeyCredentialInfo | null> {
+    const raw = await loadEncrypted(vaultId);
     if (!raw) return null;
     let stored: StoredHardwareKeyData;
     try {
