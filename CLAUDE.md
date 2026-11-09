@@ -6,7 +6,11 @@ Design doc: `ssh-client-spec.md` (read the relevant section before changing a fe
 
 ## Stack
 
-- Electron 44, main process bundled by esbuild (`src/main` → `dist/main`, CJS)
+- Electron 45, main process bundled by esbuild (`src/main` → `dist/main`, CJS). The preload is
+  sandboxed (`sandbox: true`): since Electron 45 its `require` loads only `electron`, and
+  `Buffer` / `setImmediate` are gone, so the bundled `dist/main/preload.js` must not use them.
+  `hardware-key/index.ts` still uses the sync `safeStorage` calls, deprecated in 45 and removed
+  in 46: move to the `*Async` methods before an Electron 46 bump.
 - Renderer: React 19 + Zustand + Tailwind 4, built by Vite (`src/renderer` → `dist/renderer`)
 - `src/shared`: types and constants (incl. every IPC channel name in `IPC`)
 - Renderer chunks (#2357): `App.tsx` lazy-loads the terminal (xterm + addons), SFTP browser,
