@@ -188,6 +188,12 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   instead of Vite; `NEXUS_USER_DATA_DIR=<dir>` isolates the profile; `NEXUS_DISABLE_IDLE_LOCK=1` turns
   off idle auto-lock polling (on an unattended machine OS idle time is already past 15 min, so the
   vault would lock ~30s in). Never run E2E against the real profile — it holds Shay's vaults.
+- **E2E never takes focus** (#4616): Shay uses (or games on) the PC while runs test this app. With
+  `NEXUS_USER_DATA_DIR` set, the window opens with `showInactive()`, `skipTaskbar`, no
+  `backgroundThrottling`, and the occluded-window/renderer backgrounding switches off. Specs must not
+  call `bringToFront()` or `BrowserWindow.focus()`; DOM `locator.focus()` is fine. Check a full run
+  with a foreground-window logger (`GetForegroundWindow` poll, see the playbook) after touching
+  window creation.
 - **Update checks in tests:** a `NEXUS_USER_DATA_DIR` profile never checks for updates, so E2E of the
   packaged app never reaches GitHub. `NEXUS_UPDATE_TEST_URL=<url>` turns on notify mode against a
   local fake of the GitHub "latest release" JSON (`tests/e2e/updater.spec.ts`).

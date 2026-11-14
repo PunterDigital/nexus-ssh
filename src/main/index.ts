@@ -27,6 +27,15 @@ if (process.env.NEXUS_USER_DATA_DIR) {
   app.setPath('userData', process.env.NEXUS_USER_DATA_DIR);
 }
 
+// A test profile is an E2E run, which may happen while Shay uses the PC (or games, fullscreen).
+// Its window opens without taking focus and stays off the taskbar (#4616). Chromium would
+// throttle a window that sits behind another app, which stalls the tests, so that is off too.
+const isTestProfile = !!process.env.NEXUS_USER_DATA_DIR;
+if (isTestProfile) {
+  app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+  app.commandLine.appendSwitch('disable-renderer-backgrounding');
+}
+
 // WebAuthn (used for hardware-key vault unlock) requires the renderer's
 // origin to be HTTPS-with-valid-cert, "localhost" HTTP, or an extension page.
 // Custom protocol schemes — even those marked secure: true — do NOT satisfy
@@ -99,9 +108,11 @@ function createWindow(): void {
     minHeight: 600,
     title: 'Nexus',
     show: false,
+    skipTaskbar: isTestProfile,
     backgroundColor: '#1a1b2e',
     titleBarStyle: 'hiddenInset',
     webPreferences: {
+      backgroundThrottling: !isTestProfile,
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
@@ -142,7 +153,8 @@ function createWindow(): void {
 
   // Show window when ready to avoid visual flash
   mainWindow.once('ready-to-show', () => {
-    mainWindow?.show();
+    if (isTestProfile) mainWindow?.showInactive();
+    else mainWindow?.show();
   });
 
   mainWindow.on('closed', () => {
