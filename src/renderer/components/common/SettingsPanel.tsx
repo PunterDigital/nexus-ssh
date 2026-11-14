@@ -30,6 +30,7 @@ import {
   APP_NAME,
   DOWNLOADS_PAGE_URL,
   REPOSITORY_URL,
+  UPDATE_AUTO_INSTALL_SETTING,
   UPDATE_CHECK_SETTING,
 } from '../../../shared/constants';
 import { Icon } from './Icon';
@@ -94,6 +95,7 @@ interface SettingsValues {
   showHiddenFiles: boolean;
   uiFontSize: number;
   checkForUpdates: boolean;
+  installUpdatesAutomatically: boolean;
 }
 
 const DEFAULT_SETTINGS: SettingsValues = {
@@ -110,10 +112,15 @@ const DEFAULT_SETTINGS: SettingsValues = {
   showHiddenFiles: false,
   uiFontSize: 16,
   checkForUpdates: true,
+  installUpdatesAutomatically: false,
 };
 
 // Keys that live in app-level (unencrypted, cross-vault) settings; the rest are saved in the vault.
-const APP_LEVEL_KEYS: Array<keyof SettingsValues> = ['uiFontSize', UPDATE_CHECK_SETTING];
+const APP_LEVEL_KEYS: Array<keyof SettingsValues> = [
+  'uiFontSize',
+  UPDATE_CHECK_SETTING,
+  UPDATE_AUTO_INSTALL_SETTING,
+];
 
 /** Apply the UI font size to the document root so Tailwind rem values scale. */
 function applyUIFontSize(size: number): void {
@@ -160,6 +167,7 @@ export const SettingsPanel: React.FC = () => {
           // UI-only preference lives in app-level settings
           uiFontSize: (appSettings?.uiFontSize as number | undefined) ?? prev.uiFontSize,
           checkForUpdates: appSettings?.[UPDATE_CHECK_SETTING] !== false,
+          installUpdatesAutomatically: appSettings?.[UPDATE_AUTO_INSTALL_SETTING] === true,
         }));
 
         if (typeof appSettings?.uiFontSize === 'number') {
@@ -203,6 +211,8 @@ export const SettingsPanel: React.FC = () => {
 
   const [checking, setChecking] = useState(false);
   const checkNow = useUpdateStore((s) => s.checkNow);
+  // macOS (`notify`) can't install updates itself, so "Install updates automatically" is Windows only.
+  const updateMode = useUpdateStore((s) => s.status?.mode);
   const handleCheckForUpdates = useCallback(async () => {
     setChecking(true);
     try {
@@ -385,6 +395,24 @@ export const SettingsPanel: React.FC = () => {
                       aria-describedby={ids.describedBy}
                       checked={settings.checkForUpdates}
                       onChange={(v) => updateSetting('checkForUpdates', v)}
+                    />
+                  )}
+                </SettingRow>
+                <SettingRow
+                  label="Install updates automatically"
+                  description={
+                    updateMode === 'notify'
+                      ? 'Not available on macOS: Nexus isn’t signed, so it can’t install updates itself. Use the downloads page.'
+                      : 'A downloaded update installs when you quit Nexus. It never restarts on its own, so open sessions stay connected.'
+                  }
+                >
+                  {(ids) => (
+                    <Switch
+                      id={ids.id}
+                      aria-describedby={ids.describedBy}
+                      checked={settings.installUpdatesAutomatically && updateMode !== 'notify'}
+                      disabled={updateMode === 'notify' || !settings.checkForUpdates}
+                      onChange={(v) => updateSetting('installUpdatesAutomatically', v)}
                     />
                   )}
                 </SettingRow>

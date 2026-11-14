@@ -10,11 +10,12 @@ import type { AppUpdater } from 'electron-updater';
 import {
   IPC,
   LATEST_RELEASE_API_URL,
+  UPDATE_AUTO_INSTALL_SETTING,
   UPDATE_CHECK_INTERVAL_MS,
   UPDATE_CHECK_SETTING,
   UPDATE_FIRST_CHECK_DELAY_MS,
 } from '../../shared/constants';
-import { readAppSettings } from '../ipc/app-settings-handlers';
+import { onAppSettingChanged, readAppSettings } from '../ipc/app-settings-handlers';
 import {
   Updater,
   fetchLatestReleaseVersion,
@@ -74,6 +75,11 @@ export function setUpdaterWindow(win: BrowserWindow): void {
 /** Start background checks (no-op in dev / E2E). Default on; Settings can turn them off. */
 export function startUpdateChecks(): void {
   log(`[updater] mode: ${updater.mode}`);
+  // "Install updates automatically" (default off) follows the setting while the app runs.
+  void readAppSettings().then((s) => updater.setAutoInstall(s[UPDATE_AUTO_INSTALL_SETTING] === true));
+  onAppSettingChanged((key, value) => {
+    if (key === UPDATE_AUTO_INSTALL_SETTING) updater.setAutoInstall(value === true);
+  });
   scheduleUpdateChecks({
     updater,
     isEnabled: async () => (await readAppSettings())[UPDATE_CHECK_SETTING] !== false,

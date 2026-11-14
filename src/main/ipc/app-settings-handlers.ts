@@ -37,6 +37,14 @@ export async function readAppSettings(): Promise<Record<string, unknown>> {
   return {};
 }
 
+type AppSettingListener = (key: string, value: unknown) => void;
+const listeners: AppSettingListener[] = [];
+
+/** Main-process code that must follow a setting as it changes (e.g. the updater, #4681). */
+export function onAppSettingChanged(listener: AppSettingListener): void {
+  listeners.push(listener);
+}
+
 async function writeAll(data: Record<string, unknown>): Promise<void> {
   const file = getAppSettingsPath();
   await fs.mkdir(path.dirname(file), { recursive: true });
@@ -60,6 +68,7 @@ export function registerAppSettingsHandlers(): void {
         const all = await readAppSettings();
         all[key] = value;
         await writeAll(all);
+        for (const listener of listeners) listener(key, value);
         return ok(null);
       } catch (err: unknown) {
         return fail(err instanceof Error ? err.message : String(err));

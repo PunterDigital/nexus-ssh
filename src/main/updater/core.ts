@@ -77,6 +77,7 @@ export class Updater {
   private status: UpdateStatus;
   private installer: InstallUpdater | null = null;
   private inFlight: Promise<UpdateStatus> | null = null;
+  private autoInstall = false;
 
   constructor(private readonly deps: UpdaterDeps) {
     this.status = { state: 'idle', mode: deps.mode };
@@ -84,6 +85,19 @@ export class Updater {
 
   get mode(): UpdateMode {
     return this.deps.mode;
+  }
+
+  /**
+   * "Install updates automatically" (#4681). In `install` mode a downloaded update then installs
+   * when the app quits (electron-updater reads `autoInstallOnAppQuit` at quit time, so a change
+   * applies at once). Nothing restarts the app. Other modes can't install, so it stays off there.
+   */
+  setAutoInstall(on: boolean): void {
+    this.autoInstall = on && this.deps.mode === 'install';
+    if (this.installer) this.installer.autoInstallOnAppQuit = this.autoInstall;
+    if (this.status.state === 'downloaded') {
+      this.setStatus({ ...this.status, autoInstall: this.autoInstall });
+    }
   }
 
   getStatus(): UpdateStatus {
@@ -158,14 +172,19 @@ export class Updater {
     const installer = await this.deps.loadInstaller();
     const { mode } = this.deps;
     installer.autoDownload = true;
-    // Nothing installs without a click on "Restart to update".
-    installer.autoInstallOnAppQuit = false;
+    // Without "Install updates automatically", nothing installs until "Restart to update".
+    installer.autoInstallOnAppQuit = this.autoInstall;
     installer.on('update-available', (info: { version: string }) =>
       this.setStatus({ state: 'available', mode, version: info.version }),
     );
     installer.on('update-not-available', () => this.setStatus({ state: 'up-to-date', mode }));
     installer.on('update-downloaded', (info: { version: string }) =>
-      this.setStatus({ state: 'downloaded', mode, version: info.version }),
+      this.setStatus({
+        state: 'downloaded',
+        mode,
+        version: info.version,
+        autoInstall: this.autoInstall,
+      }),
     );
     installer.on('error', (err: unknown) => this.fail(err));
     this.installer = installer;

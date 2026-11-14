@@ -94,6 +94,11 @@ test('update checks: notify card, Later, manual check, the setting, and Restart 
   await page.getByRole('button', { name: 'General', exact: true }).click();
   const toggle = page.getByRole('switch', { name: 'Check for updates automatically' });
   await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  // Notify mode (the macOS flow) can't install, so "Install updates automatically" is off and says why.
+  const autoInstall = page.getByRole('switch', { name: 'Install updates automatically' });
+  await expect(autoInstall).toBeDisabled();
+  await expect(autoInstall).toHaveAttribute('aria-checked', 'false');
+  await expect(page.getByText(/Not available on macOS/)).toBeVisible();
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-checked', 'false');
   await expect
@@ -112,6 +117,18 @@ test('update checks: notify card, Later, manual check, the setting, and Restart 
   await expect(card).toContainText('Nexus v99.0.1 is ready to install.');
   await card.getByRole('button', { name: 'Restart to update' }).click();
   await expect(page.getByRole('alert')).toContainText('No update has been downloaded yet.');
+
+  // With "Install updates automatically" on, the card says it installs on quit (#4681).
+  await app.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0].webContents.send('updater:status', {
+      state: 'downloaded',
+      mode: 'install',
+      version: '99.0.2',
+      autoInstall: true,
+    });
+  });
+  await expect(card).toContainText('Nexus v99.0.2 will install when you quit.');
+  await expect(card.getByRole('button', { name: 'Restart now' })).toBeVisible();
   await app.close();
 
   // Relaunch with checks off: the feed is never asked and no card appears.
@@ -140,4 +157,44 @@ test('a test profile without a feed never checks for updates', async () => {
   await page.getByRole('button', { name: 'Check for Updates' }).click();
   await expect(page.getByRole('status').filter({ hasText: 'only run in the installed app' })).toBeVisible();
   expect(feedHits).toBe(before);
+});
+
+test('"Install updates automatically" is saved app-wide and survives a restart (#4681)', async () => {
+  await app?.close().catch(() => {});
+  const settingsFile = path.join(userDataDir, 'app-settings.json');
+  const unlockToGeneral = async () => {
+    const page = await app!.firstWindow();
+    await page.getByPlaceholder('Master password').fill(PASSWORD);
+    await page.getByRole('button', { name: 'Unlock', exact: true }).click();
+    await page.getByTitle('Settings').click();
+    await page.getByRole('button', { name: 'General', exact: true }).click();
+    return page;
+  };
+
+  app = await launch();
+  let page = await unlockToGeneral();
+  const checks = page.getByRole('switch', { name: 'Check for updates automatically' });
+  const autoInstall = page.getByRole('switch', { name: 'Install updates automatically' });
+  // The first test turned checks off: auto-install needs them, so it waits disabled until they're on.
+  await expect(checks).toHaveAttribute('aria-checked', 'false');
+  await expect(autoInstall).toBeDisabled();
+  await checks.click();
+  await expect(autoInstall).toBeEnabled();
+  await expect(autoInstall).toHaveAttribute('aria-checked', 'false'); // default off
+  await expect(page.getByText(/installs when you quit Nexus/)).toBeVisible();
+  await autoInstall.click();
+  await expect(autoInstall).toHaveAttribute('aria-checked', 'true');
+  await expect
+    .poll(() => JSON.parse(readFileSync(settingsFile, 'utf8')).installUpdatesAutomatically)
+    .toBe(true);
+  await app.close();
+
+  app = await launch();
+  page = await unlockToGeneral();
+  await expect(page.getByRole('switch', { name: 'Install updates automatically' })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  await app.close();
+  app = undefined;
 });

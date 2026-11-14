@@ -213,6 +213,11 @@ export const LATEST_RELEASE_API_URL =
   'https://api.github.com/repos/PunterDigital/nexus-ssh/releases/latest';
 /** App-level setting (app-settings.json) that turns automatic update checks off. Default on. */
 export const UPDATE_CHECK_SETTING = 'checkForUpdates';
+/**
+ * App-level setting: a downloaded update installs when Nexus quits (Windows `install` mode only).
+ * Default off. Nexus never restarts itself for it (#4681).
+ */
+export const UPDATE_AUTO_INSTALL_SETTING = 'installUpdatesAutomatically';
 /** First check a few seconds after launch (never during startup), then every 6 hours. */
 export const UPDATE_FIRST_CHECK_DELAY_MS = 5_000;
 export const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;

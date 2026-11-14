@@ -376,5 +376,11 @@ export type UpdateStatus =
   /** A newer version exists. In `install` mode it is downloading. */
   | { state: 'available'; mode: UpdateMode; version: string }
   /** `install` mode only: downloaded and ready for "Restart to update". */
-  | { state: 'downloaded'; mode: UpdateMode; version: string }
+  | {
+      state: 'downloaded';
+      mode: UpdateMode;
+      version: string;
+      /** "Install updates automatically" is on: it installs when Nexus quits. */
+      autoInstall?: boolean;
+    }
   | { state: 'error'; mode: UpdateMode; message: string };
