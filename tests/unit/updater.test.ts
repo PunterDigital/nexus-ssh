@@ -112,9 +112,36 @@ describe('Updater: install mode (Windows)', () => {
     expect(installer.autoInstallOnAppQuit).toBe(false);
     expect(status).toEqual({ state: 'available', mode: 'install', version: '0.2.0' });
     await tick();
-    expect(updater.getStatus()).toEqual({ state: 'downloaded', mode: 'install', version: '0.2.0' });
+    expect(updater.getStatus()).toEqual({
+      state: 'downloaded',
+      mode: 'install',
+      version: '0.2.0',
+      autoInstall: false,
+    });
     expect(sent.map((s) => s.state)).toEqual(['checking', 'available', 'downloaded']);
     expect(installer.quitAndInstall).not.toHaveBeenCalled();
+  });
+
+  it('"Install updates automatically" installs on quit, never by restarting (#4681)', async () => {
+    const { updater, installer } = makeUpdater();
+    updater.setAutoInstall(true); // set before electron-updater is loaded
+    await updater.check();
+    expect(installer.autoInstallOnAppQuit).toBe(true);
+    await tick();
+    expect(updater.getStatus()).toMatchObject({ state: 'downloaded', autoInstall: true });
+    expect(installer.quitAndInstall).not.toHaveBeenCalled();
+  });
+
+  it('follows the setting after the update has downloaded', async () => {
+    const { updater, installer, sent } = makeUpdater();
+    await updater.check();
+    await tick();
+    updater.setAutoInstall(true);
+    expect(installer.autoInstallOnAppQuit).toBe(true);
+    expect(sent.at(-1)).toMatchObject({ state: 'downloaded', autoInstall: true });
+    updater.setAutoInstall(false);
+    expect(installer.autoInstallOnAppQuit).toBe(false);
+    expect(updater.getStatus()).toMatchObject({ autoInstall: false });
   });
 
   it('restarts into the update only when asked, silently and relaunching', async () => {
@@ -169,6 +196,13 @@ describe('Updater: notify mode (macOS)', () => {
     expect(await updater.check()).toEqual({ state: 'available', mode: 'notify', version: '0.2.0' });
     expect(deps.loadInstaller).not.toHaveBeenCalled();
     expect(() => updater.install()).toThrow();
+  });
+  it('ignores "Install updates automatically" (an unsigned Mac app cannot install itself)', async () => {
+    const { updater, deps, sent } = makeUpdater({ mode: 'notify' });
+    updater.setAutoInstall(true);
+    expect(sent).toEqual([]);
+    await updater.check();
+    expect(deps.loadInstaller).not.toHaveBeenCalled();
   });
   it('is up to date when the release is the same or older', async () => {
     const { updater } = makeUpdater({ mode: 'notify', fetchLatestVersion: async () => '0.1.4' });

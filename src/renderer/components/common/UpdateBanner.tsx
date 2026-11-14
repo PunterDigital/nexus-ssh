@@ -53,7 +53,9 @@ export const UpdateBanner: React.FC = () => {
     >
       <span>
         {ready
-          ? `Nexus v${version} is ready to install.`
+          ? status.autoInstall
+            ? `Nexus v${version} will install when you quit.`
+            : `Nexus v${version} is ready to install.`
           : `Nexus v${version} is available.`}
       </span>
       <div className="flex justify-end gap-2">
@@ -61,7 +63,7 @@ export const UpdateBanner: React.FC = () => {
           Later
         </button>
         <button type="button" className="btn btn-primary text-xs" onClick={act}>
-          {ready ? 'Restart to update' : 'Download'}
+          {ready ? (status.autoInstall ? 'Restart now' : 'Restart to update') : 'Download'}
         </button>
       </div>
     </div>,

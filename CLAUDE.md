@@ -71,6 +71,13 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   `UpdateBanner` calls `quitAndInstall(true, true)`); macOS only notifies (GitHub API version check,
   "Download" opens the downloads page, since unsigned apps can't self-update); dev and test profiles
   are off. First check 5 s after launch, then every 6 h; app setting `checkForUpdates` (default on).
+  "Install updates automatically" (#4681, app setting `installUpdatesAutomatically`, default off,
+  Windows `install` mode only): `Updater.setAutoInstall` sets electron-updater's
+  `autoInstallOnAppQuit` (read at quit time, so the setting applies at once; main follows it via
+  `onAppSettingChanged`), and the `downloaded` status carries `autoInstall` so the card says
+  "will install when you quit" + "Restart now". Nexus never restarts itself for an update.
+  Never quit a test build that has downloaded an update with this on: the quit runs the real
+  installer over Shay's install.
   electron-updater is an esbuild external loaded with a lazy `require`: a dynamic `import()` of it
   returns an undefined `autoUpdater` in the packaged app.
 - **Design system (#2364): new UI MUST use it.** Read `docs/design-system.md` before building UI.
