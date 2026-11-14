@@ -243,6 +243,11 @@ only), so Dependabot ignores its majors (#3271). Replacing it means a vault-form
   .exe (rcedit, no signing). CI checks the packaged exe + installer icon (`scripts/check-win-icon.ps1`,
   compares 32 px pixels against `resources/icon.ico`) and that each `.app` bundles `icon.icns` byte for byte.
 
+- Release bumps skip the heavy CI (Shay, Nov 14). The `Detect release bump` job runs
+  `scripts/is-version-bump.mjs <base> <head>` (merge-base diff): when only the version lines in `package.json`
+  and `CHANGELOG.md` change, every step of the `E2E + package` matrix job is skipped (per step, not per job: a skipped matrix job reports one unexpanded check name, and the required per-OS checks never arrive). The tag's release workflow still builds and checks everything.
+  Keep a release commit to exactly those edits, or it gets the full run. New version files go in the script's `RULES`.
+
 ## Known debt
 
 See the `Audit: Nexus SSH` card in GroundStation and its follow-up cards. Lint is at 0 warnings
