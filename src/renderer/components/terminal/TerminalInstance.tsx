@@ -15,6 +15,7 @@ import {
   toXtermOptions,
   type TerminalPrefs,
 } from '../../lib/terminal-options';
+import { installCanvasFontFix } from '../../lib/canvas-font-fix';
 
 // ============================================================
 // TerminalInstance — wraps a single xterm.js Terminal
@@ -126,6 +127,7 @@ export const TerminalInstance: React.FC<TerminalInstanceProps> = ({
         // The terminal was disposed (view switch, tab closed) before the chunk arrived.
         if (terminalRef.current !== terminal) return;
         try {
+          installCanvasFontFix(); // #5004: the addon's glyph font starts with a space
           const webgl = new WebglAddon();
           webgl.onContextLoss(() => {
             webgl.dispose();
