@@ -152,6 +152,15 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   rebuilds each xterm from the cache, and main replays the output (`markReady` → `scrollbackBuffer`).
   Main's settings `DEFAULTS` must list every vault setting: `getAll` returns only those keys
   (cursor style/blink were missing until #2662).
+- WebGL glyph font (#5004): @xterm/addon-webgl 0.19 (and the 0.20 betas) sets its glyph-atlas
+  font as `` `${italic} ${weight} ${size}px ${family}` ``, which starts with a space when not
+  italic. Electron 45's Chromium refuses a canvas font with leading whitespace and keeps
+  `10px sans-serif`, so v0.5.0 drew 10 px glyphs in full-size cells. `lib/canvas-font-fix.ts`
+  (`installCanvasFontFix()`, called before the addon loads) makes the 2D-context `font` setter
+  trim. After an xterm bump, grep the addon for `_tmpCtx.font=` / `_getFont` and drop the shim
+  once the space is gone. `tests/e2e/terminal-webgl.spec.ts` records every canvas font set
+  (init script) and fails on any that didn't take the requested size; the DOM-renderer specs
+  can't see this.
 - Lost connections (#4322): main (`src/main/ssh/index.ts`) reports a session that ends **on its own**
   once, as `ssh:close` with an `SSHCloseInfo`: `exit` when the shell sent an exit status (typed
   `exit`), `dropped` otherwise (`ssh/session-close.ts`, unit-tested). A user close (tab closed,
