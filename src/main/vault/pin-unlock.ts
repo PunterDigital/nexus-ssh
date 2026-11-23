@@ -69,7 +69,7 @@ export class PinStore {
     }
     await initSodium();
     const salt = generateSalt();
-    const pinKey = derivePinKey(pin, salt);
+    const pinKey = await derivePinKey(pin, salt);
     try {
       const passwordBuf = password === null ? null : Buffer.from(password, 'utf-8');
       try {
@@ -107,7 +107,7 @@ export class PinStore {
     }
     await initSodium();
 
-    const pinKey = derivePinKey(pin, entry.salt);
+    const pinKey = await derivePinKey(pin, entry.salt);
     try {
       let dbKey: Buffer;
       try {
