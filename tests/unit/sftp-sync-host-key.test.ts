@@ -3,9 +3,12 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { utils } from 'ssh2';
 import type { HostKeyPrompt, HostKeyVerification, KnownHost } from '../../src/shared/types';
-import { startTestServer, type TestServer } from '../fixtures/ssh-server';
+import {
+  generateEd25519KeyPair,
+  startTestServer,
+  type TestServer,
+} from '../fixtures/ssh-server';
 
 // Vault sync over SFTP must check the server's host key like the terminal does, but the
 // background sync can't prompt: only Test Connection may ask, and "Always Accept" there pins
@@ -134,7 +137,7 @@ describe('SFTP sync backend host-key checks', () => {
       hostname: server.host,
       port: server.port,
       key_type: 'ssh-ed25519',
-      public_key: utils.generateKeyPairSync('ed25519').public.split(' ')[1],
+      public_key: generateEd25519KeyPair().public.split(' ')[1],
       first_seen: '',
       last_seen: '',
       trusted: true,
