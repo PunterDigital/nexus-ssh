@@ -198,8 +198,16 @@ const nexusAPI = {
       call('sftp:list', sessionId, remotePath),
     upload: (sessionId: string, localPath: string, remotePath: string) =>
       call('sftp:upload', sessionId, localPath, remotePath),
-    download: (sessionId: string, remotePath: string, localPath: string) =>
-      call('sftp:download', sessionId, remotePath, localPath),
+    /**
+     * Download into the folder `localDir`; main picks and checks the file name (#5610).
+     * Resolves `{ status: 'exists', name }` when that name is taken and `onExists` is unset.
+     */
+    download: (
+      sessionId: string,
+      remotePath: string,
+      localDir: string,
+      onExists?: 'overwrite' | 'keep-both',
+    ) => call('sftp:download', sessionId, remotePath, localDir, onExists),
     mkdir: (sessionId: string, remotePath: string) =>
       call('sftp:mkdir', sessionId, remotePath),
     /** A directory is deleted with everything in it. */
