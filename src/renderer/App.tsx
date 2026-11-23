@@ -38,8 +38,26 @@ function ViewLoading(): React.ReactElement {
 // Nexus SSH Client — App Shell (layout: components/shell, #2365)
 // ============================================================
 
-/** Content panels for each view type. */
+/**
+ * Content panels for each view type. The terminal view stays mounted (hidden) while another
+ * view shows, once a terminal tab exists, so its xterms keep their screens (#5663).
+ */
 function MainContent(): React.ReactElement {
+  const currentView = useUIStore((s) => s.currentView);
+  const hasTerminalTabs = useTerminalStore((s) =>
+    s.tabs.some((t) => t.type === 'terminal' && t.sessionId != null),
+  );
+  const onTerminal = currentView === 'terminal';
+  return (
+    <>
+      {(onTerminal || hasTerminalTabs) && <TerminalView hidden={!onTerminal} />}
+      {!onTerminal && <OtherView />}
+    </>
+  );
+}
+
+/** Every view but the terminals. */
+function OtherView(): React.ReactElement {
   const currentView = useUIStore((s) => s.currentView);
   const tabs = useTerminalStore((s) => s.tabs);
   const activeTabId = useTerminalStore((s) => s.activeTabId);
@@ -50,9 +68,6 @@ function MainContent(): React.ReactElement {
   switch (currentView) {
     case 'connections':
       return <ConnectionsView mode="ssh" />;
-
-    case 'terminal':
-      return <TerminalView />;
 
     case 'sftp': {
       // Find the active SFTP tab and its session
