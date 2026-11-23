@@ -20,6 +20,15 @@ export function shouldIdleLock(idleSeconds: number, timeoutMinutes: number): boo
   return thresholdSeconds > 0 && idleSeconds >= thresholdSeconds;
 }
 
+/**
+ * Idle auto-lock is off only for an E2E test profile (#5612): `NEXUS_DISABLE_IDLE_LOCK=1` alone
+ * used to switch it off in any build, so anything that could set the app's environment could
+ * keep an unattended vault open.
+ */
+export function idleLockDisabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.NEXUS_DISABLE_IDLE_LOCK === '1' && !!env.NEXUS_USER_DATA_DIR;
+}
+
 class SecurityManager {
   private idleTimer: ReturnType<typeof setInterval> | null = null;
   private clipboardTimer: ReturnType<typeof setTimeout> | null = null;
@@ -60,7 +69,7 @@ class SecurityManager {
 
     // Start periodic idle-time checking. E2E runs on unattended machines where the OS idle
     // time is already past the threshold, so tests turn it off with NEXUS_DISABLE_IDLE_LOCK=1.
-    if (process.env.NEXUS_DISABLE_IDLE_LOCK !== '1') {
+    if (!idleLockDisabled()) {
       this.startIdleMonitoring();
     }
   }
@@ -83,7 +92,7 @@ class SecurityManager {
   }
 
   resetIdleTimer(): void {
-    if (process.env.NEXUS_DISABLE_IDLE_LOCK === '1') return;
+    if (idleLockDisabled()) return;
     // Restarting the monitoring resets the check cycle.
     // The actual idle time comes from the OS so we don't need to
     // track it ourselves — we just ensure the interval is running.
@@ -108,6 +117,8 @@ class SecurityManager {
 
     // 1. Lock the vault engine (closes DB, zeros key buffer)
     vaultEngine.lock();
+    // A secret we copied doesn't outlive the vault (#5612).
+    void this.clearCopiedSecretNow();
 
     // 2. Disconnect all SSH and SFTP sessions (best-effort; prevents orphaned connections)
     try {
@@ -166,6 +177,28 @@ class SecurityManager {
         }
       })();
     }, this.clipboardClearTimeout * 1000);
+  }
+
+  /** A secret we copied is still waiting to be cleared (auto-clear on, timer running). */
+  hasCopiedSecret(): boolean {
+    return this.lastClipboardText !== null;
+  }
+
+  /**
+   * Clear a secret we copied now, if the clipboard still holds it (#5612): on lock and before
+   * quit, so it doesn't stay behind for the rest of its timeout. With auto-clear off ("0") we
+   * keep no record of it, and nothing is cleared, as before.
+   */
+  async clearCopiedSecretNow(): Promise<void> {
+    const expected = this.lastClipboardText;
+    this.clearClipboardTimer();
+    this.lastClipboardText = null;
+    if (expected === null) return;
+    try {
+      if ((await clipboard.readText()) === expected) await clipboard.writeText('');
+    } catch {
+      // Best-effort, as for the timed clear
+    }
   }
 
   clearClipboardTimer(): void {

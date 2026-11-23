@@ -131,13 +131,7 @@ export function registerCrudHandlers(): void {
     }
   });
 
-  ipcMain.handle(IPC.HOSTS_RESOLVE_CREDENTIALS, async (_event, hostId: string) => {
-    try {
-      return ok(await crud.resolveCredentials(hostId));
-    } catch (err: unknown) {
-      return fail(err instanceof Error ? err.message : String(err));
-    }
-  });
+  // (No hosts:resolve-credentials: decrypted credentials never go to the renderer, #5612.)
 
   // ── Identities ────────────────────────────────────────────────
 
