@@ -13,6 +13,27 @@ import { SFTPSyncBackend } from './backends/sftp';
 import { FTPSyncBackend } from './backends/ftp';
 import { S3SyncBackend } from './backends/s3';
 import { FilesystemSyncBackend } from './backends/filesystem';
+import { verifyAndSwap, type SyncVault } from './pull-check';
+
+/**
+ * The vault engine as a pull/push needs it. Required lazily: the vault module loads the
+ * native SQLCipher binding, which the sync unit tests don't need.
+ */
+function engineVault(): SyncVault & { bumpGenerationIfOpen(dbPath: string): Promise<void> } {
+  const { vaultEngine } = require('../vault/index');
+  const openAt = (dbPath: string) =>
+    vaultEngine.isUnlocked() && vaultEngine.getVaultPath() === dbPath;
+  return {
+    passwordFor: (dbPath) => (openAt(dbPath) ? vaultEngine.getCurrentPassword() : null),
+    localInfo: () => vaultEngine.readSyncInfo(),
+    inspect: (dbPath, saltPath, password) => vaultEngine.inspectFile(dbPath, saltPath, password),
+    lock: () => vaultEngine.lock(),
+    unlock: (dbPath, password) => vaultEngine.unlock(dbPath, password),
+    bumpGenerationIfOpen: async (dbPath) => {
+      if (openAt(dbPath)) await vaultEngine.bumpSyncGeneration();
+    },
+  };
+}
 
 class SyncEngine {
   private backend: SyncBackend | null = null;
@@ -25,6 +46,8 @@ class SyncEngine {
   };
   private mainWindow: BrowserWindow | null = null;
   private lastSyncHash: string | null = null;
+  /** The vault, replaceable in tests. */
+  vault = engineVault;
 
   /**
    * Set the main BrowserWindow so the engine can emit status updates to the renderer.
@@ -120,6 +143,11 @@ class SyncEngine {
         return;
       }
 
+      // Each pushed copy carries a higher sync generation, so a pull can tell an older
+      // copy put back in the sync location from a newer one (#5611).
+      await this.vault().bumpGenerationIfOpen(dbPath);
+      const pushedHash = await this.calculateFileHash(dbPath);
+
       const remoteDbName = path.basename(dbPath);
       const remoteSaltName = path.basename(saltPath);
 
@@ -127,7 +155,7 @@ class SyncEngine {
       await this.backend.upload(dbPath, remoteDbName);
       await this.backend.upload(saltPath, remoteSaltName);
 
-      this.lastSyncHash = localHash;
+      this.lastSyncHash = pushedHash;
       this.setStatusDone(null);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -141,7 +169,9 @@ class SyncEngine {
    *
    * 1. Get remote metadata
    * 2. Compare with local hash
-   * 3. If different: download .db and .salt to temp files, then atomically replace local
+   * 3. If different: download .db and .salt to temp files, check them and swap them in
+   *    (`verifyAndSwap`: opens with this vault's password, same vault, not older; the old
+   *    files are kept as .bak and put back if the new one won't open, #5611)
    * 4. Update lastSyncHash
    */
   async pull(vaultPath: string): Promise<void> {
@@ -172,9 +202,6 @@ class SyncEngine {
       const tmpDb = path.join(dir, `.sync_tmp_${stamp}${VAULT_FILE_EXTENSION}`);
       const tmpSalt = path.join(dir, `.sync_tmp_${stamp}${VAULT_SALT_EXTENSION}`);
 
-      let reopenNeeded = false;
-      let storedPassword: string | null = null;
-
       try {
         await this.backend.download(remoteDbName, tmpDb);
         await this.backend.download(remoteSaltName, tmpSalt);
@@ -188,37 +215,9 @@ class SyncEngine {
           return;
         }
 
-        // On Windows (and any OS really) an open SQLCipher handle holds an
-        // exclusive lock on the .db file. We need to close the vault before
-        // replacing the file, then reopen it with the same password after.
-        const { vaultEngine } = require('../vault/index');
-        if (
-          vaultEngine.isUnlocked &&
-          vaultEngine.isUnlocked() &&
-          vaultEngine.getVaultPath &&
-          vaultEngine.getVaultPath() === dbPath
-        ) {
-          storedPassword = vaultEngine.getCurrentPassword?.() ?? null;
-          if (!storedPassword) {
-            throw new Error(
-              'Cannot pull while vault is unlocked — password not cached. ' +
-              'Lock the vault first, then pull.',
-            );
-          }
-          vaultEngine.lock();
-          reopenNeeded = true;
-        }
-
-        // Replace local files (remove old, then rename temp)
-        await fs.unlink(dbPath).catch(() => {});
-        await fs.unlink(saltPath).catch(() => {});
-        await fs.rename(tmpDb, dbPath);
-        await fs.rename(tmpSalt, saltPath);
-
-        // Reopen the vault if we closed it above
-        if (reopenNeeded && storedPassword) {
-          await vaultEngine.unlock(dbPath, storedPassword);
-        }
+        // Never delete the local vault for a file nobody checked: it must open with this
+        // vault's password, be this vault and not be older (#5611).
+        await verifyAndSwap(this.vault(), { dbPath, saltPath, tmpDb, tmpSalt });
 
         this.lastSyncHash = remoteHash;
         this.setStatusDone(null);

@@ -62,6 +62,18 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   them in its folder: SFTP/FTP Remote Path (`backends/remote-dir.ts`, created on first upload),
   S3 Prefix, filesystem directory. Before v0.1.5 SFTP/FTP ignored Remote Path, so their reads
   fall back to the bare name in the login directory while the folder is empty (#2582).
+- Pulls are checked (#5611, `sync/pull-check.ts`, unit-tested with a fake vault in
+  `sync-pull-check.test.ts`; real SQLCipher in `tests/e2e/sync-pull.spec.ts`): the download must
+  open read-only with the open vault's password (`vaultEngine.inspectFile`), be the same vault
+  (`app_meta.created_at`, unless this one never synced: the second-device flow) and not be older
+  (`app_meta.sync_generation`, which every push bumps before uploading). Then the local files are
+  copied to `.bak`, the download is renamed over them, and the `.bak` goes back if it won't open.
+  A pull needs the vault unlocked with a password (hardware-key-only vaults can't pull, as before).
+  Vault rename/delete (`vault/manage.ts`) move/trash the `.db.bak` / `.db.salt.bak` too.
+- FTP sync: `BackendConfig.ftpTls` = explicit FTPS, certificate checked by Node's TLS (a
+  self-signed one is refused). A newly chosen FTP backend starts with it on; configs saved before
+  #5611 have no value and stay plain, and the form shows a warning while it's off. The FTP test
+  fixture records command verbs and can refuse or fake `AUTH TLS` (`authTls`).
 - `addNotification(type, message)` (ui-store) shows a toast via `ToastHost` (portal, z-[150]:
   above dialogs, below the host-key prompt), auto-removed after 5 s. Errors are `role="alert"`,
   the rest `role="status"`, so E2E asserts them with `getByRole('alert' | 'status')`.

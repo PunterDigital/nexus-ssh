@@ -1,6 +1,7 @@
 import React from 'react';
-import { FolderOpen } from 'lucide-react';
-import { Button, Field, Input, PasswordInput, Select } from '../ui';
+import { FolderOpen, TriangleAlert } from 'lucide-react';
+import { Button, Field, Input, PasswordInput, Select, Switch } from '../ui';
+import { Icon } from '../common/Icon';
 import type { BackendConfig, SyncBackendType } from '../../../shared/types';
 
 // ============================================================
@@ -116,6 +117,17 @@ export const SyncBackendForm: React.FC<SyncBackendFormProps> = ({
       return (
         <div className="flex flex-col gap-4">
           <HostPortRow config={config} update={update} hostPlaceholder="ftp.example.com" defaultPort={21} />
+
+          <Field label="Use FTPS (TLS)" hint="Encrypts the login and the transfer. The server's certificate must be valid for the host.">
+            <Switch checked={config.ftpTls === true} onChange={(on) => update({ ftpTls: on })} />
+          </Field>
+          {config.ftpTls !== true && (
+            <p role="note" className="flex items-start gap-2 rounded-md bg-warning-soft px-3 py-2 text-body-sm text-fg">
+              <Icon icon={TriangleAlert} className="mt-0.5 text-warning" />
+              Plain FTP sends your FTP password and the encrypted vault file unprotected, so anyone on the
+              network can read or replace them. Turn on FTPS unless the server can't do TLS.
+            </p>
+          )}
 
           <Field label="Username" required>
             <Input

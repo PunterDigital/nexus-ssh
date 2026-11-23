@@ -150,6 +150,11 @@ export interface BackendConfig {
   password?: string;
   privateKeyId?: string;
   remotePath?: string;
+  /**
+   * FTP only: explicit FTPS (AUTH TLS, certificate checked). New FTP configs start with it on;
+   * configs saved before #5611 have no value and stay plain FTP, with a warning in the form.
+   */
+  ftpTls?: boolean;
   // S3
   bucket?: string;
   region?: string;
