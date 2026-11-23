@@ -211,7 +211,8 @@ export const SyncSettingsView: React.FC = () => {
 
   const handleBackendChange = (type: SyncBackendType) => {
     setSelectedBackend(type);
-    setBackendConfig({ type });
+    // A new FTP config starts on FTPS; plain FTP is an explicit choice (#5611).
+    setBackendConfig(type === 'ftp' ? { type, ftpTls: true } : { type });
     setTestResult(null);
   };
 
@@ -246,6 +247,8 @@ export const SyncSettingsView: React.FC = () => {
         await window.nexus.sync.push();
       } else {
         await window.nexus.sync.pull();
+        // The pulled vault replaced the open one: show its hosts, keys and snippets.
+        await useVaultStore.getState().loadAll();
       }
       addNotification('success', `Sync ${direction} completed`);
     } catch (err) {

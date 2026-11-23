@@ -10,6 +10,8 @@ import path from 'node:path';
 
 export interface FtpTestServer {
   port: number;
+  /** Every command verb received (USER, PASS, AUTH, …), in order; arguments are not kept. */
+  commands: string[];
   close(): Promise<void>;
 }
 
@@ -17,6 +19,11 @@ export interface FtpTestServerOptions {
   root: string;
   username: string;
   password: string;
+  /**
+   * How the server answers AUTH TLS. 'refuse' (default): 502, plain FTP only. 'accept': 234,
+   * but it never speaks TLS, so a client's handshake fails (it has no certificate).
+   */
+  authTls?: 'refuse' | 'accept';
 }
 
 const mdtm = (d: Date) => d.toISOString().replace(/[-:T]/g, '').slice(0, 14);
@@ -25,6 +32,7 @@ export async function startFtpTestServer(
   opts: FtpTestServerOptions
 ): Promise<FtpTestServer> {
   const sockets = new Set<net.Socket>();
+  const commands: string[] = [];
 
   const server = net.createServer((control) => {
     sockets.add(control);
@@ -66,6 +74,7 @@ export async function startFtpTestServer(
       const space = line.indexOf(' ');
       const cmd = (space === -1 ? line : line.slice(0, space)).toUpperCase();
       const arg = space === -1 ? '' : line.slice(space + 1);
+      commands.push(cmd);
 
       if (cmd === 'USER') return reply(((user = arg), '331 Password required'));
       if (cmd === 'PASS') {
@@ -73,6 +82,13 @@ export async function startFtpTestServer(
         return reply(loggedIn ? '230 Logged in' : '530 Login incorrect');
       }
       if (cmd === 'QUIT') return reply('221 Bye');
+      if (cmd === 'AUTH') {
+        if (opts.authTls !== 'accept') return reply('502 TLS not available');
+        // Agree, then hang up: there is no certificate to offer, so the handshake fails.
+        reply('234 Proceed with negotiation');
+        setTimeout(() => control.destroy(), 50);
+        return;
+      }
       if (cmd === 'FEAT')
         return reply('211-Features:\r\n EPSV\r\n SIZE\r\n MDTM\r\n UTF8\r\n211 End');
       if (!loggedIn) return reply('530 Not logged in');
@@ -155,6 +171,7 @@ export async function startFtpTestServer(
 
   return {
     port: (server.address() as net.AddressInfo).port,
+    commands,
     close: async () => {
       for (const s of sockets) s.destroy();
       await new Promise<void>((r) => server.close(() => r()));
