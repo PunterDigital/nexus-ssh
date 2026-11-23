@@ -1,11 +1,26 @@
 import { create } from 'zustand';
-import type { SFTPEntry, TransferItem } from '../../shared/types';
+import type { SFTPDownloadResult, SFTPEntry, TransferItem } from '../../shared/types';
+import { useUIStore } from './ui-store';
 
 // ============================================================
 // SFTP Store — manages SFTP file browsing and transfers
 // ============================================================
 
 export type SortField = 'filename' | 'size' | 'modifyTime' | 'permissions';
+
+/** The user's answer when a download's file name already exists locally (#5610). */
+export interface DownloadConflictAnswer {
+  action: 'overwrite' | 'keep-both' | 'skip';
+  /** Use the same answer for the rest of this batch's name clashes. */
+  applyToRest: boolean;
+}
+
+/** A download waiting on the "file already exists" question. */
+export interface DownloadConflict {
+  name: string;
+  /** Downloads after this one in the same batch (offer "apply to the rest" when > 0). */
+  remaining: number;
+}
 export type SortDirection = 'asc' | 'desc';
 
 export interface SFTPState {
@@ -36,6 +51,9 @@ export interface SFTPState {
 
   // Error
   error: string | null;
+
+  // A download whose local name is taken, waiting for Overwrite / Keep both / Skip
+  downloadConflict: DownloadConflict | null;
 }
 
 export interface SFTPActions {
@@ -78,7 +96,10 @@ export interface SFTPActions {
 
   // Upload/Download
   uploadFiles: (localPaths: string[], remotePath: string) => Promise<void>;
-  downloadFiles: (remotePaths: string[], localPath: string) => Promise<void>;
+  /** Download into the local folder `localDir`; main builds and checks each file name. */
+  downloadFiles: (remotePaths: string[], localDir: string) => Promise<void>;
+  /** Answer the pending `downloadConflict`. */
+  resolveDownloadConflict: (answer: DownloadConflictAnswer) => void;
 
   // Remote operations
   createRemoteDirectory: (path: string) => Promise<void>;
@@ -104,7 +125,11 @@ const initialState: SFTPState = {
   selectedLocalFiles: [],
   selectedRemoteFiles: [],
   error: null,
+  downloadConflict: null,
 };
+
+/** Resolves the question shown for `downloadConflict` (one at a time). */
+let conflictResolver: ((answer: DownloadConflictAnswer) => void) | null = null;
 
 /**
  * Sort SFTP entries: directories first, then by the chosen field.
@@ -359,24 +384,51 @@ export const useSFTPStore = create<SFTPState & SFTPActions>()((set, get) => ({
     }
   },
 
-  downloadFiles: async (remotePaths, localPath) => {
+  downloadFiles: async (remotePaths, localDir) => {
     const { activeSessionId } = get();
     if (!activeSessionId) return;
 
-    for (const remoteFilePath of remotePaths) {
-      const filename = remoteFilePath.split('/').pop() ?? remoteFilePath;
-      const localTarget = `${localPath}/${filename}`;
-
+    // Main builds the local file name from the remote path and refuses unsafe ones (#5610);
+    // the renderer only says which folder.
+    let answerForRest: DownloadConflictAnswer['action'] | null = null;
+    for (const [index, remoteFilePath] of remotePaths.entries()) {
+      const shownName = remoteFilePath.split('/').pop() || remoteFilePath;
       try {
-        const transferId = (await window.nexus.sftp.download(
+        let result = (await window.nexus.sftp.download(
           activeSessionId,
           remoteFilePath,
-          localTarget,
-        )) as string;
+          localDir,
+        )) as SFTPDownloadResult;
+
+        if (result.status === 'exists') {
+          const conflict: DownloadConflict = {
+            name: result.name,
+            remaining: remotePaths.length - index - 1,
+          };
+          let action: DownloadConflictAnswer['action'] | null = answerForRest;
+          if (!action) {
+            const answer = await new Promise<DownloadConflictAnswer>((resolve) => {
+              conflictResolver = resolve;
+              set({ downloadConflict: conflict });
+            });
+            // The session closed (store reset) while the question was open: stop the batch.
+            if (get().activeSessionId !== activeSessionId) return;
+            action = answer.action;
+            if (answer.applyToRest) answerForRest = action;
+          }
+          if (action === 'skip') continue;
+          result = (await window.nexus.sftp.download(
+            activeSessionId,
+            remoteFilePath,
+            localDir,
+            action,
+          )) as SFTPDownloadResult;
+        }
+        if (result.status !== 'queued') continue;
 
         const transfer: TransferItem = {
-          id: transferId,
-          localPath: localTarget,
+          id: result.transferId,
+          localPath: result.localPath,
           remotePath: remoteFilePath,
           direction: 'download',
           size: 0,
@@ -385,18 +437,27 @@ export const useSFTPStore = create<SFTPState & SFTPActions>()((set, get) => ({
         };
         get().addTransfer(transfer);
       } catch (err) {
-        console.error('Download failed to queue:', (err as Error).message);
+        useUIStore
+          .getState()
+          .addNotification('error', `Couldn't download ${shownName}: ${(err as Error).message}`);
       }
     }
 
     // Refresh the local pane after a short delay
-    if (get().localPath === localPath) {
+    if (get().localPath === localDir) {
       setTimeout(() => {
-        if (get().localPath === localPath) {
+        if (get().localPath === localDir) {
           get().refreshLocal();
         }
       }, 500);
     }
+  },
+
+  resolveDownloadConflict: (answer) => {
+    const resolve = conflictResolver;
+    conflictResolver = null;
+    set({ downloadConflict: null });
+    resolve?.(answer);
   },
 
   // ── Remote operations ──────────────────────────────────────
@@ -424,5 +485,11 @@ export const useSFTPStore = create<SFTPState & SFTPActions>()((set, get) => ({
 
   // ── Reset ──────────────────────────────────────────────────
 
-  reset: () => set(initialState),
+  reset: () => {
+    // A download waiting on the "already exists" question is skipped.
+    const resolve = conflictResolver;
+    conflictResolver = null;
+    set(initialState);
+    resolve?.({ action: 'skip', applyToRest: true });
+  },
 }));

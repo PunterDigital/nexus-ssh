@@ -25,6 +25,11 @@ export interface TestServerOptions {
   writeDelayMs?: number;
   /** Delay before answering each SFTP READ (slows downloads). */
   readDelayMs?: number;
+  /**
+   * Read-only files listed in "/" that live in memory, not on disk: names a local disk can't
+   * hold, such as a hostile server's `..\..\x.cmd` (#5610).
+   */
+  virtualFiles?: Record<string, Buffer>;
 }
 
 export interface TestServer {
@@ -163,7 +168,23 @@ export async function startTestServer(opts: TestServerOptions): Promise<TestServ
 
 function serveSftp(sftp: SFTPWrapper, opts: TestServerOptions): void {
   const root = path.resolve(opts.root);
-  const handles = new Map<number, { fd?: number; dir?: string; listed?: boolean }>();
+  const handles = new Map<
+    number,
+    { fd?: number; dir?: string; listed?: boolean; data?: Buffer }
+  >();
+  const virtual = opts.virtualFiles ?? {};
+  /** The in-memory file at `p` ("/<name>"), if any. */
+  const virtualAt = (p: string): Buffer | undefined => {
+    const norm = path.posix.normalize('/' + p);
+    const name = norm.slice(1);
+    return Object.prototype.hasOwnProperty.call(virtual, name)
+      ? virtual[name]
+      : undefined;
+  };
+  const virtualAttrs = (data: Buffer) => {
+    const now = Math.floor(Date.now() / 1000);
+    return { mode: 0o100644, uid: 0, gid: 0, size: data.length, atime: now, mtime: now };
+  };
   let nextHandle = 1;
 
   const toLocal = (p: string): string => {
@@ -210,18 +231,30 @@ function serveSftp(sftp: SFTPWrapper, opts: TestServerOptions): void {
     sftp.name(reqid, [{ filename: abs, longname: abs, attrs: {} as never }]);
   });
 
-  const onStat = (reqid: number, p: string) =>
+  const onStat = (reqid: number, p: string) => {
+    const data = virtualAt(p);
+    if (data) return sftp.attrs(reqid, virtualAttrs(data));
     guard(reqid, () => sftp.attrs(reqid, attrsOf(fs.statSync(toLocal(p)))));
+  };
   sftp.on('STAT', onStat);
   sftp.on('LSTAT', onStat);
 
   sftp.on('FSTAT', (reqid, h) => {
     const entry = handles.get(handleId(h));
+    if (entry?.data) return sftp.attrs(reqid, virtualAttrs(entry.data));
     if (!entry?.fd) return sftp.status(reqid, STATUS_CODE.FAILURE);
     guard(reqid, () => sftp.attrs(reqid, attrsOf(fs.fstatSync(entry.fd!))));
   });
 
   sftp.on('OPEN', (reqid, filename, flags) => {
+    const data = virtualAt(filename);
+    if (data) {
+      if (flags !== utils.sftp.OPEN_MODE.READ)
+        return sftp.status(reqid, STATUS_CODE.PERMISSION_DENIED);
+      const id = nextHandle++;
+      handles.set(id, { data });
+      return sftp.handle(reqid, handleBuf(id));
+    }
     guard(reqid, () => {
       const mode = utils.sftp.flagsToString(flags) ?? 'r';
       const fd = fs.openSync(toLocal(filename), mode);
@@ -233,6 +266,12 @@ function serveSftp(sftp: SFTPWrapper, opts: TestServerOptions): void {
 
   sftp.on('READ', (reqid, h, offset, length) => {
     const entry = handles.get(handleId(h));
+    if (entry?.data) {
+      const chunk = entry.data.subarray(offset, offset + length);
+      return later(opts.readDelayMs, () =>
+        chunk.length === 0 ? sftp.status(reqid, STATUS_CODE.EOF) : sftp.data(reqid, chunk)
+      );
+    }
     if (entry?.fd === undefined) return sftp.status(reqid, STATUS_CODE.FAILURE);
     later(opts.readDelayMs, () =>
       guard(reqid, () => {
@@ -288,6 +327,11 @@ function serveSftp(sftp: SFTPWrapper, opts: TestServerOptions): void {
         longname: filename,
         attrs: attrsOf(fs.statSync(path.join(entry.dir!, filename))),
       }));
+      if (entry.dir === root) {
+        for (const [filename, data] of Object.entries(virtual)) {
+          names.push({ filename, longname: filename, attrs: virtualAttrs(data) });
+        }
+      }
       if (names.length === 0) sftp.status(reqid, STATUS_CODE.EOF);
       else sftp.name(reqid, names);
     });

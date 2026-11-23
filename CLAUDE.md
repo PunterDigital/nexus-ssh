@@ -136,6 +136,14 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   Transfers use a native `<progress>` with the `progress-bar` utility (tokens.css; bar = text colour:
   Chromium ignores `accent-color` on progress). Remote delete passes `isDirectory` (folders are
   deleted recursively by main). The test SSH server acknowledges SETSTAT without applying it.
+  Downloads (#5610): the renderer sends a **folder**, never a local file path. Main builds the name
+  from the remote path (`sftp/local-name.ts`, unit-tested: refuses `\ / :`, control characters,
+  `.`/`..`, trailing dot/space, Windows device names; `resolveInside` checks containment), since a
+  hostile server picks the names it lists. A taken name answers `{ status: 'exists' }` and the
+  renderer asks (`DownloadConflictDialog`: Overwrite / Keep both / Skip). Main writes to its own
+  `.nexus-download-<id>.part` and renames it over the target at the end, so a cancel only ever
+  deletes that temp file. The test server's `virtualFiles` lists names a disk can't hold
+  (`tests/e2e/sftp-download-names.spec.ts`).
 - Snippets (#2367 part 2): `components/snippets` (`SnippetsPanel`, `SnippetForm`, `SnippetExecuteDialog`,
   `variables.ts` + unit tests, `useSnippetTarget`). One run dialog for the panel and the sidebar's
   "Run Snippet": built-ins ({{hostname}}, {{username}}, {{port}}) are filled from the session, every

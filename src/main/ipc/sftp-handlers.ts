@@ -5,6 +5,7 @@
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/constants';
 import { sftpManager } from '../sftp/index';
+import type { DownloadConflictChoice } from '../../shared/types';
 
 /** Wrap a handler result in a standardised envelope. */
 function ok<T>(data: T) {
@@ -42,10 +43,22 @@ export function registerSFTPHandlers(): void {
   // ── SFTP_DOWNLOAD ───────────────────────────────────────────
   ipcMain.handle(
     IPC.SFTP_DOWNLOAD,
-    async (_event, sessionId: string, remotePath: string, localPath: string) => {
+    async (
+      _event,
+      sessionId: string,
+      remotePath: string,
+      localDir: string,
+      onExists?: DownloadConflictChoice,
+    ) => {
       try {
-        const transferId = await sftpManager.download(sessionId, remotePath, localPath);
-        return ok(transferId);
+        if (typeof remotePath !== 'string' || typeof localDir !== 'string') {
+          return fail('Invalid download request');
+        }
+        if (onExists !== undefined && onExists !== 'overwrite' && onExists !== 'keep-both') {
+          return fail('Invalid download choice');
+        }
+        const result = await sftpManager.download(sessionId, remotePath, localDir, onExists);
+        return ok(result);
       } catch (err: unknown) {
         return fail(err instanceof Error ? err.message : String(err));
       }

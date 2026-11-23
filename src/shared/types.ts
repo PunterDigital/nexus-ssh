@@ -252,6 +252,17 @@ export interface SFTPEntry {
   group: number;
 }
 
+/** What a download does when the local folder already has a file of that name (#5610). */
+export type DownloadConflictChoice = 'overwrite' | 'keep-both';
+
+/**
+ * `sftp:download` result. Main builds the local file name from the remote path; when that
+ * name is taken and no choice was passed, nothing is queued and it answers `exists`.
+ */
+export type SFTPDownloadResult =
+  | { status: 'queued'; transferId: string; localPath: string }
+  | { status: 'exists'; name: string };
+
 export interface TransferItem {
   id: string;
   localPath: string;

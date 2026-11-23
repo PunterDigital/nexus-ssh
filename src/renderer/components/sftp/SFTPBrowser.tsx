@@ -4,6 +4,7 @@ import { useSFTPTransferProgress } from '../../hooks/use-ipc';
 import { cx } from '../ui';
 import { FilePane } from './FilePane';
 import { TransferPanel } from './TransferPanel';
+import { DownloadConflictDialog } from './DownloadConflictDialog';
 
 // ============================================================
 // SFTPBrowser — dual-pane file browser for one SFTP session: local files on the left, remote
@@ -143,6 +144,7 @@ export const SFTPBrowser: React.FC<SFTPBrowserProps> = ({ sessionId }) => {
       </div>
 
       <TransferPanel />
+      <DownloadConflictDialog />
     </div>
   );
 };

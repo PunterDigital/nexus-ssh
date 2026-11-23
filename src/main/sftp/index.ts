@@ -14,7 +14,13 @@ import { v4 as uuidv4 } from 'uuid';
 import type { BrowserWindow } from 'electron';
 import { sshManager } from '../ssh';
 import { IPC, DEFAULT_SFTP_CONCURRENCY } from '../../shared/constants';
-import type { SFTPEntry, TransferItem } from '../../shared/types';
+import type {
+  DownloadConflictChoice,
+  SFTPDownloadResult,
+  SFTPEntry,
+  TransferItem,
+} from '../../shared/types';
+import { keepBothName, resolveInside, safeLocalName } from './local-name';
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -28,6 +34,14 @@ interface TransferState {
   aborted: boolean;
   /** Settles the running transfer's promise early (used on cancel). */
   settle?: (err?: Error) => void;
+  /**
+   * Downloads only: the temp file this transfer created and writes into. It is renamed
+   * over the target when the download completes, and it is the only file a cancel or a
+   * failure deletes (#5610).
+   */
+  partPath?: string;
+  /** Downloads only: replace an existing target on completion (the user chose Overwrite). */
+  overwrite?: boolean;
 }
 
 interface TransferQueueItem {
@@ -292,7 +306,31 @@ class SFTPManager {
   // download
   // -----------------------------------------------------------------------
 
-  async download(connectionId: string, remotePath: string, localPath: string): Promise<string> {
+  /**
+   * Queue a download of `remotePath` into the folder `localDir`. Main builds the local name
+   * from the remote path (a hostile server picks those names, #5610): it must be one plain
+   * file name and land directly in `localDir`. If that name is taken, nothing is queued
+   * unless `onExists` says what to do.
+   */
+  async download(
+    connectionId: string,
+    remotePath: string,
+    localDir: string,
+    onExists?: DownloadConflictChoice,
+  ): Promise<SFTPDownloadResult> {
+    const name = safeLocalName(remotePath);
+    const dir = path.resolve(localDir);
+    const dirStats = await fsPromises.stat(dir).catch(() => null);
+    if (!dirStats?.isDirectory()) throw new Error(`Download folder not found: ${dir}`);
+
+    let localPath = resolveInside(dir, name);
+    const taken = (candidate: string) => fs.existsSync(path.join(dir, candidate));
+    if (taken(name)) {
+      if (!onExists) return { status: 'exists', name };
+      if (onExists === 'keep-both') localPath = resolveInside(dir, keepBothName(name, taken));
+    }
+    const overwrite = onExists === 'overwrite';
+
     // Get remote file size for progress tracking
     const sftp = await this.getSFTP(connectionId);
     const remoteStats = await new Promise<Stats>((resolve, reject) => {
@@ -318,6 +356,7 @@ class SFTPManager {
       item,
       paused: false,
       aborted: false,
+      overwrite,
     };
 
     this.transfers.set(transferId, state);
@@ -332,7 +371,7 @@ class SFTPManager {
     });
 
     this.processQueue();
-    return transferId;
+    return { status: 'queued', transferId, localPath };
   }
 
   // -----------------------------------------------------------------------
@@ -394,9 +433,12 @@ class SFTPManager {
 
     this.emitTransferProgress(state.item);
 
-    // Clean up partial downloaded file (best effort)
-    if (state.item.direction === 'download') {
-      fsPromises.unlink(state.item.localPath).catch(() => {});
+    // Delete the partial download: only the temp file this transfer created, never the
+    // target (a queued download that never started has no temp file, #5610).
+    if (state.partPath) {
+      const part = state.partPath;
+      state.partPath = undefined;
+      fsPromises.unlink(part).catch(() => {});
     }
   }
 
@@ -575,11 +617,31 @@ class SFTPManager {
   private async executeDownload(queueItem: TransferQueueItem, state: TransferState): Promise<void> {
     const sftp = await this.getSFTP(queueItem.connectionId);
     if (state.aborted) return;
-    // Ensure the local directory exists
-    await fsPromises.mkdir(path.dirname(queueItem.localPath), { recursive: true });
+    // Write into a temp file of our own next to the target ('wx': never an existing file),
+    // then rename it over the target once everything has arrived.
+    const dir = path.dirname(queueItem.localPath);
+    const part = path.join(dir, `.nexus-download-${queueItem.id}.part`);
+    const writeStream = fs.createWriteStream(part, { flags: 'wx' });
+    state.partPath = part;
     const readStream = sftp.createReadStream(queueItem.remotePath);
-    const writeStream = fs.createWriteStream(queueItem.localPath);
-    return this.pump(state, readStream, writeStream);
+    try {
+      await this.pump(state, readStream, writeStream);
+      if (state.aborted) throw new Error('Cancelled by user');
+      let target = queueItem.localPath;
+      if (!state.overwrite && fs.existsSync(target)) {
+        // Someone created the file while we downloaded: keep both rather than replace it.
+        const taken = (candidate: string) => fs.existsSync(path.join(dir, candidate));
+        target = resolveInside(dir, keepBothName(path.basename(target), taken));
+        state.item.localPath = target;
+      }
+      await fsPromises.rename(part, target);
+      state.partPath = undefined;
+    } catch (err) {
+      // The temp file's name is ours alone (transfer id), so removing it is always safe.
+      state.partPath = undefined;
+      await fsPromises.unlink(part).catch(() => {});
+      throw err;
+    }
   }
 
   /** Pipe source → destination with progress reporting, pause/resume and cancel support. */
