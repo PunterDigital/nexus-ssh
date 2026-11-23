@@ -129,6 +129,45 @@ describe('FTP sync backend', () => {
     }
   });
 
+  it('uses plain FTP only when the config says so (configs from before #5611 have no ftpTls)', async () => {
+    server.commands.length = 0;
+    const backend = await connect();
+    await backend.disconnect();
+    expect(server.commands).not.toContain('AUTH');
+    expect(server.commands).toContain('PASS');
+  });
+
+  it('with FTPS on, asks for TLS first and never falls back to plain FTP (#5611)', async () => {
+    for (const authTls of ['refuse', 'accept'] as const) {
+      const tlsDir = mkdtempSync(path.join(tmpdir(), 'nexus-sync-ftps-'));
+      const tlsServer = await startFtpTestServer({ root: tlsDir, ...creds, authTls });
+      try {
+        const err = await new FTPSyncBackend()
+          .connect({
+            type: 'ftp',
+            host: '127.0.0.1',
+            port: tlsServer.port,
+            username: creds.username,
+            password: creds.password,
+            ftpTls: true,
+          })
+          .then(
+            () => null,
+            (e: Error) => e
+          );
+        expect(err?.message).toMatch(/FTP connection failed/);
+        expect(err?.message).not.toContain(creds.password);
+        // AUTH TLS came first, and the login never crossed the wire in the clear.
+        expect(tlsServer.commands[0]).toBe('AUTH');
+        expect(tlsServer.commands).not.toContain('USER');
+        expect(tlsServer.commands).not.toContain('PASS');
+      } finally {
+        await tlsServer.close();
+        rmSync(tlsDir, { recursive: true, force: true });
+      }
+    }
+  });
+
   it('rejects a wrong password without echoing it in the error', async () => {
     const wrong = 'wrong-password-123';
     const err = await connect(wrong).then(

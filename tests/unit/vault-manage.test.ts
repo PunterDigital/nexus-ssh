@@ -89,6 +89,32 @@ describe('deleteVault', () => {
     expect(existsSync(home)).toBe(true);
   });
 
+  it('also trashes the backups a sync pull kept (#5611)', async () => {
+    const work = makeVault('Work');
+    writeFileSync(`${work}.bak`, 'old db');
+    writeFileSync(`${work}.salt.bak`, 'old salt');
+
+    await deleteVault(work, ctx);
+
+    expect(trashed.map((f) => path.basename(f)).sort()).toEqual(
+      ['Work.db', 'Work.db.bak', 'Work.db.salt', 'Work.db.salt.bak'].sort()
+    );
+    expect(readdirSync(vaultDir())).toEqual([]);
+  });
+
+  it('renames the backups a sync pull kept along with the vault (#5611)', async () => {
+    const work = makeVault('Work');
+    writeFileSync(`${work}.bak`, 'old db');
+    writeFileSync(`${work}.salt.bak`, 'old salt');
+
+    const next = await renameVault(work, 'Office', ctx);
+
+    expect(readdirSync(vaultDir()).sort()).toEqual(
+      ['Office.db', 'Office.db.bak', 'Office.db.salt', 'Office.db.salt.bak'].sort()
+    );
+    expect(readFileSync(`${next}.bak`, 'utf8')).toBe('old db');
+  });
+
   it('deletes a passwordless (hardware-key only) vault, which has no salt', async () => {
     const db = makeVault('Keyless', { salt: false, hwkey: true });
     await deleteVault(db, ctx);

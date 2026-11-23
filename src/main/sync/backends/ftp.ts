@@ -1,5 +1,5 @@
 /**
- * FTP sync backend — uses basic-ftp for plain/TLS file transfer.
+ * FTP sync backend — uses basic-ftp: explicit FTPS (`ftpTls`) or, if the user chose it, plain FTP.
  */
 
 import { Client as FTPClient } from 'basic-ftp';
@@ -30,7 +30,10 @@ export class FTPSyncBackend implements SyncBackend {
         port: config.port ?? 21,
         user: config.username ?? 'anonymous',
         password: config.password ?? '',
-        secure: false,
+        // Explicit FTPS (AUTH TLS) unless the user chose plain FTP. Node's TLS checks the
+        // certificate against the host name; a self-signed one is refused (#5611).
+        secure: config.ftpTls === true,
+        secureOptions: config.ftpTls === true ? { servername: config.host } : undefined,
       });
 
       this.client = client;

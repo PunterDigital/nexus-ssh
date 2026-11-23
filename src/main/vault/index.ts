@@ -5,7 +5,7 @@
 // ============================================================
 
 import { promises as fs } from 'fs';
-const { Database } = require('@journeyapps/sqlcipher');
+const { Database, OPEN_READONLY } = require('@journeyapps/sqlcipher');
 // eslint-disable-next-line @typescript-eslint/no-redeclare -- type alias for the runtime class
 type Database = InstanceType<typeof Database>;
 import {
@@ -89,6 +89,35 @@ function openDatabase(filePath: string): Promise<Database> {
       else resolve(db);
     });
   });
+}
+
+function openDatabaseReadOnly(filePath: string): Promise<Database> {
+  return new Promise((resolve, reject) => {
+    const db = new Database(filePath, OPEN_READONLY, (err: Error | null) => {
+      if (err) reject(err);
+      else resolve(db);
+    });
+  });
+}
+
+/** app_meta key counting pushes, so a pull can refuse an older copy (#5611). */
+const SYNC_GENERATION_KEY = 'sync_generation';
+
+/** The identity and sync generation stored in a vault's app_meta (#5611). */
+export interface VaultSyncInfo {
+  createdAt: string | null;
+  generation: number;
+}
+
+async function readSyncInfo(db: Database): Promise<VaultSyncInfo> {
+  const row = async (key: string) =>
+    (await dbGet<{ value: string } | undefined>(db, `SELECT value FROM app_meta WHERE key = ?`, [key]))
+      ?.value ?? null;
+  const generation = Number.parseInt((await row(SYNC_GENERATION_KEY)) ?? '0', 10);
+  return {
+    createdAt: await row('created_at'),
+    generation: Number.isFinite(generation) && generation > 0 ? generation : 0,
+  };
 }
 
 function closeDatabase(db: Database): Promise<void> {
@@ -413,6 +442,49 @@ class VaultEngine {
    */
   getCurrentPassword(): string | null {
     return this.cachedPassword;
+  }
+
+  // -----------------------------------------------------------------------
+  // Sync checks (#5611)
+  // -----------------------------------------------------------------------
+
+  /** The open vault's identity and sync generation. */
+  async readSyncInfo(): Promise<VaultSyncInfo> {
+    return readSyncInfo(this.getDb());
+  }
+
+  /** Count one more push: the copy that is uploaded next carries the new generation. */
+  async bumpSyncGeneration(): Promise<number> {
+    const db = this.getDb();
+    const next = (await readSyncInfo(db)).generation + 1;
+    await dbRun(db, `INSERT OR REPLACE INTO app_meta (key, value) VALUES (?, ?)`, [
+      SYNC_GENERATION_KEY,
+      String(next),
+    ]);
+    return next;
+  }
+
+  /**
+   * Open another vault file read-only with `password` (and its own salt) and read its sync
+   * info, without touching the open vault. Throws if the file doesn't open with it.
+   */
+  async inspectFile(dbPath: string, saltPath: string, password: string): Promise<VaultSyncInfo> {
+    await initSodium();
+    const salt = Buffer.from(await fs.readFile(saltPath, 'utf-8'), 'base64');
+    const key = deriveKey(password, salt);
+    const hexKey = key.toString('hex');
+    zeroBuffer(key);
+    const db = await openDatabaseReadOnly(dbPath);
+    try {
+      await dbRun(db, `PRAGMA key = "x'${hexKey}'";`);
+      await dbRun(db, `PRAGMA cipher_page_size = ${SQLCIPHER_PAGE_SIZE};`);
+      await dbRun(db, `PRAGMA kdf_iter = 0;`);
+      // Reading a table proves the key (SQLCipher checks every page's HMAC).
+      await dbGet(db, `SELECT count(*) AS cnt FROM hosts;`);
+      return await readSyncInfo(db);
+    } finally {
+      await closeDatabase(db).catch(() => {});
+    }
   }
 
   // -----------------------------------------------------------------------
