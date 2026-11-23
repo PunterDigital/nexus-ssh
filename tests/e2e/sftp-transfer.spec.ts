@@ -12,7 +12,9 @@ const localDir = mkdtempSync(path.join(tmpdir(), 'nexus-e2e-local-'));
 const remoteDir = mkdtempSync(path.join(tmpdir(), 'nexus-e2e-remote-'));
 const PASSWORD = 'e2e-Correct-Horse-42!';
 const FILE_NAME = 'payload.bin';
-const FILE_SIZE = 4 * 1024 * 1024;
+// Uploads keep 64 requests of 32 KB in flight (#5659): a big file and a slow server make the
+// upload last a few seconds, long enough to pause from the UI.
+const FILE_SIZE = 32 * 1024 * 1024;
 const executablePath = process.env.NEXUS_E2E_EXECUTABLE;
 
 let server: TestServer;
@@ -27,7 +29,7 @@ const remoteSize = () => {
 test.beforeAll(async () => {
   writeFileSync(path.join(localDir, FILE_NAME), randomBytes(FILE_SIZE));
   // Slow each SFTP write so the upload runs long enough to pause mid-way.
-  server = await startTestServer({ root: remoteDir, writeDelayMs: 25 });
+  server = await startTestServer({ root: remoteDir, writeDelayMs: 250 });
 });
 
 test.afterAll(async () => {
@@ -84,8 +86,20 @@ test('SFTP upload can be paused and resumed, and the file arrives intact', async
   await pause.click();
   await expect(resume).toBeVisible();
 
-  await page.waitForTimeout(500); // in-flight writes land
-  const sizeAtPause = remoteSize();
+  // Requests already sent (up to 64) still land: wait until the file stops growing.
+  let sizeAtPause = remoteSize();
+  await expect
+    .poll(
+      async () => {
+        const before = remoteSize();
+        await page.waitForTimeout(600);
+        const after = remoteSize();
+        sizeAtPause = after;
+        return before === after;
+      },
+      { timeout: 20_000 }
+    )
+    .toBe(true);
   await page.waitForTimeout(1500);
   expect(remoteSize()).toBe(sizeAtPause);
   expect(sizeAtPause).toBeLessThan(FILE_SIZE);

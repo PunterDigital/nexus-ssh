@@ -17,9 +17,13 @@ import { startTestServer, type TestServer } from '../fixtures/ssh-server';
 // The SFTP manager pulls in the SSH manager, which registers IPC handlers via electron.
 vi.mock('electron', () => ({ ipcMain: { handle: vi.fn(), on: vi.fn(), once: vi.fn() } }));
 
-const { sftpManager } = await import('../../src/main/sftp');
+const { sftpManager, PROGRESS_INTERVAL_MS, SFTP_CHUNK_SIZE } = await import('../../src/main/sftp');
 
-const FILE_SIZE = 3 * 1024 * 1024;
+// Transfers keep 64 requests of 32 KB in flight (#5659), so the files need to be big and the
+// server slow for a transfer to last long enough to pause. Not a multiple of the chunk size,
+// so the short last chunk is covered too.
+const FILE_SIZE = 16 * 1024 * 1024 + 12_345;
+const DELAY_MS = 150;
 const sha = (file: string) => createHash('sha256').update(readFileSync(file)).digest('hex');
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const transfer = (id: string) => sftpManager.getTransfers().find((t) => t.id === id)!;
@@ -39,6 +43,25 @@ const freshDir = () => {
 /** A name a hostile server lists: backslashes are legal in SFTP names, separators on Windows. */
 const HOSTILE_NAME = '..\\..\\escaped.cmd';
 
+/**
+ * Wait until `read()` has stayed the same for `quietMs`: after a pause, the requests already
+ * sent (up to 64, #5659) still land, and SSH flow control can spread them over a few round trips.
+ */
+async function settled(read: () => number, quietMs = 600, timeoutMs = 15_000): Promise<void> {
+  const start = Date.now();
+  let last = read();
+  let since = Date.now();
+  while (Date.now() - since < quietMs) {
+    if (Date.now() - start > timeoutMs) throw new Error('value never settled');
+    await sleep(50);
+    const now = read();
+    if (now !== last) {
+      last = now;
+      since = Date.now();
+    }
+  }
+}
+
 async function waitFor(cond: () => boolean, timeoutMs = 20_000): Promise<void> {
   const start = Date.now();
   while (!cond()) {
@@ -57,11 +80,12 @@ beforeAll(async () => {
   remoteDir = mkdtempSync(path.join(tmpdir(), 'nexus-sftp-remote-'));
   writeFileSync(path.join(localDir, 'big.bin'), randomBytes(FILE_SIZE));
   writeFileSync(path.join(remoteDir, 'remote.bin'), randomBytes(FILE_SIZE));
-  // Slow every request down so a 3 MB transfer takes a few seconds and can be paused mid-way.
+  // Delay every request like a slow round trip, so a transfer takes a second or two and can be
+  // paused mid-way.
   server = await startTestServer({
     root: remoteDir,
-    writeDelayMs: 15,
-    readDelayMs: 15,
+    writeDelayMs: DELAY_MS,
+    readDelayMs: DELAY_MS,
     virtualFiles: { [HOSTILE_NAME]: Buffer.from('echo pwned\r\n') },
   });
   conn = await sftpManager.openSFTPDirect({
@@ -71,7 +95,17 @@ beforeAll(async () => {
     password: server.password,
   });
   sftpManager.setMaxConcurrency(1);
+  // Record every progress message main sends (one IPC message each).
+  sftpManager.setMainWindow({
+    isDestroyed: () => false,
+    webContents: {
+      send: (_channel: string, item: { id: string; status: string; transferred: number }) =>
+        progress.push({ ...item, at: Date.now() }),
+    },
+  } as never);
 });
+
+const progress: Array<{ id: string; status: string; transferred: number; at: number }> = [];
 
 afterAll(async () => {
   sftpManager.destroyAll();
@@ -90,7 +124,7 @@ describe('SFTP transfer pause / resume / cancel', () => {
     sftpManager.pauseTransfer(id);
     expect(transfer(id).status).toBe('paused');
 
-    await sleep(300); // let in-flight writes land
+    await settled(() => statSync(dest).size + transfer(id).transferred); // in-flight writes land
     const readAtPause = transfer(id).transferred;
     const writtenAtPause = statSync(dest).size;
     await sleep(800);
@@ -113,7 +147,7 @@ describe('SFTP transfer pause / resume / cancel', () => {
 
     await waitFor(() => transfer(id).transferred > 0);
     sftpManager.pauseTransfer(id);
-    await sleep(300);
+    await settled(() => transfer(id).transferred);
     const readAtPause = transfer(id).transferred;
     await sleep(800);
     expect(transfer(id).transferred).toBe(readAtPause);
@@ -144,6 +178,41 @@ describe('SFTP transfer pause / resume / cancel', () => {
     expect(sha(path.join(remoteDir, 'after-cancel.bin'))).toBe(sha(src));
     // Only the transfer's own temp file existed, and it is gone.
     await waitFor(() => readdirSync(cancelDir).length === 0, 5_000);
+  });
+});
+
+describe('SFTP transfer speed and progress messages (#5659)', () => {
+  it('keeps many requests in flight: a download is far faster than one chunk per round trip', async () => {
+    const dir = freshDir();
+    const started = Date.now();
+    const id = await download('/remote.bin', dir);
+    await waitFor(() => transfer(id).status === 'completed', 60_000);
+    const seconds = (Date.now() - started) / 1000;
+    expect(sha(path.join(dir, 'remote.bin'))).toBe(sha(path.join(remoteDir, 'remote.bin')));
+    // One request at a time would take chunks x delay = 513 x 150 ms = 77 s.
+    const oneAtATime = (Math.ceil(FILE_SIZE / SFTP_CHUNK_SIZE) * DELAY_MS) / 1000;
+    expect(seconds).toBeLessThan(oneAtATime / 10);
+  });
+
+  it('sends at most ~10 progress messages a second per transfer, plus the status changes', async () => {
+    const dir = freshDir();
+    const id = await download('/remote.bin', dir);
+    await waitFor(() => transfer(id).status === 'completed', 60_000);
+    const mine = progress.filter((p) => p.id === id);
+    const span = mine[mine.length - 1].at - mine[0].at;
+    // queued + active + completed are sent at once; byte counts at most every 100 ms.
+    expect(mine.length).toBeLessThanOrEqual(Math.ceil(span / PROGRESS_INTERVAL_MS) + 4);
+    expect(mine.filter((p) => p.status === 'active').length).toBeGreaterThan(1); // progress did flow
+    const last = mine[mine.length - 1];
+    expect(last.status).toBe('completed');
+    expect(last.transferred).toBe(FILE_SIZE);
+  });
+
+  it('uploads a file whose size is not a multiple of the chunk size intact', async () => {
+    const id = await sftpManager.upload(conn, path.join(localDir, 'big.bin'), '/odd-size.bin');
+    await waitFor(() => transfer(id).status === 'completed', 60_000);
+    expect(statSync(path.join(remoteDir, 'odd-size.bin')).size).toBe(FILE_SIZE);
+    expect(sha(path.join(remoteDir, 'odd-size.bin'))).toBe(sha(path.join(localDir, 'big.bin')));
   });
 });
 

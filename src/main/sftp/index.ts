@@ -9,7 +9,6 @@ import { Client } from 'ssh2';
 import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
 import * as path from 'path';
-import type { Readable, Writable } from 'stream';
 import { v4 as uuidv4 } from 'uuid';
 import type { BrowserWindow } from 'electron';
 import { sshManager } from '../ssh';
@@ -28,12 +27,13 @@ import { keepBothName, resolveInside, safeLocalName } from './local-name';
 
 interface TransferState {
   item: TransferItem;
-  readStream?: Readable;
-  writeStream?: Writable;
   paused: boolean;
   aborted: boolean;
-  /** Settles the running transfer's promise early (used on cancel). */
-  settle?: (err?: Error) => void;
+  /** Wakes the transfer's request loops after a resume or a cancel. */
+  wake?: () => void;
+  /** When progress was last sent to the renderer, and a pending trailing send (#5659). */
+  lastEmitAt?: number;
+  emitTimer?: NodeJS.Timeout;
   /**
    * Downloads only: the temp file this transfer created and writes into. It is renamed
    * over the target when the download completes, and it is the only file a cancel or a
@@ -50,6 +50,55 @@ interface TransferQueueItem {
   localPath: string;
   remotePath: string;
   direction: 'upload' | 'download';
+}
+
+/**
+ * Pipelining (#5659). ssh2's createReadStream/createWriteStream keep one request in flight,
+ * so a transfer ran at one chunk per round trip (~0.7 MB/s at 20 ms per request). Like ssh2's
+ * own fastGet/fastPut, keep many requests outstanding at their own offsets. 32 KB fits in one
+ * request on every server (ssh2 splits larger reads into sequential ones on non-OpenSSH servers).
+ */
+export const SFTP_CHUNK_SIZE = 32 * 1024;
+export const SFTP_REQUESTS_IN_FLIGHT = 64;
+/** At most one progress message per transfer in this many ms (plus status changes). */
+export const PROGRESS_INTERVAL_MS = 100;
+
+/** A positional read (bytes read, 0 = end of file) or write, as the copy loop sees them. */
+type ReadAt = (buf: Buffer, length: number, position: number) => Promise<number>;
+type WriteAt = (buf: Buffer, length: number, position: number) => Promise<void>;
+
+function sftpOpen(sftp: SFTPWrapper, remotePath: string, flags: 'r' | 'w'): Promise<Buffer> {
+  return new Promise((resolve, reject) =>
+    sftp.open(remotePath, flags, (err, handle) => (err ? reject(err) : resolve(handle)))
+  );
+}
+
+function sftpClose(sftp: SFTPWrapper, handle: Buffer): Promise<void> {
+  return new Promise((resolve, reject) =>
+    sftp.close(handle, (err) => (err ? reject(err) : resolve()))
+  );
+}
+
+function sftpFstat(sftp: SFTPWrapper, handle: Buffer): Promise<Stats> {
+  return new Promise((resolve, reject) =>
+    sftp.fstat(handle, (err, stats) => (err ? reject(err) : resolve(stats)))
+  );
+}
+
+function sftpRead(sftp: SFTPWrapper, handle: Buffer): ReadAt {
+  return (buf, length, position) =>
+    new Promise((resolve, reject) =>
+      sftp.read(handle, buf, 0, length, position, (err, bytesRead) =>
+        err ? reject(err) : resolve(bytesRead ?? 0)
+      )
+    );
+}
+
+function sftpWrite(sftp: SFTPWrapper, handle: Buffer): WriteAt {
+  return (buf, length, position) =>
+    new Promise((resolve, reject) =>
+      sftp.write(handle, buf, 0, length, position, (err) => (err ? reject(err) : resolve()))
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -288,7 +337,7 @@ class SFTPManager {
     };
 
     this.transfers.set(transferId, state);
-    this.emitTransferProgress(item);
+    this.emitTransferProgress(state, true);
 
     this.transferQueue.push({
       id: transferId,
@@ -360,7 +409,7 @@ class SFTPManager {
     };
 
     this.transfers.set(transferId, state);
-    this.emitTransferProgress(item);
+    this.emitTransferProgress(state, true);
 
     this.transferQueue.push({
       id: transferId,
@@ -382,18 +431,10 @@ class SFTPManager {
     const state = this.transfers.get(transferId);
     if (!state || state.paused || state.aborted || state.item.status !== 'active') return;
 
+    // The request loops stop taking new chunks; requests already sent still land.
     state.paused = true;
     state.item.status = 'paused';
-
-    // Unpipe as well as pause: pipe() resumes the source on the destination's
-    // next 'drain', which would silently undo a bare pause().
-    const { readStream, writeStream } = state;
-    if (readStream) {
-      if (writeStream) readStream.unpipe(writeStream);
-      readStream.pause();
-    }
-
-    this.emitTransferProgress(state.item);
+    this.emitTransferProgress(state, true);
   }
 
   resumeTransfer(transferId: string): void {
@@ -402,15 +443,8 @@ class SFTPManager {
 
     state.paused = false;
     state.item.status = 'active';
-
-    // Re-piping continues from the source's current offset; anything already
-    // read but not yet written is still in the readable buffer.
-    const { readStream, writeStream } = state;
-    if (readStream && writeStream) {
-      readStream.pipe(writeStream);
-    }
-
-    this.emitTransferProgress(state.item);
+    state.wake?.();
+    this.emitTransferProgress(state, true);
   }
 
   cancelTransfer(transferId: string): void {
@@ -423,15 +457,10 @@ class SFTPManager {
     state.item.status = 'failed';
     state.item.error = 'Cancelled by user';
 
-    // Destroy streams to stop I/O
-    state.readStream?.destroy();
-    state.writeStream?.destroy();
-
-    // Destroyed streams don't always emit 'close'/'error', so settle the
-    // transfer explicitly to free its concurrency slot.
-    state.settle?.(new Error('Cancelled by user'));
-
-    this.emitTransferProgress(state.item);
+    // The request loops see `aborted` and stop after the requests already sent; a paused
+    // transfer's loops are woken to do so. The transfer then fails and frees its slot.
+    state.wake?.();
+    this.emitTransferProgress(state, true);
 
     // Delete the partial download: only the temp file this transfer created, never the
     // target (a queued download that never started has no temp file, #5610).
@@ -577,7 +606,7 @@ class SFTPManager {
 
       this.activeTransfers++;
       state.item.status = 'active';
-      this.emitTransferProgress(state.item);
+      this.emitTransferProgress(state, true);
 
       const work =
         queueItem.direction === 'upload'
@@ -589,14 +618,14 @@ class SFTPManager {
           if (!state.aborted) {
             state.item.status = 'completed';
             state.item.transferred = state.item.size;
-            this.emitTransferProgress(state.item);
+            this.emitTransferProgress(state, true);
           }
         })
         .catch((err: Error) => {
           if (!state.aborted) {
             state.item.status = 'failed';
             state.item.error = err.message;
-            this.emitTransferProgress(state.item);
+            this.emitTransferProgress(state, true);
           }
         })
         .finally(() => {
@@ -609,9 +638,25 @@ class SFTPManager {
   private async executeUpload(queueItem: TransferQueueItem, state: TransferState): Promise<void> {
     const sftp = await this.getSFTP(queueItem.connectionId);
     if (state.aborted) return;
-    const readStream = fs.createReadStream(queueItem.localPath);
-    const writeStream = sftp.createWriteStream(queueItem.remotePath);
-    return this.pump(state, readStream, writeStream);
+    const local = await fsPromises.open(queueItem.localPath, 'r');
+    try {
+      const size = (await local.stat()).size;
+      state.item.size = size;
+      const remote = await sftpOpen(sftp, queueItem.remotePath, 'w');
+      try {
+        await this.copyPipelined(
+          state,
+          size,
+          async (buf, length, position) =>
+            (await local.read(buf, 0, length, position)).bytesRead,
+          sftpWrite(sftp, remote)
+        );
+      } finally {
+        await sftpClose(sftp, remote).catch(() => {});
+      }
+    } finally {
+      await local.close().catch(() => {});
+    }
   }
 
   private async executeDownload(queueItem: TransferQueueItem, state: TransferState): Promise<void> {
@@ -621,11 +666,23 @@ class SFTPManager {
     // then rename it over the target once everything has arrived.
     const dir = path.dirname(queueItem.localPath);
     const part = path.join(dir, `.nexus-download-${queueItem.id}.part`);
-    const writeStream = fs.createWriteStream(part, { flags: 'wx' });
-    state.partPath = part;
-    const readStream = sftp.createReadStream(queueItem.remotePath);
     try {
-      await this.pump(state, readStream, writeStream);
+      const local = await fsPromises.open(part, 'wx');
+      state.partPath = part;
+      try {
+        const remote = await sftpOpen(sftp, queueItem.remotePath, 'r');
+        try {
+          const size = (await sftpFstat(sftp, remote)).size ?? state.item.size;
+          state.item.size = size;
+          await this.copyPipelined(state, size, sftpRead(sftp, remote), async (buf, length, position) => {
+            await local.write(buf, 0, length, position);
+          });
+        } finally {
+          await sftpClose(sftp, remote).catch(() => {});
+        }
+      } finally {
+        await local.close().catch(() => {});
+      }
       if (state.aborted) throw new Error('Cancelled by user');
       let target = queueItem.localPath;
       if (!state.overwrite && fs.existsSync(target)) {
@@ -644,64 +701,105 @@ class SFTPManager {
     }
   }
 
-  /** Pipe source → destination with progress reporting, pause/resume and cancel support. */
-  private pump(state: TransferState, readStream: Readable, writeStream: Writable): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      let settled = false;
-      const settle = (err?: Error): void => {
-        if (settled) return;
-        settled = true;
-        state.settle = undefined;
-        if (err) reject(err);
-        else resolve();
-      };
-
-      state.readStream = readStream;
-      state.writeStream = writeStream;
-      state.settle = settle;
-
-      let transferred = 0;
-
-      readStream.on('data', (chunk: Buffer) => {
-        if (state.aborted) return;
-        transferred += chunk.length;
-        state.item.transferred = transferred;
-        this.emitTransferProgress(state.item);
-      });
-
-      writeStream.on('close', () => {
-        if (state.aborted) return settle(new Error('Cancelled by user'));
-        settle();
-      });
-
-      readStream.on('error', (err: Error) => {
-        writeStream.destroy();
-        settle(err);
-      });
-
-      writeStream.on('error', (err: Error) => {
-        readStream.destroy();
-        settle(err);
-      });
-
-      readStream.pipe(writeStream);
-
-      // Honour a pause that arrived while the SFTP channel was still opening
-      if (state.paused) {
-        readStream.unpipe(writeStream);
-        readStream.pause();
+  /**
+   * Copy `size` bytes from `readAt` to `writeAt` at the same offsets, with up to
+   * SFTP_REQUESTS_IN_FLIGHT chunks outstanding (#5659). Writes land out of order, which
+   * positional writes allow. A pause stops new chunks (sent ones still land); a cancel stops
+   * them too and rejects once the outstanding ones have settled. A source that ends early
+   * (the file shrank) ends the copy at that point.
+   */
+  private async copyPipelined(
+    state: TransferState,
+    size: number,
+    readAt: ReadAt,
+    writeAt: WriteAt
+  ): Promise<void> {
+    let next = 0; // next offset to hand out
+    let end = size; // lowered if the source turns out shorter
+    let transferred = 0;
+    let failure: Error | null = null;
+    let wakeUp: (() => void) | null = null;
+    let wakePromise: Promise<void> | null = null;
+    state.wake = () => {
+      const w = wakeUp;
+      wakeUp = null;
+      wakePromise = null;
+      w?.();
+    };
+    const waitWhilePaused = async () => {
+      while (state.paused && !state.aborted && !failure) {
+        wakePromise ??= new Promise<void>((r) => (wakeUp = r));
+        await wakePromise;
       }
-    });
+    };
+
+    const worker = async (): Promise<void> => {
+      const buf = Buffer.allocUnsafe(SFTP_CHUNK_SIZE);
+      for (;;) {
+        await waitWhilePaused();
+        if (state.aborted || failure || next >= end) return;
+        const start = next;
+        const length = Math.min(SFTP_CHUNK_SIZE, end - start);
+        next += length;
+        try {
+          // A short read (allowed by the protocol) is continued until the chunk is full.
+          let got = 0;
+          while (got < length) {
+            const n = await readAt(buf.subarray(got), length - got, start + got);
+            if (n === 0) break;
+            got += n;
+          }
+          if (got < length) end = Math.min(end, start + got); // the source ended early
+          if (got > 0) await writeAt(buf, got, start);
+          if (state.aborted) return;
+          transferred += got;
+          state.item.transferred = transferred;
+          this.emitTransferProgress(state);
+        } catch (err) {
+          failure ??= err as Error;
+          state.wake?.();
+          return;
+        }
+      }
+    };
+
+    try {
+      await Promise.all(Array.from({ length: SFTP_REQUESTS_IN_FLIGHT }, worker));
+    } finally {
+      state.wake = undefined;
+    }
+    if (state.aborted) throw new Error('Cancelled by user');
+    if (failure) throw failure;
+    state.item.size = Math.min(size, end);
   }
 
   // -----------------------------------------------------------------------
   // IPC progress emission
   // -----------------------------------------------------------------------
 
-  private emitTransferProgress(transfer: TransferItem): void {
+  /**
+   * Send the transfer's state to the renderer: at once for status changes (`force`), and at
+   * most every PROGRESS_INTERVAL_MS for byte counts, with a trailing send so the last count
+   * isn't lost (#5659: it used to be one IPC message per chunk).
+   */
+  private emitTransferProgress(state: TransferState, force = false): void {
+    const now = Date.now();
+    const due = (state.lastEmitAt ?? 0) + PROGRESS_INTERVAL_MS;
+    if (!force && now < due) {
+      state.emitTimer ??= setTimeout(() => {
+        state.emitTimer = undefined;
+        this.emitTransferProgress(state, true);
+      }, due - now);
+      return;
+    }
+    if (state.emitTimer) {
+      clearTimeout(state.emitTimer);
+      state.emitTimer = undefined;
+    }
+    state.lastEmitAt = now;
     try {
       if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-        this.mainWindow.webContents.send(IPC.SFTP_TRANSFER_PROGRESS, { ...transfer });
+        this.mainWindow.webContents.send(IPC.SFTP_TRANSFER_PROGRESS, { ...state.item });
       }
     } catch {
       // Window may have been destroyed between check and send

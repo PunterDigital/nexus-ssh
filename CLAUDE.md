@@ -144,6 +144,14 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   `.nexus-download-<id>.part` and renames it over the target at the end, so a cancel only ever
   deletes that temp file. The test server's `virtualFiles` lists names a disk can't hold
   (`tests/e2e/sftp-download-names.spec.ts`).
+  Transfers are pipelined (#5659, `copyPipelined` in `sftp/index.ts`): 64 positional
+  `sftp.read`/`sftp.write` requests of 32 KB in flight, not ssh2's streams (one request at a
+  time: 0.67 MB/s at 20 ms per request, now ~28 MB/s). Pause stops new requests (the sent ones
+  still land, so tests wait for the size to settle), cancel stops them and fails once they're
+  back. Progress goes to the renderer at most every 100 ms (`PROGRESS_INTERVAL_MS`) plus each
+  status change. Transfer tests need big files and slow servers (16 MB at 150 ms in
+  `sftp-transfer.test.ts`, 32 MB at 250 ms per write in `sftp-transfer.spec.ts`) to last long
+  enough to pause.
 - Snippets (#2367 part 2): `components/snippets` (`SnippetsPanel`, `SnippetForm`, `SnippetExecuteDialog`,
   `variables.ts` + unit tests, `useSnippetTarget`). One run dialog for the panel and the sidebar's
   "Run Snippet": built-ins ({{hostname}}, {{username}}, {{port}}) are filled from the session, every
