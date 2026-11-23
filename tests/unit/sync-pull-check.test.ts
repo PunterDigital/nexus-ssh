@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -7,7 +15,7 @@ import {
   type SyncVault,
   type VaultFileInfo,
 } from '../../src/main/sync/pull-check';
-import { syncEngine } from '../../src/main/sync/engine';
+import { sameRemoteFile, syncEngine } from '../../src/main/sync/engine';
 
 // #5611: a pull used to delete the local vault, rename the download in and only then try to
 // open it. Garbage in the sync location wiped the vault; an older genuine copy rolled it
@@ -211,5 +219,106 @@ describe('sync pull checks the download before replacing the vault', () => {
     writeFileSync(remoteSalt(), 'x');
     await expect(syncEngine.pull(dbPath)).rejects.toThrow(/needs this vault unlocked/);
     expect(localHosts()).toEqual(['local-host']);
+  });
+});
+
+describe('sameRemoteFile', () => {
+  const at = (ms: number) => new Date(ms);
+  it('matches on size and mtime, and ETag when both listings have one', () => {
+    expect(sameRemoteFile({ size: 1, lastModified: at(5) }, { size: 1, lastModified: at(5) })).toBe(true);
+    expect(sameRemoteFile({ size: 1, lastModified: at(5) }, { size: 2, lastModified: at(5) })).toBe(false);
+    expect(sameRemoteFile({ size: 1, lastModified: at(5) }, { size: 1, lastModified: at(6) })).toBe(false);
+    expect(
+      sameRemoteFile({ size: 1, lastModified: at(5), etag: 'a' }, { size: 1, lastModified: at(5), etag: 'b' })
+    ).toBe(false);
+    expect(sameRemoteFile(null, { size: 1, lastModified: at(5) })).toBe(false);
+  });
+});
+
+// #5661: every auto-sync tick downloaded the whole remote .db to hash it, and a remote_only
+// pull downloaded it again.
+describe('auto-sync ticks download only when the remote changed', () => {
+  let localDir: string;
+  let remoteDir: string;
+  let dbPath: string;
+  let fake: FakeVault;
+  const remoteDb = () => path.join(remoteDir, 'work.db');
+  let clock = Date.now() / 1000 - 3600;
+  /** Another device writes the remote vault (with a new, distinct mtime). */
+  const otherDeviceWrites = (v: Partial<FakeVaultFile>) => {
+    writeFileSync(
+      remoteDb(),
+      JSON.stringify({ password: PASSWORD, createdAt: 'A', generation: 0, hosts: [], ...v })
+    );
+    clock += 10;
+    utimesSync(remoteDb(), clock, clock);
+  };
+
+  beforeEach(async () => {
+    localDir = mkdtempSync(path.join(tmpdir(), 'nexus-tick-local-'));
+    remoteDir = mkdtempSync(path.join(tmpdir(), 'nexus-tick-remote-'));
+    dbPath = path.join(localDir, 'work.db');
+    writeFileSync(
+      dbPath,
+      JSON.stringify({ password: PASSWORD, createdAt: 'A', generation: 0, hosts: ['local-host'] })
+    );
+    writeFileSync(dbPath + '.salt', 'salt');
+    fake = new FakeVault();
+    fake.openPath = dbPath;
+    fake.password = PASSWORD;
+    syncEngine.vault = () => fake.adapter();
+    await syncEngine.configure({ type: 'filesystem', directoryPath: remoteDir });
+    await syncEngine.push(dbPath);
+    syncEngine.downloads = 0;
+  });
+
+  afterEach(async () => {
+    await syncEngine.disconnect();
+    rmSync(localDir, { recursive: true, force: true });
+    rmSync(remoteDir, { recursive: true, force: true });
+  });
+
+  it('an unchanged remote costs no download, tick after tick', async () => {
+    for (let i = 0; i < 3; i++) expect(await syncEngine.detectConflict(dbPath)).toBe('none');
+    expect(syncEngine.downloads).toBe(0);
+  });
+
+  it('a changed remote is downloaded exactly once, and the pull reuses that download', async () => {
+    otherDeviceWrites({ generation: 2, hosts: ['from other device'] });
+    expect(await syncEngine.detectConflict(dbPath)).toBe('remote_only');
+    await syncEngine.pull(dbPath);
+    expect(syncEngine.downloads).toBe(1);
+    expect(fake.read(dbPath).hosts).toEqual(['from other device']);
+    // No temp files left behind, and the next tick sees nothing new.
+    expect(readdirSync(localDir).filter((f) => f.startsWith('.sync_'))).toEqual([]);
+    expect(await syncEngine.detectConflict(dbPath)).toBe('none');
+    expect(syncEngine.downloads).toBe(1);
+  });
+
+  it('a remote touched without new bytes is downloaded once, then remembered', async () => {
+    clock += 10;
+    utimesSync(remoteDb(), clock, clock);
+    expect(await syncEngine.detectConflict(dbPath)).toBe('none');
+    expect(await syncEngine.detectConflict(dbPath)).toBe('none');
+    expect(syncEngine.downloads).toBe(1);
+  });
+
+  it('still reports a local-only change and a conflict as before', async () => {
+    writeFileSync(
+      dbPath,
+      JSON.stringify({ password: PASSWORD, createdAt: 'A', generation: 1, hosts: ['edited here'] })
+    );
+    expect(await syncEngine.detectConflict(dbPath)).toBe('local_only');
+    expect(syncEngine.downloads).toBe(0);
+    otherDeviceWrites({ generation: 2, hosts: ['edited there'] });
+    expect(await syncEngine.detectConflict(dbPath)).toBe('conflict');
+    expect(readdirSync(localDir).filter((f) => f.startsWith('.sync_'))).toEqual([]);
+  });
+
+  it('a pull without a tick first still downloads the file itself', async () => {
+    otherDeviceWrites({ generation: 2, hosts: ['from other device'] });
+    await syncEngine.pull(dbPath);
+    expect(syncEngine.downloads).toBe(1);
+    expect(fake.read(dbPath).hosts).toEqual(['from other device']);
   });
 });

@@ -225,6 +225,18 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   into a folder instead of the real Recycle Bin. Sync settings live inside the `.db`.
 - Vault = SQLCipher DB + `.salt` file under `userData/vaults`. Keys: Argon2id (libsodium) →
   XSalsa20-Poly1305 key wrapping (`src/main/kdf`). Optional PIN and hardware-key (WebAuthn PRF) unlock.
+  Argon2id runs in a `worker_threads` Worker (#5661, `kdf/kdf-worker.ts`, a second esbuild entry
+  → `dist/main/kdf/kdf-worker.js`; vitest runs the `.ts` source, so the worker uses only `require`
+  and no import/export): `deriveKey`/`derivePinKey` are async, byte-identical to libsodium's
+  `crypto_pwhash` (fixed vector in `kdf.test.ts`). Electron's Node has no `crypto.argon2`
+  (BoringSSL: `ERR_CRYPTO_ARGON2_NOT_SUPPORTED`). The worker stops after 15 s idle (it holds the
+  256 MiB buffer). The vault remembers the salt its key came from (`keySalt`): `inspectFile` of a
+  pulled copy with the same salt and the swap's reopen (`lockKeepingKey` → `unlock(…, held)`)
+  reuse the key instead of deriving again.
+  Sync ticks (#5661): the engine keeps the remote `.db` listing from the last push/pull
+  (`lastRemote`; size + mtime, ETag when both have one, `sameRemoteFile`) and only downloads when
+  it differs; a changed remote downloaded by `detectConflict` is reused by the pull
+  (`prefetched`). `syncEngine.downloads` counts `.db` downloads for tests.
 
 ## Testing
 

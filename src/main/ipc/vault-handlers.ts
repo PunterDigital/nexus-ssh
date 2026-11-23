@@ -201,7 +201,7 @@ export function registerVaultHandlers(): void {
         // Generate a new salt and derive a new key
         await initSodium();
         const newSalt = generateSalt();
-        const newKey = deriveKey(newPassword, newSalt);
+        const newKey = await deriveKey(newPassword, newSalt);
         const hexNewKey = newKey.toString('hex');
 
         // Re-key the database using SQLCipher's PRAGMA rekey
@@ -221,9 +221,16 @@ export function registerVaultHandlers(): void {
         pinStore.clear(currentPath);
 
         // Lock and re-unlock with the new password to verify
+        // (the new key is reused: the reopen proves the rekeyed file opens with it, #5661)
         vaultEngine.lock();
-        zeroBuffer(newKey);
-        await vaultEngine.unlock(currentPath, newPassword);
+        try {
+          await vaultEngine.unlock(currentPath, newPassword, {
+            key: newKey,
+            salt: newSalt.toString('base64'),
+          });
+        } finally {
+          zeroBuffer(newKey);
+        }
 
         return ok(null);
       } catch (err: unknown) {
