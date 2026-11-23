@@ -69,6 +69,7 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   (`app_meta.sync_generation`, which every push bumps before uploading). Then the local files are
   copied to `.bak`, the download is renamed over them, and the `.bak` goes back if it won't open.
   A pull needs the vault unlocked with a password (hardware-key-only vaults can't pull, as before).
+  Vault rename/delete (`vault/manage.ts`) move/trash the `.db.bak` / `.db.salt.bak` too.
 - FTP sync: `BackendConfig.ftpTls` = explicit FTPS, certificate checked by Node's TLS (a
   self-signed one is refused). A newly chosen FTP backend starts with it on; configs saved before
   #5611 have no value and stay plain, and the form shows a warning while it's off. The FTP test

@@ -27,6 +27,9 @@ export interface VaultFileContext {
 /** SQLite files that sit next to the .db (only after a crash, usually). */
 const DB_COMPANIONS = ['-journal', '-wal', '-shm'];
 
+/** The copies a sync pull keeps of the vault it replaced (#5611): `<name>.db.bak`, `<name>.db.salt.bak`. */
+const PULL_BACKUPS = ['.bak', `${VAULT_SALT_EXTENSION}.bak`];
+
 /**
  * Turn a vault name into a safe filename while preserving spaces and
  * capitalization. Only strips characters that are invalid on common
@@ -93,6 +96,7 @@ function vaultFilePairs(vaultPath: string, name: string, ctx: VaultFileContext):
     [vaultPath, target],
     [vaultPath + VAULT_SALT_EXTENSION, target + VAULT_SALT_EXTENSION],
     ...DB_COMPANIONS.map((s): [string, string] => [vaultPath + s, target + s]),
+    ...PULL_BACKUPS.map((s): [string, string] => [vaultPath + s, target + s]),
   ];
   for (const { dir, ext } of ctx.sideStores) {
     pairs.push([path.join(dir, `${oldName}${ext}`), path.join(dir, `${name}${ext}`)]);
