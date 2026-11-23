@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowUp,
   ChevronDown,
@@ -37,6 +37,10 @@ import { Button, Dialog, EmptyState, IconButton, Input, Toolbar, cx } from '../u
 import { BreadcrumbPath } from './BreadcrumbPath';
 import { ChmodDialog, modeToString } from './ChmodDialog';
 import { DragDropOverlay } from './DragDropOverlay';
+import { revealRow, visibleRows, type RowWindow } from '../../lib/virtual-rows';
+
+// Rows are windowed (#5667): fixed height (h-7), the list's py-0.5 above the first row.
+const ROW_GEOMETRY = { rowHeight: 28, overscan: 8, padTop: 2 };
 
 // ============================================================
 // FilePane — one side of the SFTP browser (local or remote).
@@ -299,6 +303,8 @@ export const FilePane: React.FC<FilePaneProps> = ({ side }) => {
   const files = isRemote ? remoteFiles : localFiles;
   const loading = isRemote ? remoteLoading : localLoading;
   const selected = isRemote ? selectedRemoteFiles : selectedLocalFiles;
+  // O(1) membership: a select-all in a 10,000-entry folder made every row's check O(n) (#5667).
+  const selectedSet = useMemo(() => new Set(selected), [selected]);
   const setSelected = isRemote ? setSelectedRemoteFiles : setSelectedLocalFiles;
   const navigate = isRemote ? navigateRemote : navigateLocal;
   const sideName = isRemote ? 'Remote' : 'Local';
@@ -319,11 +325,26 @@ export const FilePane: React.FC<FilePaneProps> = ({ side }) => {
   const anchorIndex = useRef(-1); // start of a Shift range
   const paneRef = useRef<HTMLElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [rowWindow, setRowWindow] = useState<RowWindow>({ start: 0, end: 40 });
+  // A row to focus once it is rendered (it was scrolled out of the window).
+  const pendingRowFocus = useRef<number | null>(null);
   // Set once an inline edit (rename / new folder) is committed or cancelled, so the blur that
   // follows doesn't run it again.
   const editSettled = useRef(false);
 
   const current = files.length === 0 ? -1 : Math.min(activeIndex, files.length - 1);
+  const filesCountRef = useRef(files.length);
+  filesCountRef.current = files.length;
+
+  /** Recompute which rows to render from the scroll position (#5667). */
+  const updateRowWindow = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const next = visibleRows(el.scrollTop, el.clientHeight, filesCountRef.current, ROW_GEOMETRY);
+    setRowWindow((w) => (w.start === next.start && w.end === next.end ? w : next));
+  }, []);
+
 
   // The folder whose listing (or error) is on screen. Until the current path has loaded the
   // pane shows the loading skeleton; a refresh of the same folder keeps the list (and the
@@ -369,14 +390,62 @@ export const FilePane: React.FC<FilePaneProps> = ({ side }) => {
   useEffect(() => {
     setActiveIndex(0);
     anchorIndex.current = -1;
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [path]);
+
+  // The window follows the list's length and the pane's size.
+  useEffect(() => {
+    updateRowWindow();
+  }, [files.length, showSkeleton, updateRowWindow]);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => updateRowWindow());
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [updateRowWindow]);
+
+  // Spacers for the rows that aren't rendered, set through the ref (no style prop), and the
+  // focus a scrolled-out row was waiting for.
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (list) {
+      const { rowHeight, padTop } = ROW_GEOMETRY;
+      const start = Math.min(rowWindow.start, files.length);
+      const end = Math.min(rowWindow.end, files.length);
+      list.style.paddingTop = `${padTop + start * rowHeight}px`;
+      list.style.paddingBottom = `${padTop + (files.length - end) * rowHeight}px`;
+    }
+    const want = pendingRowFocus.current;
+    if (want !== null) {
+      const row = list?.querySelector<HTMLElement>(`[data-index="${want}"]`);
+      if (row) {
+        pendingRowFocus.current = null;
+        row.focus({ preventScroll: true });
+      }
+    }
+  });
 
   // ── Focus helpers ───────────────────────────────────────
 
-  const focusRow = useCallback((index: number) => {
-    setActiveIndex(index);
-    listRef.current?.querySelector<HTMLElement>(`[data-index="${index}"]`)?.focus();
-  }, []);
+  const focusRow = useCallback(
+    (index: number) => {
+      setActiveIndex(index);
+      const el = scrollRef.current;
+      if (el) {
+        const top = revealRow(index, el.scrollTop, el.clientHeight, ROW_GEOMETRY);
+        if (top !== el.scrollTop) el.scrollTop = top;
+      }
+      const row = listRef.current?.querySelector<HTMLElement>(`[data-index="${index}"]`);
+      if (row) {
+        row.focus({ preventScroll: true });
+      } else {
+        pendingRowFocus.current = index;
+        updateRowWindow();
+      }
+    },
+    [updateRowWindow],
+  );
 
   // Keyboard focus after the list changes under it (rename, delete, opening a folder): the
   // focused row may be gone, so focus a row by name (or whatever row is now at an index) once
@@ -429,9 +498,9 @@ export const FilePane: React.FC<FilePaneProps> = ({ side }) => {
   const selectedFilePaths = useMemo(
     () =>
       files
-        .filter((f) => !f.isDirectory && selected.includes(f.filename))
+        .filter((f) => !f.isDirectory && selectedSet.has(f.filename))
         .map((f) => joinPath(path, f.filename, side)),
-    [files, selected, path, side]
+    [files, selectedSet, path, side]
   );
 
   const transferSelection = () => {
@@ -560,7 +629,7 @@ export const FilePane: React.FC<FilePaneProps> = ({ side }) => {
   const handleRowClick = (entry: SFTPEntry, index: number, e: React.MouseEvent) => {
     if (e.ctrlKey || e.metaKey) {
       setSelected(
-        selected.includes(entry.filename)
+        selectedSet.has(entry.filename)
           ? selected.filter((f) => f !== entry.filename)
           : [...selected, entry.filename]
       );
@@ -604,7 +673,7 @@ export const FilePane: React.FC<FilePaneProps> = ({ side }) => {
   ) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!selected.includes(entry.filename)) {
+    if (!selectedSet.has(entry.filename)) {
       setSelected([entry.filename]);
       anchorIndex.current = index;
     }
@@ -734,7 +803,7 @@ export const FilePane: React.FC<FilePaneProps> = ({ side }) => {
         e.preventDefault();
         if (ctrl) {
           setSelected(
-            selected.includes(entry.filename)
+            selectedSet.has(entry.filename)
               ? selected.filter((f) => f !== entry.filename)
               : [...selected, entry.filename]
           );
@@ -784,7 +853,7 @@ export const FilePane: React.FC<FilePaneProps> = ({ side }) => {
             `[data-index="${current}"]`
           );
           if (row) {
-            if (!selected.includes(entry.filename)) setSelected([entry.filename]);
+            if (!selectedSet.has(entry.filename)) setSelected([entry.filename]);
             openMenuAt(entry, row);
           }
         } else if (listRef.current) {
@@ -803,8 +872,8 @@ export const FilePane: React.FC<FilePaneProps> = ({ side }) => {
     dt.types.includes(dragType(otherSide)) || (isRemote && dt.types.includes('Files'));
 
   const handleDragStart = (e: React.DragEvent, entry: SFTPEntry) => {
-    const rows = selected.includes(entry.filename)
-      ? files.filter((f) => selected.includes(f.filename))
+    const rows = selectedSet.has(entry.filename)
+      ? files.filter((f) => selectedSet.has(f.filename))
       : [entry];
     const paths = rows
       .filter((f) => !f.isDirectory)
@@ -858,6 +927,10 @@ export const FilePane: React.FC<FilePaneProps> = ({ side }) => {
   };
 
   // ── Render ──────────────────────────────────────────────
+
+  const windowStart = Math.min(rowWindow.start, files.length);
+  const renderedFiles = files.slice(windowStart, Math.min(rowWindow.end, files.length));
+  const currentRendered = current >= windowStart && current < windowStart + renderedFiles.length;
 
   const showEmpty =
     !showSkeleton && !listError && files.length === 0 && newFolderName === null;
@@ -956,6 +1029,8 @@ export const FilePane: React.FC<FilePaneProps> = ({ side }) => {
 
       {/* File list. Right-clicking the empty area opens the folder menu. */}
       <div
+        ref={scrollRef}
+        onScroll={updateRowWindow}
         className="relative min-h-0 flex-1 overflow-y-auto scrollbar-thin"
         onContextMenu={(e) => {
           e.preventDefault();
@@ -1000,12 +1075,18 @@ export const FilePane: React.FC<FilePaneProps> = ({ side }) => {
             aria-label={`${sideName} files`}
             aria-multiselectable="true"
             aria-busy={loading || undefined}
-            tabIndex={files.length === 0 ? 0 : -1}
+            // The focused row may be scrolled out of the window: the list is then the Tab stop
+            // and hands focus to that row.
+            tabIndex={currentRendered ? -1 : 0}
+            onFocus={(e) => {
+              if (e.target === e.currentTarget && current >= 0) focusRow(current);
+            }}
             onKeyDown={handleListKeyDown}
-            className="flex flex-col py-0.5 outline-none"
+            className="flex flex-col outline-none"
           >
-            {files.map((entry, index) => {
-              const isSelected = selected.includes(entry.filename);
+            {renderedFiles.map((entry, offset) => {
+              const index = windowStart + offset;
+              const isSelected = selectedSet.has(entry.filename);
               const isRenaming = renameTarget?.entry.filename === entry.filename;
               const fileIcon = getFileIcon(entry);
               return (
@@ -1017,6 +1098,8 @@ export const FilePane: React.FC<FilePaneProps> = ({ side }) => {
                   role={isRenaming ? undefined : 'option'}
                   aria-selected={isRenaming ? undefined : isSelected}
                   aria-label={isRenaming ? undefined : entry.filename}
+                  aria-setsize={isRenaming ? undefined : files.length}
+                  aria-posinset={isRenaming ? undefined : index + 1}
                   tabIndex={index === current ? 0 : -1}
                   onFocus={(e) => {
                     if (e.target === e.currentTarget) setActiveIndex(index);
