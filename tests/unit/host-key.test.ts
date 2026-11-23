@@ -2,13 +2,17 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { Client, utils } from 'ssh2';
+import { Client } from 'ssh2';
 import type {
   HostKeyPrompt,
   HostKeyVerification,
   KnownHost,
 } from '../../src/shared/types';
-import { startTestServer, type TestServer } from '../fixtures/ssh-server';
+import {
+  generateEd25519KeyPair,
+  startTestServer,
+  type TestServer,
+} from '../fixtures/ssh-server';
 
 // The known_hosts table and the IPC layer are faked; the SSH handshake is real (ssh2 client
 // against the throwaway test server), so this catches a verifier that ssh2 doesn't wait for.
@@ -70,7 +74,7 @@ hostKeyPrompter.setMainWindow({
 hostKeyPrompter.registerHandlers();
 
 const publicKeyBlob = () =>
-  Buffer.from(utils.generateKeyPairSync('ed25519').public.split(' ')[1], 'base64');
+  Buffer.from(generateEd25519KeyPair().public.split(' ')[1], 'base64');
 
 let server: TestServer;
 let root: string;

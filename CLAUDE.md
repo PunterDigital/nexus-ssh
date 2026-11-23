@@ -231,6 +231,10 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
 - SSH/SFTP features need a server: use `tests/fixtures/ssh-server.ts` (`startTestServer`), a throwaway
   `ssh2` server on 127.0.0.1 with password auth, an echo shell and an SFTP subsystem backed by a temp
   dir. `writeDelayMs`/`readDelayMs` slow transfers down enough to pause them. Never hit real hosts.
+  Make test ed25519 keys with its `generateEd25519KeyPair()`, never ssh2's
+  `utils.generateKeyPairSync('ed25519')` directly: ssh2 1.17 strips the public key's leading zero
+  bytes, so 1 key in 256 comes out 31 bytes and `parseKey` refuses it ("Malformed OpenSSH private
+  key", the CI flake fixed in #5417). The helper draws again until the key parses.
   It works from vitest (`tests/unit/sftp-transfer.test.ts`, mocks `electron`) and Playwright
   (`tests/e2e/sftp-transfer.spec.ts`, drives host creation → SFTP → upload through the UI).
 - Sync backends: `tests/unit/sync-backends.test.ts` round-trips the FTP and S3 backends through the

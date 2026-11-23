@@ -45,10 +45,33 @@ export interface TestServer {
 
 const PROMPT = 'nexus-test-shell$ ';
 
+/**
+ * A fresh ed25519 key pair (OpenSSH format) that ssh2 can parse.
+ *
+ * ssh2's `utils.generateKeyPairSync('ed25519')` strips every leading zero byte
+ * from the public key (lib/keygen.js, meant for the BIT STRING's unused-bits
+ * byte), so when the real key starts with 0x00 (1 in 256) it writes a 31-byte
+ * key and `parseKey` refuses it ("Malformed OpenSSH private key", #5417).
+ * Draw again until both halves parse and the public key is the full 32 bytes.
+ */
+export function generateEd25519KeyPair(): { private: string; public: string } {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const pair = utils.generateKeyPairSync('ed25519');
+    const priv = utils.parseKey(pair.private);
+    const pub = utils.parseKey(pair.public);
+    if (priv instanceof Error || pub instanceof Error) continue;
+    const blob = Buffer.from(pair.public.split(' ')[1], 'base64');
+    // string "ssh-ed25519" (4 + 11) + string key (4 + 32)
+    if (blob.length !== 51 || blob.readUInt32BE(15) !== 32) continue;
+    return { private: pair.private, public: pair.public };
+  }
+  throw new Error('could not generate a parseable ed25519 key in 100 attempts');
+}
+
 export async function startTestServer(opts: TestServerOptions): Promise<TestServer> {
   const username = opts.username ?? 'tester';
   const password = opts.password ?? 'test-password';
-  const hostKey = utils.generateKeyPairSync('ed25519').private;
+  const hostKey = generateEd25519KeyPair().private;
   const clients = new Set<Connection>();
   const commands: string[] = [];
   let refusing = false;
