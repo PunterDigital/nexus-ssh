@@ -9,6 +9,14 @@ directories:
 files:
   - dist/**/*
   - package.json
+  # Not needed at runtime (#5665): source maps (ours and every package's), type declarations,
+  # docs. Renderer packages are devDependencies (Vite bundles them), so they aren't copied at all.
+  - "!**/*.map"
+  - "!**/*.d.ts"
+  - "!**/*.d.mts"
+  - "!**/*.d.cts"
+  - "!**/*.md"
+  - "!**/*.markdown"
 
 # Releases are created by .github/workflows/release.yml (electron-builder runs with --publish never);
 # this block only tells electron-updater where to look for updates.

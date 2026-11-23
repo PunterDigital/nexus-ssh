@@ -98,6 +98,14 @@ jobs:
       - name: Package
         if: needs.changes.outputs.version_only != 'true'
         run: pnpm exec electron-builder ${{ matrix.target }} --publish never
+      - name: Check app.asar contents
+        if: needs.changes.outputs.version_only != 'true'
+        shell: bash
+        run: |
+          for asar in dist-release/win-unpacked/resources/app.asar dist-release/mac*/Nexus.app/Contents/Resources/app.asar; do
+            [ -f "$asar" ] && node scripts/check-asar.mjs "$asar"
+          done
+          ls -l dist-release/*.exe dist-release/*.dmg 2>/dev/null || true
       - name: End-to-end smoke test (packaged app)
         if: needs.changes.outputs.version_only != 'true'
         shell: bash

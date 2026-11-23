@@ -23,7 +23,18 @@ Design doc: `ssh-client-spec.md` (read the relevant section before changing a fe
   start-up chunk must stay under 400 kB: `pnpm check:bundle` (CI runs it after `pnpm build`) fails
   otherwise, so a new heavy dependency belongs in a lazy view, not in the shell.
 - Native/heavy deps are esbuild externals: `ssh2`, `@journeyapps/sqlcipher`, `basic-ftp`,
-  `@aws-sdk/client-s3`, `libsodium-wrappers-sumo`
+  `@aws-sdk/client-s3`, `libsodium-wrappers-sumo`, `electron-updater`. Those six are the only
+  `dependencies` (#5665): everything the renderer uses (React, zustand, lucide-react, xterm) and
+  `uuid` (bundled into main by esbuild) are devDependencies, so electron-builder doesn't copy
+  them into the asar. A new runtime dependency of **main** that stays external goes in
+  `dependencies`; anything esbuild or Vite bundles goes in devDependencies.
+  `electron-builder.yml` also leaves out `*.map`, `*.d.ts` and `*.md`. CI runs
+  `scripts/check-asar.mjs` on each packaged app.asar (no maps, no renderer packages, the runtime
+  modules present). v0.5.2: 67.4 MB / 7,625 files; now ~11 MB / ~1,950.
+- Start-up (#5665): sync backends are `require`d in `createBackend()`, so `@aws-sdk/client-s3`
+  (~170 ms to load) and `basic-ftp` only load when a vault syncs that way; `initSodium()` runs
+  alongside window creation (callers await it themselves). A test profile prints
+  `[nexus-startup] ready=…ms ready-to-show=…ms` (since main started) on stdout.
 - pnpm 10 (`packageManager` pinned), Node 24
 
 ## Commands

@@ -10,9 +10,11 @@ import { IPC, VAULT_SALT_EXTENSION, VAULT_FILE_EXTENSION } from '@shared/constan
 import type { BackendConfig, SyncBackendType } from '@shared/types';
 import type { FileMetadata, SyncBackend, SyncStatus } from './types';
 import { SFTPSyncBackend } from './backends/sftp';
-import { FTPSyncBackend } from './backends/ftp';
-import { S3SyncBackend } from './backends/s3';
 import { FilesystemSyncBackend } from './backends/filesystem';
+// The FTP and S3 backends (with basic-ftp and @aws-sdk/client-s3, ~170 ms to load) are required
+// on first use, not at start-up: most vaults never sync that way (#5665). Plain require(), as
+// for electron-updater. (vitest can't require() our .ts sources, so tests build those two
+// backends directly; SFTP and filesystem stay static: ssh2 loads anyway.)
 import { verifyAndSwap, type SyncVault } from './pull-check';
 
 /**
@@ -101,9 +103,9 @@ class SyncEngine {
       case 'sftp':
         return new SFTPSyncBackend();
       case 'ftp':
-        return new FTPSyncBackend();
+        return new (require('./backends/ftp').FTPSyncBackend)();
       case 's3':
-        return new S3SyncBackend();
+        return new (require('./backends/s3').S3SyncBackend)();
       case 'filesystem':
         return new FilesystemSyncBackend();
       default:
