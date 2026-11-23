@@ -19,6 +19,7 @@ import {
   initSodium,
   generateSalt,
   deriveKey,
+  warmKdfWorker,
   zeroBuffer,
 } from '../kdf';
 
@@ -133,6 +134,12 @@ function closeDatabase(db: Database): Promise<void> {
 // VaultEngine
 // ---------------------------------------------------------------------------
 
+/** A copy of a password-derived vault key and the salt it came from (base64). */
+export interface HeldKey {
+  key: Buffer;
+  salt: string;
+}
+
 class VaultEngine {
   private db: Database | null = null;
   private dbKey: Buffer | null = null;
@@ -143,6 +150,12 @@ class VaultEngine {
    * Windows where open handles hold an exclusive lock.
    */
   private cachedPassword: string | null = null;
+  /**
+   * The salt the open vault's key was derived from (base64 of its bytes), or null when the
+   * key didn't come from the password here (hardware key, PIN). Lets a sync pull of a file
+   * with the same salt reuse the key instead of running Argon2id again (#5661).
+   */
+  private keySalt: string | null = null;
   private unlockListeners: Array<() => void> = [];
 
   /** Run `listener` every time a vault is opened (create, password, PIN or hardware-key unlock). */
@@ -175,7 +188,7 @@ class VaultEngine {
     await fs.writeFile(saltPath, salt.toString('base64'), 'utf-8');
 
     // 2. Derive encryption key
-    const key = deriveKey(password, salt);
+    const key = await deriveKey(password, salt);
     const hexKey = key.toString('hex');
 
     // 3. Open database and apply SQLCipher pragmas
@@ -224,6 +237,7 @@ class VaultEngine {
     this.dbKey = key;
     this.vaultPath = vaultPath;
     this.cachedPassword = password;
+    this.keySalt = salt.toString('base64');
 
     this.notifyUnlocked();
   }
@@ -277,6 +291,7 @@ class VaultEngine {
     this.db = db;
     this.dbKey = Buffer.from(dbKey);
     this.vaultPath = vaultPath;
+    this.keySalt = null;
     this.cachedPassword = null;
 
     this.notifyUnlocked();
@@ -330,6 +345,7 @@ class VaultEngine {
     this.db = db;
     this.dbKey = Buffer.from(dbKey);
     this.vaultPath = vaultPath;
+    this.keySalt = null;
     this.cachedPassword = options.password ?? null;
 
     this.notifyUnlocked();
@@ -338,16 +354,19 @@ class VaultEngine {
   // -----------------------------------------------------------------------
   // Unlock an existing vault
   // -----------------------------------------------------------------------
-  async unlock(vaultPath: string, password: string): Promise<void> {
+  async unlock(vaultPath: string, password: string, reuse?: HeldKey | null): Promise<void> {
     await initSodium();
 
     // 1. Read salt
     const saltPath = vaultPath + '.salt';
     const saltBase64 = await fs.readFile(saltPath, 'utf-8');
     const salt = Buffer.from(saltBase64, 'base64');
+    const keySalt = salt.toString('base64');
 
-    // 2. Derive key
-    const key = deriveKey(password, salt);
+    // 2. Derive key, unless the caller still holds the key for this very salt (a sync pull
+    //    reopening the vault it just closed, #5661). A wrong key still fails below.
+    const key =
+      reuse && reuse.salt === keySalt ? Buffer.from(reuse.key) : await deriveKey(password, salt);
     const hexKey = key.toString('hex');
 
     // 3. Open and configure
@@ -386,6 +405,7 @@ class VaultEngine {
     this.dbKey = key;
     this.vaultPath = vaultPath;
     this.cachedPassword = password;
+    this.keySalt = keySalt;
 
     this.notifyUnlocked();
   }
@@ -394,6 +414,8 @@ class VaultEngine {
   // Lock — close DB and zero key material
   // -----------------------------------------------------------------------
   lock(): void {
+    // The next unlock will need Argon2id: have its worker ready (#5661).
+    if (this.db) warmKdfWorker();
     if (this.db) {
       try {
         this.db.close();
@@ -404,6 +426,7 @@ class VaultEngine {
     }
 
     this.cachedPassword = null;
+    this.keySalt = null;
 
     if (this.dbKey) {
       zeroBuffer(this.dbKey);
@@ -411,6 +434,18 @@ class VaultEngine {
     }
 
     this.vaultPath = null;
+  }
+
+  /**
+   * Lock, but hand back a copy of the key and its salt so the same vault can be reopened
+   * without Argon2id (`unlock(path, password, held)`). The caller must zero `held.key`.
+   * Null when the key didn't come from a password and salt.
+   */
+  lockKeepingKey(): HeldKey | null {
+    const held =
+      this.dbKey && this.keySalt ? { key: Buffer.from(this.dbKey), salt: this.keySalt } : null;
+    this.lock();
+    return held;
   }
 
   // -----------------------------------------------------------------------
@@ -471,7 +506,13 @@ class VaultEngine {
   async inspectFile(dbPath: string, saltPath: string, password: string): Promise<VaultSyncInfo> {
     await initSodium();
     const salt = Buffer.from(await fs.readFile(saltPath, 'utf-8'), 'base64');
-    const key = deriveKey(password, salt);
+    // The usual pull brings the same salt back (it only changes with the password): the open
+    // vault's key is then the key, and Argon2id needn't run again (#5661).
+    const sameKey =
+      this.dbKey !== null &&
+      this.keySalt === salt.toString('base64') &&
+      this.cachedPassword === password;
+    const key = sameKey ? Buffer.from(this.dbKey!) : await deriveKey(password, salt);
     const hexKey = key.toString('hex');
     zeroBuffer(key);
     const db = await openDatabaseReadOnly(dbPath);
