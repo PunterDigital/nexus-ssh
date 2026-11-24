@@ -4,13 +4,14 @@
  * - Password auth with a fixed test user.
  * - A minimal line shell: echoes keystrokes, records each entered line in
  *   `commands`, answers `echo <text>` with `<text>`, and ends the session with
- *   exit status 0 on `exit` (like a real shell).
+ *   exit status 0 on `exit` (like a real shell). `flood <MB>` prints that much output and
+ *   `utf8split` sends multi-byte characters split across packets (#5663).
  * - An SFTP subsystem backed by a real directory (`root`), so tests can check
  *   transferred files byte for byte.
  * - Optional per-request delays so transfers are slow enough to pause.
  */
 
-import { Server, utils, type Connection, type SFTPWrapper } from 'ssh2';
+import { Server, utils, type Attributes, type Connection, type SFTPWrapper } from 'ssh2';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -120,6 +121,40 @@ export async function startTestServer(opts: TestServerOptions): Promise<TestServ
                   stream.end();
                   return;
                 }
+                // `flood <MB>`: that much numbered output, then "flood done" (#5663).
+                const flood = /^flood (\d+)$/.exec(line);
+                if (flood) {
+                  const target = Number(flood[1]) * 1024 * 1024;
+                  let sent = 0;
+                  let n = 0;
+                  stream.write('\r\n');
+                  while (sent < target) {
+                    let chunk = '';
+                    while (chunk.length < 32 * 1024) chunk += `flood line ${n++} ${'x'.repeat(60)}\r\n`;
+                    stream.write(chunk);
+                    sent += chunk.length;
+                  }
+                  stream.write(`flood done ${n}\r\n${PROMPT}`);
+                  line = '';
+                  continue;
+                }
+                // `utf8split`: a line whose multi-byte characters arrive split across packets.
+                if (line === 'utf8split') {
+                  const bytes = Buffer.from('split: café ✓ 🎉 end\r\n', 'utf8');
+                  const cut1 = bytes.indexOf(0xc3) + 1; // inside é
+                  const cut2 = bytes.indexOf(0xf0) + 2; // inside the emoji
+                  stream.write('\r\n');
+                  stream.write(bytes.subarray(0, cut1));
+                  setTimeout(() => {
+                    stream.write(bytes.subarray(cut1, cut2));
+                    setTimeout(() => {
+                      stream.write(bytes.subarray(cut2));
+                      stream.write(PROMPT);
+                    }, 50);
+                  }, 50);
+                  line = '';
+                  continue;
+                }
                 const out = line.startsWith('echo ') ? `${line.slice(5)}\r\n` : '';
                 stream.write(`\r\n${out}${PROMPT}`);
                 line = '';
@@ -170,7 +205,7 @@ function serveSftp(sftp: SFTPWrapper, opts: TestServerOptions): void {
   const root = path.resolve(opts.root);
   const handles = new Map<
     number,
-    { fd?: number; dir?: string; listed?: boolean; data?: Buffer }
+    { fd?: number; dir?: string; pending?: Array<{ filename: string; longname: string; attrs: Attributes }>; data?: Buffer }
   >();
   const virtual = opts.virtualFiles ?? {};
   /** The in-memory file at `p` ("/<name>"), if any. */
@@ -319,21 +354,25 @@ function serveSftp(sftp: SFTPWrapper, opts: TestServerOptions): void {
   sftp.on('READDIR', (reqid, h) => {
     const entry = handles.get(handleId(h));
     if (!entry?.dir) return sftp.status(reqid, STATUS_CODE.FAILURE);
-    if (entry.listed) return sftp.status(reqid, STATUS_CODE.EOF);
-    entry.listed = true;
     guard(reqid, () => {
-      const names = fs.readdirSync(entry.dir!).map((filename) => ({
-        filename,
-        longname: filename,
-        attrs: attrsOf(fs.statSync(path.join(entry.dir!, filename))),
-      }));
-      if (entry.dir === root) {
-        for (const [filename, data] of Object.entries(virtual)) {
-          names.push({ filename, longname: filename, attrs: virtualAttrs(data) });
+      if (!entry.pending) {
+        const names = fs.readdirSync(entry.dir!).map((filename) => ({
+          filename,
+          longname: filename,
+          attrs: attrsOf(fs.statSync(path.join(entry.dir!, filename))),
+        }));
+        if (entry.dir === root) {
+          for (const [filename, data] of Object.entries(virtual)) {
+            names.push({ filename, longname: filename, attrs: virtualAttrs(data) });
+          }
         }
+        entry.pending = names;
       }
-      if (names.length === 0) sftp.status(reqid, STATUS_CODE.EOF);
-      else sftp.name(reqid, names);
+      // At most 100 names per reply, as real servers do: one NAME packet with a 10,000-file
+      // folder (#5667) is larger than an SSH packet may be.
+      const batch = entry.pending.splice(0, 100);
+      if (batch.length === 0) sftp.status(reqid, STATUS_CODE.EOF);
+      else sftp.name(reqid, batch);
     });
   });
 

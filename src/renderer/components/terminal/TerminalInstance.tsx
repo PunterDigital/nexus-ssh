@@ -16,6 +16,7 @@ import {
   type TerminalPrefs,
 } from '../../lib/terminal-options';
 import { installCanvasFontFix } from '../../lib/canvas-font-fix';
+import { createResizeSender, type ResizeSender } from '../../lib/resize-sender';
 
 // ============================================================
 // TerminalInstance — wraps a single xterm.js Terminal
@@ -62,6 +63,8 @@ export const TerminalInstance: React.FC<TerminalInstanceProps> = ({
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
+  // One ssh:resize per 100 ms at most while the window is dragged (#5663).
+  const resizeSenderRef = useRef<ResizeSender | null>(null);
 
   // Apply terminal settings to the open terminal and refit: a new font size changes cols/rows.
   const applyPrefs = useCallback(
@@ -74,12 +77,12 @@ export const TerminalInstance: React.FC<TerminalInstanceProps> = ({
       }
       try {
         fitAddonRef.current?.fit();
-        if (terminal.cols > 0 && terminal.rows > 0) window.nexus.ssh.resize(sessionId, terminal.cols, terminal.rows);
+        resizeSenderRef.current?.flush(terminal.cols, terminal.rows);
       } catch {
         // hidden tab: it refits when it becomes active
       }
     },
-    [sessionId],
+    [],
   );
 
   const handleSettingChanged = useCallback(
@@ -148,6 +151,9 @@ export const TerminalInstance: React.FC<TerminalInstanceProps> = ({
 
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
+    resizeSenderRef.current = createResizeSender((cols, rows) =>
+      window.nexus.ssh.resize(sessionId, cols, rows),
+    );
 
     let disposed = false;
     window.nexus.settings
@@ -195,12 +201,11 @@ export const TerminalInstance: React.FC<TerminalInstanceProps> = ({
     // ResizeObserver for auto-fit
     const observer = new ResizeObserver(() => {
       if (!fitAddonRef.current) return;
+      // Hidden (another tab or view): nothing to fit to. It refits when it shows again.
+      if (container.offsetWidth === 0 || container.offsetHeight === 0) return;
       try {
         fitAddonRef.current.fit();
-        const { cols, rows } = terminal;
-        if (cols > 0 && rows > 0) {
-          window.nexus.ssh.resize(sessionId, cols, rows);
-        }
+        resizeSenderRef.current?.request(terminal.cols, terminal.rows);
       } catch {
         // ignore fit errors during transitions
       }
@@ -213,6 +218,8 @@ export const TerminalInstance: React.FC<TerminalInstanceProps> = ({
       container.removeEventListener('contextmenu', handleContextMenu);
       dataDisposable.dispose();
       observer.disconnect();
+      resizeSenderRef.current?.dispose();
+      resizeSenderRef.current = null;
       terminal.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
@@ -262,9 +269,7 @@ export const TerminalInstance: React.FC<TerminalInstanceProps> = ({
         try {
           fitAddonRef.current?.fit();
           const { cols, rows } = terminalRef.current!;
-          if (cols > 0 && rows > 0) {
-            window.nexus.ssh.resize(sessionId, cols, rows);
-          }
+          resizeSenderRef.current?.flush(cols, rows);
         } catch {
           // ignore
         }
