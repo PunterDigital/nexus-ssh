@@ -7,7 +7,7 @@ import http from 'http';
 import { promises as fsp, createReadStream } from 'fs';
 import path from 'path';
 import { registerAllHandlers } from './ipc/index';
-import { initSodium } from './kdf';
+import { initSodium, warmKdfWorker } from './kdf';
 import { vaultEngine } from './vault/index';
 import { sshManager } from './ssh/index';
 import { hostKeyPrompter } from './ssh/host-key';
@@ -187,6 +187,8 @@ app.whenReady().then(async () => {
 
   // Create the main window
   createWindow();
+  // Argon2id runs in a worker (#5661): start it now so the first unlock doesn't wait for it to start.
+  warmKdfWorker();
 
   // Wire singletons to the main window for IPC push events
   if (mainWindow) {

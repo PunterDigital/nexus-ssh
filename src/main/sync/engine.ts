@@ -8,7 +8,7 @@ import * as path from 'path';
 import type { BrowserWindow } from 'electron';
 import { IPC, VAULT_SALT_EXTENSION, VAULT_FILE_EXTENSION } from '@shared/constants';
 import type { BackendConfig, SyncBackendType } from '@shared/types';
-import type { SyncBackend, SyncStatus } from './types';
+import type { FileMetadata, SyncBackend, SyncStatus } from './types';
 import { SFTPSyncBackend } from './backends/sftp';
 import { FTPSyncBackend } from './backends/ftp';
 import { S3SyncBackend } from './backends/s3';
@@ -19,20 +19,63 @@ import { verifyAndSwap, type SyncVault } from './pull-check';
  * The vault engine as a pull/push needs it. Required lazily: the vault module loads the
  * native SQLCipher binding, which the sync unit tests don't need.
  */
-function engineVault(): SyncVault & { bumpGenerationIfOpen(dbPath: string): Promise<void> } {
+function engineVault(): EngineVault {
   const { vaultEngine } = require('../vault/index');
   const openAt = (dbPath: string) =>
     vaultEngine.isUnlocked() && vaultEngine.getVaultPath() === dbPath;
+  // The key of the vault the swap closed: reopening it (same salt) then needs no Argon2id (#5661).
+  let held: { key: Buffer; salt: string } | null = null;
+  const forget = () => {
+    held?.key.fill(0);
+    held = null;
+  };
   return {
     passwordFor: (dbPath) => (openAt(dbPath) ? vaultEngine.getCurrentPassword() : null),
     localInfo: () => vaultEngine.readSyncInfo(),
     inspect: (dbPath, saltPath, password) => vaultEngine.inspectFile(dbPath, saltPath, password),
-    lock: () => vaultEngine.lock(),
-    unlock: (dbPath, password) => vaultEngine.unlock(dbPath, password),
+    lock: () => {
+      forget();
+      held = vaultEngine.lockKeepingKey();
+    },
+    unlock: async (dbPath, password) => {
+      await vaultEngine.unlock(dbPath, password, held);
+      forget();
+    },
+    forget,
     bumpGenerationIfOpen: async (dbPath) => {
       if (openAt(dbPath)) await vaultEngine.bumpSyncGeneration();
     },
   };
+}
+
+/** A pull from a vault that has no master password (hardware-key passwordless, #5885). */
+export const NO_PASSWORD_PULL =
+  "This vault opens with a hardware key and has no master password, so a pull can't check " +
+  'the synced copy before it replaces this one. Push still works; to bring a vault to this ' +
+  'device, create a vault with a master password here and pull into that.';
+
+async function fileExists(file: string): Promise<boolean> {
+  try {
+    await fs.access(file);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+type EngineVault = SyncVault & {
+  bumpGenerationIfOpen(dbPath: string): Promise<void>;
+  /** Drop any key kept between lock() and unlock(). */
+  forget?(): void;
+};
+
+/** True when two listings describe the same remote file (size, mtime, and ETag when both have one). */
+export function sameRemoteFile(a: FileMetadata | null, b: FileMetadata | null): boolean {
+  if (!a || !b) return false;
+  if (a.size !== b.size) return false;
+  if (new Date(a.lastModified).getTime() !== new Date(b.lastModified).getTime()) return false;
+  if (a.etag && b.etag && a.etag !== b.etag) return false;
+  return true;
 }
 
 class SyncEngine {
@@ -46,8 +89,17 @@ class SyncEngine {
   };
   private mainWindow: BrowserWindow | null = null;
   private lastSyncHash: string | null = null;
+  /**
+   * The remote .db as listed right after the last push or pull. While a listing still matches
+   * it, the remote hasn't changed and an auto-sync tick downloads nothing (#5661).
+   */
+  private lastRemote: FileMetadata | null = null;
+  /** A remote .db that detectConflict downloaded and found changed: the next pull uses it. */
+  private prefetched: { path: string; hash: string; meta: FileMetadata } | null = null;
+  /** Remote .db downloads, counted for tests. */
+  downloads = 0;
   /** The vault, replaceable in tests. */
-  vault = engineVault;
+  vault: () => EngineVault = engineVault;
 
   /**
    * Set the main BrowserWindow so the engine can emit status updates to the renderer.
@@ -90,6 +142,8 @@ class SyncEngine {
     this.backend = this.createBackend(config.type);
     await this.backend.connect(config);
     this.lastSyncHash = null;
+    this.lastRemote = null;
+    await this.dropPrefetched();
   }
 
   /**
@@ -151,11 +205,16 @@ class SyncEngine {
       const remoteDbName = path.basename(dbPath);
       const remoteSaltName = path.basename(saltPath);
 
-      // Upload both files
+      // Upload the .db, and the .salt if the vault has one: a hardware-key (passwordless)
+      // vault has none, and every push used to fail on it with ENOENT (#5885).
       await this.backend.upload(dbPath, remoteDbName);
-      await this.backend.upload(saltPath, remoteSaltName);
+      if (await fileExists(saltPath)) {
+        await this.backend.upload(saltPath, remoteSaltName);
+      }
 
       this.lastSyncHash = pushedHash;
+      this.lastRemote = await this.backend.getRemoteMetadata(remoteDbName).catch(() => null);
+      await this.dropPrefetched();
       this.setStatusDone(null);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -196,6 +255,13 @@ class SyncEngine {
         return; // Nothing to pull
       }
 
+      // A pull checks the download with the vault's master password (#5611). Say so before
+      // downloading anything when there is none (#5885).
+      const vault = this.vault();
+      if (!vault.passwordFor(dbPath) && !(await fileExists(saltPath))) {
+        throw new Error(NO_PASSWORD_PULL);
+      }
+
       // Download to temp files first
       const dir = path.dirname(dbPath);
       const stamp = Date.now();
@@ -203,29 +269,46 @@ class SyncEngine {
       const tmpSalt = path.join(dir, `.sync_tmp_${stamp}${VAULT_SALT_EXTENSION}`);
 
       try {
-        await this.backend.download(remoteDbName, tmpDb);
-        await this.backend.download(remoteSaltName, tmpSalt);
+        // detectConflict may have just downloaded this very file: use it rather than fetch
+        // it a second time (#5661).
+        const prefetched = this.takePrefetched(remoteMeta);
+        let remoteHash: string;
+        if (prefetched) {
+          await fs.rename(prefetched.path, tmpDb);
+          remoteHash = prefetched.hash;
+        } else {
+          this.downloads++;
+          await this.backend.download(remoteDbName, tmpDb);
+          remoteHash = await this.calculateFileHash(tmpDb);
+        }
 
         // Skip if identical to what we already have
-        const remoteHash = await this.calculateFileHash(tmpDb);
         if (this.lastSyncHash && remoteHash === this.lastSyncHash) {
           await fs.unlink(tmpDb).catch(() => {});
-          await fs.unlink(tmpSalt).catch(() => {});
+          this.lastRemote = remoteMeta;
           this.setStatusDone(null);
           return;
+        }
+        // The synced copy's salt, if it has one (a copy without one won't open with the
+        // password, and the check below says so).
+        if (await this.backend.getRemoteMetadata(remoteSaltName)) {
+          await this.backend.download(remoteSaltName, tmpSalt);
         }
 
         // Never delete the local vault for a file nobody checked: it must open with this
         // vault's password, be this vault and not be older (#5611).
-        await verifyAndSwap(this.vault(), { dbPath, saltPath, tmpDb, tmpSalt });
+        await verifyAndSwap(vault, { dbPath, saltPath, tmpDb, tmpSalt });
 
         this.lastSyncHash = remoteHash;
+        this.lastRemote = remoteMeta;
         this.setStatusDone(null);
       } catch (err) {
         // Clean up temp files on error
         await fs.unlink(tmpDb).catch(() => {});
         await fs.unlink(tmpSalt).catch(() => {});
         throw err;
+      } finally {
+        vault.forget?.();
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -278,19 +361,32 @@ class SyncEngine {
 
     const localChanged = localHash !== this.lastSyncHash;
 
-    // For remote change detection, download to a temp file and hash
+    // The remote is unchanged while its listing matches the one from the last sync: no
+    // download (#5661). Otherwise download it once and hash it; if it did change, the pull
+    // that follows reuses this download.
     let remoteChanged = false;
-    const tmpPath = path.join(
-      path.dirname(dbPath),
-      `.sync_conflict_check_${Date.now()}${VAULT_FILE_EXTENSION}`
-    );
-
-    try {
-      await this.backend.download(remoteDbName, tmpPath);
-      const remoteHash = await this.calculateFileHash(tmpPath);
-      remoteChanged = remoteHash !== this.lastSyncHash;
-    } finally {
-      await fs.unlink(tmpPath).catch(() => {});
+    if (!sameRemoteFile(this.lastRemote, remoteMeta)) {
+      await this.dropPrefetched();
+      const tmpPath = path.join(
+        path.dirname(dbPath),
+        `.sync_conflict_check_${Date.now()}${VAULT_FILE_EXTENSION}`
+      );
+      let keep = false;
+      try {
+        this.downloads++;
+        await this.backend.download(remoteDbName, tmpPath);
+        const remoteHash = await this.calculateFileHash(tmpPath);
+        remoteChanged = remoteHash !== this.lastSyncHash;
+        if (!remoteChanged) {
+          // Same bytes under a new listing (re-uploaded, touched): remember the new listing.
+          this.lastRemote = remoteMeta;
+        } else if (!localChanged) {
+          this.prefetched = { path: tmpPath, hash: remoteHash, meta: remoteMeta };
+          keep = true;
+        }
+      } finally {
+        if (!keep) await fs.unlink(tmpPath).catch(() => {});
+      }
     }
 
     if (localChanged && remoteChanged) return 'conflict';
@@ -377,11 +473,28 @@ class SyncEngine {
     }
 
     this.lastSyncHash = null;
+    this.lastRemote = null;
+    await this.dropPrefetched();
     this.status = { syncing: false, lastSyncAt: null, lastError: null, direction: 'idle' };
     this.emitStatus();
   }
 
   // --- Private helpers ---
+
+  /** The prefetched download if it is still the file `meta` describes (and forget it). */
+  private takePrefetched(meta: FileMetadata): { path: string; hash: string } | null {
+    const p = this.prefetched;
+    this.prefetched = null;
+    if (p && sameRemoteFile(p.meta, meta)) return p;
+    if (p) void fs.unlink(p.path).catch(() => {});
+    return null;
+  }
+
+  private async dropPrefetched(): Promise<void> {
+    const p = this.prefetched;
+    this.prefetched = null;
+    if (p) await fs.unlink(p.path).catch(() => {});
+  }
 
   private lastDirection: 'push' | 'pull' | 'idle' = 'idle';
 

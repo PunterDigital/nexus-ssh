@@ -97,9 +97,13 @@ export async function verifyAndSwap(vault: SyncVault, files: PullFiles): Promise
   vault.lock();
   const bakDb = dbPath + '.bak';
   const bakSalt = saltPath + '.bak';
+  // Either side may have no .salt (a hardware-key vault has none, #5885): only what exists
+  // is backed up, swapped and restored.
+  const localSalt = await exists(saltPath);
+  const remoteSalt = await exists(tmpSalt);
   try {
     await fs.copyFile(dbPath, bakDb);
-    await fs.copyFile(saltPath, bakSalt);
+    if (localSalt) await fs.copyFile(saltPath, bakSalt);
   } catch (err) {
     await vault.unlock(dbPath, password);
     throw new Error(`Couldn't back up the local vault (${message(err)}). ${UNCHANGED}`);
@@ -107,17 +111,27 @@ export async function verifyAndSwap(vault: SyncVault, files: PullFiles): Promise
 
   try {
     // rename() replaces the target in one step; the old files stay in .bak.
-    await fs.rename(tmpSalt, saltPath);
+    if (remoteSalt) await fs.rename(tmpSalt, saltPath);
     await fs.rename(tmpDb, dbPath);
     await vault.unlock(dbPath, password);
   } catch (err) {
     await fs.copyFile(bakDb, dbPath);
-    await fs.copyFile(bakSalt, saltPath);
+    if (localSalt) await fs.copyFile(bakSalt, saltPath);
+    else await fs.rm(saltPath, { force: true });
     await vault.unlock(dbPath, password);
     throw new Error(
       `The synced vault couldn't be opened after the swap (${message(err)}). ` +
         'Your local vault was restored from its backup.'
     );
+  }
+}
+
+async function exists(file: string): Promise<boolean> {
+  try {
+    await fs.access(file);
+    return true;
+  } catch {
+    return false;
   }
 }
 

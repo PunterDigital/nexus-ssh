@@ -69,6 +69,13 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   (`app_meta.sync_generation`, which every push bumps before uploading). Then the local files are
   copied to `.bak`, the download is renamed over them, and the `.bak` goes back if it won't open.
   A pull needs the vault unlocked with a password (hardware-key-only vaults can't pull, as before).
+  The `.salt` is optional everywhere in sync (#5885): a hardware-key passwordless vault
+  (`createWithKey`) has none, so push uploads it only if it exists, a pull from such a vault
+  stops before downloading with `NO_PASSWORD_PULL` (plain words, no path), the remote salt is
+  downloaded only if listed, and `verifyAndSwap` backs up / swaps / restores only the salts that
+  exist. A stale remote `.salt` from an earlier push is never pulled into a salt-less vault.
+  `tests/e2e/sync-saltless-vault.spec.ts` pushes a passwordless vault over FTP and SFTP (the page
+  answers the host-key prompt with `respondHostKey`, since the lock screen has no prompt host).
   Vault rename/delete (`vault/manage.ts`) move/trash the `.db.bak` / `.db.salt.bak` too.
 - FTP sync: `BackendConfig.ftpTls` = explicit FTPS, certificate checked by Node's TLS (a
   self-signed one is refused). A newly chosen FTP backend starts with it on; configs saved before
@@ -235,6 +242,18 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   into a folder instead of the real Recycle Bin. Sync settings live inside the `.db`.
 - Vault = SQLCipher DB + `.salt` file under `userData/vaults`. Keys: Argon2id (libsodium) →
   XSalsa20-Poly1305 key wrapping (`src/main/kdf`). Optional PIN and hardware-key (WebAuthn PRF) unlock.
+  Argon2id runs in a `worker_threads` Worker (#5661, `kdf/kdf-worker.ts`, a second esbuild entry
+  → `dist/main/kdf/kdf-worker.js`; vitest runs the `.ts` source, so the worker uses only `require`
+  and no import/export): `deriveKey`/`derivePinKey` are async, byte-identical to libsodium's
+  `crypto_pwhash` (fixed vector in `kdf.test.ts`). Electron's Node has no `crypto.argon2`
+  (BoringSSL: `ERR_CRYPTO_ARGON2_NOT_SUPPORTED`). The worker stops after 15 s idle (it holds the
+  256 MiB buffer). The vault remembers the salt its key came from (`keySalt`): `inspectFile` of a
+  pulled copy with the same salt and the swap's reopen (`lockKeepingKey` → `unlock(…, held)`)
+  reuse the key instead of deriving again.
+  Sync ticks (#5661): the engine keeps the remote `.db` listing from the last push/pull
+  (`lastRemote`; size + mtime, ETag when both have one, `sameRemoteFile`) and only downloads when
+  it differs; a changed remote downloaded by `detectConflict` is reused by the pull
+  (`prefetched`). `syncEngine.downloads` counts `.db` downloads for tests.
 
 ## Testing
 
