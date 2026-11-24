@@ -9,6 +9,7 @@ import {
   sanitizeVaultFilename,
   type VaultFileContext,
 } from '../../src/main/vault/manage';
+import { recordFileNames } from '../../src/main/hardware-key/record-names';
 
 // Vault rename / delete from the vault picker (#2646), against a temp profile.
 let root: string;
@@ -19,13 +20,20 @@ const vaultDir = () => path.join(root, 'vaults');
 const hwDir = () => path.join(root, 'hwkey-store');
 const pinDir = () => path.join(root, 'pin-store');
 const trashDir = () => path.join(root, 'trash');
+/** The path-named hardware-key record of a vault called `name` in the vaults folder (#5902). */
+const hw = (name: string) => recordFileNames(path.join(vaultDir(), `${name}.db`))[0];
 
 /** A vault with a salt and, optionally, hardware-key / PIN unlock data. */
-function makeVault(name: string, opts: { hwkey?: boolean; pin?: boolean; salt?: boolean } = {}): string {
+function makeVault(
+  name: string,
+  opts: { hwkey?: boolean; legacyHwkey?: boolean; pin?: boolean; salt?: boolean } = {},
+): string {
   const db = path.join(vaultDir(), `${name}.db`);
   writeFileSync(db, `db:${name}`);
   if (opts.salt !== false) writeFileSync(`${db}.salt`, `salt:${name}`);
-  if (opts.hwkey) writeFileSync(path.join(hwDir(), `${name}.hwkey`), `hw:${name}`);
+  if (opts.hwkey) writeFileSync(path.join(hwDir(), hw(name)), `hw:${name}`);
+  // The record v0.6.0 and earlier wrote, named after the file only.
+  if (opts.legacyHwkey) writeFileSync(path.join(hwDir(), `${name}.hwkey`), `old:${name}`);
   if (opts.pin) writeFileSync(path.join(pinDir(), `${name}.pin`), `pin:${name}`);
   return db;
 }
@@ -37,8 +45,17 @@ beforeEach(() => {
   ctx = {
     vaultDir: vaultDir(),
     sideStores: [
-      { dir: hwDir(), ext: '.hwkey' },
-      { dir: pinDir(), ext: '.pin' },
+      {
+        dir: hwDir(),
+        fileNames: (vaultPath: string) => {
+          const [own, legacy] = recordFileNames(vaultPath);
+          return [
+            { name: own, trashStale: true },
+            { name: legacy, trashStale: false },
+          ];
+        },
+      },
+      { dir: pinDir(), fileNames: (vaultPath: string) => [{ name: `${path.basename(vaultPath, '.db')}.pin`, trashStale: true }] },
     ],
     openVaultPath: null,
     trash: vi.fn(async (file: string) => {
@@ -79,10 +96,10 @@ describe('deleteVault', () => {
 
     await deleteVault(work, ctx);
 
-    expect(trashed.map((f) => path.basename(f))).toEqual(['Work.db', 'Work.db.salt', 'Work.hwkey', 'Work.pin']);
+    expect(trashed.map((f) => path.basename(f))).toEqual(['Work.db', 'Work.db.salt', hw('Work'), 'Work.pin']);
     expect(trashed[0]).toBe(path.resolve(work));
     expect(readdirSync(vaultDir()).sort()).toEqual(['Home.db', 'Home.db.salt']);
-    expect(readdirSync(hwDir())).toEqual(['Home.hwkey']);
+    expect(readdirSync(hwDir())).toEqual([hw('Home')]);
     expect(readdirSync(pinDir())).toEqual([]);
     // Recoverable: the files are in the trash, not gone.
     expect(readdirSync(trashDir())).toHaveLength(4);
@@ -115,10 +132,19 @@ describe('deleteVault', () => {
     expect(readFileSync(`${next}.bak`, 'utf8')).toBe('old db');
   });
 
+  it('trashes both hardware-key record names (#5902) and not other folders\' records', async () => {
+    const db = makeVault('Work', { hwkey: true, legacyHwkey: true });
+    const elsewhere = recordFileNames(path.join(root, 'other folder', 'Work.db'))[0];
+    writeFileSync(path.join(hwDir(), elsewhere), 'hw:Work elsewhere');
+    await deleteVault(db, ctx);
+    expect(trashed.map((f) => path.basename(f))).toEqual(['Work.db', 'Work.db.salt', hw('Work'), 'Work.hwkey']);
+    expect(readdirSync(hwDir())).toEqual([elsewhere]);
+  });
+
   it('deletes a passwordless (hardware-key only) vault, which has no salt', async () => {
     const db = makeVault('Keyless', { salt: false, hwkey: true });
     await deleteVault(db, ctx);
-    expect(trashed.map((f) => path.basename(f))).toEqual(['Keyless.db', 'Keyless.hwkey']);
+    expect(trashed.map((f) => path.basename(f))).toEqual(['Keyless.db', hw('Keyless')]);
   });
 
   it('refuses the open vault', async () => {
@@ -136,7 +162,7 @@ describe('deleteVault', () => {
     });
     await expect(deleteVault(db, ctx)).rejects.toThrow('Recycle Bin unavailable');
     expect(ctx.trash).toHaveBeenCalledTimes(1);
-    expect(existsSync(path.join(hwDir(), 'Work.hwkey'))).toBe(true);
+    expect(existsSync(path.join(hwDir(), hw('Work')))).toBe(true);
   });
 });
 
@@ -150,7 +176,7 @@ describe('renameVault', () => {
     expect(readdirSync(vaultDir()).sort()).toEqual(['Client Work.db', 'Client Work.db.salt']);
     expect(readFileSync(next, 'utf8')).toBe('db:Work');
     expect(readFileSync(`${next}.salt`, 'utf8')).toBe('salt:Work');
-    expect(readFileSync(path.join(hwDir(), 'Client Work.hwkey'), 'utf8')).toBe('hw:Work');
+    expect(readFileSync(path.join(hwDir(), hw('Client Work')), 'utf8')).toBe('hw:Work');
     expect(readFileSync(path.join(pinDir(), 'Client Work.pin'), 'utf8')).toBe('pin:Work');
     expect(trashed).toEqual([]);
   });
@@ -178,20 +204,47 @@ describe('renameVault', () => {
 
   it('throws away unlock data left behind for the new name, so it cannot attach to this vault', async () => {
     const db = makeVault('Work');
-    writeFileSync(path.join(hwDir(), 'Old.hwkey'), 'stale');
+    writeFileSync(path.join(hwDir(), hw('Old')), 'stale');
     await renameVault(db, 'Old', ctx);
-    expect(trashed.map((f) => path.basename(f))).toEqual(['Old.hwkey']);
-    expect(existsSync(path.join(hwDir(), 'Old.hwkey'))).toBe(false);
+    expect(trashed.map((f) => path.basename(f))).toEqual([hw('Old')]);
+    expect(existsSync(path.join(hwDir(), hw('Old')))).toBe(false);
   });
 
   it('puts already-moved files back when a later rename fails', async () => {
     const db = makeVault('Work', { hwkey: true });
     // A directory where the renamed .hwkey should go makes that step fail.
-    mkdirSync(path.join(hwDir(), 'New.hwkey'));
-    writeFileSync(path.join(hwDir(), 'New.hwkey', 'keep'), 'x');
+    mkdirSync(path.join(hwDir(), hw('New')));
+    writeFileSync(path.join(hwDir(), hw('New'), 'keep'), 'x');
     await expect(renameVault(db, 'New', ctx)).rejects.toThrow();
     expect(readdirSync(vaultDir()).sort()).toEqual(['Work.db', 'Work.db.salt']);
-    expect(existsSync(path.join(hwDir(), 'Work.hwkey'))).toBe(true);
+    expect(existsSync(path.join(hwDir(), hw('Work')))).toBe(true);
+  });
+
+  // #5902: hardware-key records named by vault path, and the file-name ones v0.6.0 wrote.
+  it('moves the old file-name hardware-key record along with the path-named one', async () => {
+    const db = makeVault('Work', { hwkey: true, legacyHwkey: true });
+    await renameVault(db, 'Office', ctx);
+    expect(readdirSync(hwDir()).sort()).toEqual([hw('Office'), 'Office.hwkey'].sort());
+    expect(readFileSync(path.join(hwDir(), 'Office.hwkey'), 'utf8')).toBe('old:Work');
+    expect(trashed).toEqual([]);
+  });
+
+  it('never overwrites or trashes a file-name record another vault may still use', async () => {
+    // Office.hwkey: an un-migrated record of a vault called Office in some other folder.
+    const db = makeVault('Work', { legacyHwkey: true });
+    writeFileSync(path.join(hwDir(), 'Office.hwkey'), 'old:Office elsewhere');
+    await renameVault(db, 'Office', ctx);
+    expect(readFileSync(path.join(hwDir(), 'Office.hwkey'), 'utf8')).toBe('old:Office elsewhere');
+    expect(readFileSync(path.join(hwDir(), 'Work.hwkey'), 'utf8')).toBe('old:Work');
+    expect(trashed).toEqual([]);
+  });
+
+  it('leaves path-named records of same-named vaults in other folders alone', async () => {
+    const db = makeVault('Work', { hwkey: true });
+    const elsewhere = recordFileNames(path.join(root, 'other folder', 'Work.db'))[0];
+    writeFileSync(path.join(hwDir(), elsewhere), 'hw:Work elsewhere');
+    await renameVault(db, 'Office', ctx);
+    expect(readdirSync(hwDir()).sort()).toEqual([elsewhere, hw('Office')].sort());
   });
 });
 

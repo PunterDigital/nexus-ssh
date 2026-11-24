@@ -13,7 +13,10 @@
 // Storage layout per vault, encrypted with safeStorage's async API
 // (#4377: the sync calls are deprecated in Electron 45 and removed in 46;
 // decryptStringAsync also reads files written by the old encryptString):
-//   ${userData}/hwkey-store/${vaultId}.hwkey
+//   ${userData}/hwkey-store/${recordId}.hwkey
+// where recordId is `<vault file name>.<hash of its folder>` since #5902
+// (v0.6.0 and earlier: the file name only; see record-names.ts for the
+// lookup order and the migrate-on-unlock).
 // ============================================================
 
 import { safeStorage, app } from 'electron';
@@ -21,6 +24,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 const sodium = require('libsodium-wrappers-sumo');
 import * as kdf from '../kdf';
+import { HWKEY_EXTENSION, legacyRecordId, recordCandidates, recordId } from './record-names';
 
 export interface HardwareKeyCredentialInfo {
   /** Base64url-encoded WebAuthn credential ID. */
@@ -46,7 +50,7 @@ export function getStoreDir(): string {
 }
 
 function getFilePath(vaultId: string): string {
-  return path.join(getStoreDir(), `${vaultId}.hwkey`);
+  return path.join(getStoreDir(), `${vaultId}${HWKEY_EXTENSION}`);
 }
 
 function ensureDir(): void {
@@ -227,6 +231,68 @@ class HardwareKeyManager {
 
   clear(vaultId: string): void {
     deleteEncrypted(vaultId);
+  }
+
+  // ── Records by vault path (#5902) ─────────────────────────────
+  // The IPC handlers work with vault paths; record-names.ts decides which file belongs to one.
+
+  /** The record id new hardware-key data for this vault is written under. */
+  ownRecordId(vaultPath: string): string {
+    return recordId(vaultPath);
+  }
+
+  /**
+   * The record that unlocks this vault: its own path-named one, else the v0.6.0 file-name one,
+   * else the only path-named one for this file name in another folder. Null when there is none.
+   */
+  async findRecord(vaultPath: string): Promise<string | null> {
+    let files: string[];
+    try {
+      files = await fs.promises.readdir(getStoreDir());
+    } catch {
+      return null;
+    }
+    return recordCandidates(vaultPath, files)[0] ?? null;
+  }
+
+  /**
+   * Called after record `usedId` has unlocked the vault at `vaultPath`.
+   * - A record found under another name is copied to the vault's own name. The original stays,
+   *   so a failed or interrupted copy loses nothing.
+   * - Once the vault's own record has unlocked it, the old file-name record is deleted if it
+   *   holds the same data (it was the source of that copy). One with different data may belong
+   *   to another vault of the same name, so it stays. Records from other folders always stay:
+   *   they may belong to a copy of this vault there.
+   * Never throws: the vault is already open, and the old record still works next time.
+   */
+  async settleAfterUnlock(vaultPath: string, usedId: string): Promise<void> {
+    const own = recordId(vaultPath);
+    try {
+      if (usedId !== own) {
+        ensureDir();
+        await writeAtomic(getFilePath(own), await fs.promises.readFile(getFilePath(usedId)));
+        return;
+      }
+      const legacy = legacyRecordId(vaultPath);
+      if (legacy === own || !fs.existsSync(getFilePath(legacy))) return;
+      const [ownData, legacyData] = await Promise.all([loadEncrypted(own), loadEncrypted(legacy)]);
+      if (ownData !== null && ownData === legacyData) deleteEncrypted(legacy);
+    } catch {
+      /* best effort: try again on the next unlock */
+    }
+  }
+
+  /**
+   * Remove the hardware key from a vault: the record `findRecord` returns, plus the old
+   * file-name record when it holds the same data.
+   */
+  async removeForVault(vaultPath: string, foundId: string): Promise<void> {
+    const legacy = legacyRecordId(vaultPath);
+    if (foundId !== legacy && fs.existsSync(getFilePath(legacy))) {
+      const [found, old] = await Promise.all([loadEncrypted(foundId), loadEncrypted(legacy)]);
+      if (found !== null && found === old) deleteEncrypted(legacy);
+    }
+    deleteEncrypted(foundId);
   }
 }
 

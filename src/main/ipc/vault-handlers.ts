@@ -14,6 +14,7 @@ import { sshManager } from '../ssh';
 import { sftpManager } from '../sftp';
 import { securityManager } from '../security';
 import { getStoreDir as hardwareKeyStoreDir } from '../hardware-key/index';
+import { recordFileNames as hardwareKeyRecordFileNames } from '../hardware-key/record-names';
 import { pinStore } from '../vault/pin-unlock';
 import {
   deleteVault,
@@ -64,7 +65,20 @@ async function trash(file: string): Promise<void> {
 async function vaultFileContext(): Promise<VaultFileContext> {
   return {
     vaultDir: await getDefaultVaultDir(),
-    sideStores: [{ dir: hardwareKeyStoreDir(), ext: '.hwkey' }],
+    // Hardware-key records (#5902): the vault's own path-named record, and the file-name record
+    // v0.6.0 wrote, which a same-named vault in another folder may share.
+    sideStores: [
+      {
+        dir: hardwareKeyStoreDir(),
+        fileNames: (vaultPath) => {
+          const [own, legacy] = hardwareKeyRecordFileNames(vaultPath);
+          return [
+            { name: own, trashStale: true },
+            { name: legacy, trashStale: false },
+          ];
+        },
+      },
+    ],
     openVaultPath: vaultEngine.isUnlocked() ? vaultEngine.getVaultPath() : null,
     trash,
   };
