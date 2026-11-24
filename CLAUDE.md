@@ -80,6 +80,13 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   (`app_meta.sync_generation`, which every push bumps before uploading). Then the local files are
   copied to `.bak`, the download is renamed over them, and the `.bak` goes back if it won't open.
   A pull needs the vault unlocked with a password (hardware-key-only vaults can't pull, as before).
+  The `.salt` is optional everywhere in sync (#5885): a hardware-key passwordless vault
+  (`createWithKey`) has none, so push uploads it only if it exists, a pull from such a vault
+  stops before downloading with `NO_PASSWORD_PULL` (plain words, no path), the remote salt is
+  downloaded only if listed, and `verifyAndSwap` backs up / swaps / restores only the salts that
+  exist. A stale remote `.salt` from an earlier push is never pulled into a salt-less vault.
+  `tests/e2e/sync-saltless-vault.spec.ts` pushes a passwordless vault over FTP and SFTP (the page
+  answers the host-key prompt with `respondHostKey`, since the lock screen has no prompt host).
   Vault rename/delete (`vault/manage.ts`) move/trash the `.db.bak` / `.db.salt.bak` too.
 - FTP sync: `BackendConfig.ftpTls` = explicit FTPS, certificate checked by Node's TLS (a
   self-signed one is refused). A newly chosen FTP backend starts with it on; configs saved before
