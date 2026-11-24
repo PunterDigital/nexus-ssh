@@ -48,6 +48,21 @@ function engineVault(): EngineVault {
   };
 }
 
+/** A pull from a vault that has no master password (hardware-key passwordless, #5885). */
+export const NO_PASSWORD_PULL =
+  "This vault opens with a hardware key and has no master password, so a pull can't check " +
+  'the synced copy before it replaces this one. Push still works; to bring a vault to this ' +
+  'device, create a vault with a master password here and pull into that.';
+
+async function fileExists(file: string): Promise<boolean> {
+  try {
+    await fs.access(file);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 type EngineVault = SyncVault & {
   bumpGenerationIfOpen(dbPath: string): Promise<void>;
   /** Drop any key kept between lock() and unlock(). */
@@ -190,9 +205,12 @@ class SyncEngine {
       const remoteDbName = path.basename(dbPath);
       const remoteSaltName = path.basename(saltPath);
 
-      // Upload both files
+      // Upload the .db, and the .salt if the vault has one: a hardware-key (passwordless)
+      // vault has none, and every push used to fail on it with ENOENT (#5885).
       await this.backend.upload(dbPath, remoteDbName);
-      await this.backend.upload(saltPath, remoteSaltName);
+      if (await fileExists(saltPath)) {
+        await this.backend.upload(saltPath, remoteSaltName);
+      }
 
       this.lastSyncHash = pushedHash;
       this.lastRemote = await this.backend.getRemoteMetadata(remoteDbName).catch(() => null);
@@ -237,13 +255,19 @@ class SyncEngine {
         return; // Nothing to pull
       }
 
+      // A pull checks the download with the vault's master password (#5611). Say so before
+      // downloading anything when there is none (#5885).
+      const vault = this.vault();
+      if (!vault.passwordFor(dbPath) && !(await fileExists(saltPath))) {
+        throw new Error(NO_PASSWORD_PULL);
+      }
+
       // Download to temp files first
       const dir = path.dirname(dbPath);
       const stamp = Date.now();
       const tmpDb = path.join(dir, `.sync_tmp_${stamp}${VAULT_FILE_EXTENSION}`);
       const tmpSalt = path.join(dir, `.sync_tmp_${stamp}${VAULT_SALT_EXTENSION}`);
 
-      const vault = this.vault();
       try {
         // detectConflict may have just downloaded this very file: use it rather than fetch
         // it a second time (#5661).
@@ -265,7 +289,11 @@ class SyncEngine {
           this.setStatusDone(null);
           return;
         }
-        await this.backend.download(remoteSaltName, tmpSalt);
+        // The synced copy's salt, if it has one (a copy without one won't open with the
+        // password, and the check below says so).
+        if (await this.backend.getRemoteMetadata(remoteSaltName)) {
+          await this.backend.download(remoteSaltName, tmpSalt);
+        }
 
         // Never delete the local vault for a file nobody checked: it must open with this
         // vault's password, be this vault and not be older (#5611).
