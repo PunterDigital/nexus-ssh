@@ -15,6 +15,7 @@ import { sftpManager } from './sftp/index';
 import { syncEngine } from './sync/engine';
 import { securityManager } from './security';
 import { getCSPHeader } from './security/csp';
+import { isInsideRoot, isPermissionAllowed } from './security/paths';
 import { setUpdaterWindow, startUpdateChecks } from './updater/index';
 
 // Start-up marks (#5665), printed for test profiles: main start → app ready → ready-to-show.
@@ -81,7 +82,7 @@ async function startRendererServer(): Promise<string> {
         url.pathname === '/' ? '/index.html' : url.pathname,
       );
       const filePath = path.normalize(path.join(rendererRoot, requestedPath));
-      if (!filePath.startsWith(rendererRoot)) {
+      if (!isInsideRoot(rendererRoot, filePath)) {
         res.writeHead(403).end('Forbidden');
         return;
       }
@@ -144,6 +145,14 @@ function createWindow(): void {
       },
     });
   });
+
+  // Permissions (#5612): the renderer gets only the clipboard (terminal copy/paste).
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+    callback(isPermissionAllowed(permission));
+  });
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) =>
+    isPermissionAllowed(permission),
+  );
 
   // Prevent new window creation
   mainWindow.webContents.setWindowOpenHandler(() => {
@@ -236,7 +245,16 @@ app.on('activate', () => {
 });
 
 // Cleanup on quit — destroy vault, SSH sessions, SFTP, sync, and security
-app.on('before-quit', async () => {
+let copiedSecretCleared = false;
+app.on('before-quit', async (event) => {
+  // A secret we copied doesn't outlive the app (#5612). The clipboard calls are async, so the
+  // first quit waits for the clear and then quits again.
+  if (!copiedSecretCleared && securityManager.hasCopiedSecret()) {
+    copiedSecretCleared = true;
+    event.preventDefault();
+    void securityManager.clearCopiedSecretNow().finally(() => app.quit());
+    return;
+  }
   securityManager.destroy();
   syncEngine.stopAutoSync();
   try {

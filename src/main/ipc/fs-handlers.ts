@@ -9,6 +9,7 @@ import { promises as fs } from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { IPC, VAULT_DEFAULT_DIR_NAME } from '../../shared/constants';
+import { rememberPickedFiles } from '../fs/picked-files';
 import { listDrives, listLocalDir } from '../fs/local-list';
 
 /**
@@ -141,6 +142,8 @@ export function registerFsHandlers(): void {
         const result = win
           ? await dialog.showOpenDialog(win, dialogOpts)
           : await dialog.showOpenDialog(dialogOpts);
+        // A key import only accepts a path picked here (#5612)
+        if (!result.canceled) rememberPickedFiles(result.filePaths);
         return ok({ filePaths: result.filePaths, canceled: result.canceled });
       } catch (err: unknown) {
         return fail(err instanceof Error ? err.message : String(err));

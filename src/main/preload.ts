@@ -116,7 +116,6 @@ const nexusAPI = {
     create: (data: unknown) => call('hosts:create', data),
     update: (id: string, data: unknown) => call('hosts:update', id, data),
     delete: (id: string) => call('hosts:delete', id),
-    resolveCredentials: (hostId: string) => call('hosts:resolve-credentials', hostId),
   },
   identities: {
     list: (vaultId: string) => call('identities:list', vaultId),

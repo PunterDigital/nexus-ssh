@@ -95,7 +95,6 @@ export const IPC = {
   HOSTS_UPDATE: 'hosts:update',
   HOSTS_DELETE: 'hosts:delete',
   HOSTS_GET: 'hosts:get',
-  HOSTS_RESOLVE_CREDENTIALS: 'hosts:resolve-credentials',
 
   // Identities
   IDENTITIES_LIST: 'identities:list',

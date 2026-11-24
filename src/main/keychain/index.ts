@@ -10,9 +10,69 @@ import * as path from 'path';
 import * as os from 'os';
 import * as crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
+import { utils as sshUtils } from 'ssh2';
 import type { SSHKey, KeyGenerateOptions, KeyType } from '@shared/types';
 
 const execFileAsync = promisify(execFile);
+
+/**
+ * The absolute path of a key tool (#5612): a bare name is looked up on PATH, where anything
+ * earlier on it would run instead. Only the usual install folders are tried; null if absent.
+ */
+export async function findKeyTool(name: 'ssh-keygen' | 'puttygen'): Promise<string | null> {
+  const candidates =
+    process.platform === 'win32'
+      ? [
+          path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'OpenSSH', `${name}.exe`),
+          path.join(process.env.ProgramFiles ?? 'C:\\Program Files', 'PuTTY', `${name}.exe`),
+          path.join(process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)', 'PuTTY', `${name}.exe`),
+        ]
+      : ['/usr/bin', '/usr/local/bin', '/opt/homebrew/bin'].map((dir) => path.join(dir, name));
+  for (const candidate of candidates) {
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch {
+      // not here
+    }
+  }
+  return null;
+}
+
+/** "type base64 [comment]" for a parsed ssh2 key. */
+function publicLine(key: { type: string; comment?: string; getPublicSSH(): Buffer }): string {
+  const line = `${key.type} ${key.getPublicSSH().toString('base64')}`;
+  return key.comment ? `${line} ${key.comment}` : line;
+}
+
+/**
+ * A new key pair from ssh2 (OpenSSH format; with a passphrase, aes256-ctr + bcrypt, 16 rounds,
+ * as ssh-keygen does). Replaces ssh-keygen, which took the passphrase on its command line,
+ * where any local process can read it (#5612).
+ */
+export async function generateKeyPairPem(
+  keyType: KeyType,
+  bits: number | undefined,
+  passphrase: string | undefined,
+  comment: string,
+): Promise<{ privateKey: string; publicKey: string }> {
+  const opts: Record<string, unknown> = { comment };
+  if (keyType === 'rsa') opts.bits = bits || 4096;
+  else if (keyType === 'ecdsa') opts.bits = bits || 256;
+  if (passphrase) Object.assign(opts, { passphrase, cipher: 'aes256-ctr', rounds: 16 });
+  // ssh2 1.17 drops leading zero bytes of an ed25519 public key, so 1 key in 256 comes out
+  // unparseable (#5417): draw again until it parses and the public key is full size.
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const pair = await new Promise<{ private: string; public: string }>((resolve, reject) =>
+      sshUtils.generateKeyPair(keyType as never, opts as never, (err, kp) => (err ? reject(err) : resolve(kp))),
+    );
+    const parsed = sshUtils.parseKey(pair.private, passphrase || undefined);
+    if (parsed instanceof Error || Array.isArray(parsed)) continue;
+    if (keyType === 'ed25519' && parsed.getPublicSSH().length !== 51) continue;
+    return { privateKey: pair.private, publicKey: publicLine(parsed) };
+  }
+  throw new Error('Could not generate a valid key, please try again.');
+}
 
 class KeychainManager {
   /**
@@ -20,29 +80,13 @@ class KeychainManager {
    */
   async generateKey(options: KeyGenerateOptions, vaultId: string): Promise<SSHKey> {
     const { keyType, bits, passphrase, comment, name } = options;
-    const tempDir = await this.createTempDir();
-
-    try {
-      const keyPath = path.join(tempDir, 'id_key');
-
-      const args: string[] = [
-        '-t', keyType,
-        '-f', keyPath,
-        '-N', passphrase || '',
-        '-C', comment || '',
-      ];
-
-      // Add bits flag for RSA and ECDSA (ed25519 doesn't use -b)
-      if (keyType === 'rsa') {
-        args.push('-b', String(bits || 4096));
-      } else if (keyType === 'ecdsa') {
-        args.push('-b', String(bits || 256));
-      }
-
-      await execFileAsync('ssh-keygen', args);
-
-      const privateKey = await fs.readFile(keyPath, 'utf-8');
-      const publicKey = await fs.readFile(`${keyPath}.pub`, 'utf-8');
+    {
+      const { privateKey, publicKey } = await generateKeyPairPem(
+        keyType,
+        bits,
+        passphrase || undefined,
+        comment || '',
+      );
 
       const fingerprint = this.calculateFingerprint(publicKey.trim());
 
@@ -64,8 +108,6 @@ class KeychainManager {
       };
 
       return sshKey;
-    } finally {
-      await this.secureCleanup(tempDir);
     }
   }
 
@@ -207,7 +249,9 @@ class KeychainManager {
           // but the common approach is to set it via --old-passphrase
           // We try the simpler approach first
         }
-        await execFileAsync('puttygen', puttygenArgs);
+        const puttygen = await findKeyTool('puttygen');
+        if (!puttygen) throw new Error('puttygen not found');
+        await execFileAsync(puttygen, puttygenArgs);
 
         const privateKey = await fs.readFile(opensshPath, 'utf-8');
         const publicKey = await this.derivePublicKey(privateKey, passphrase);
@@ -220,7 +264,9 @@ class KeychainManager {
       // Fallback: try ssh-keygen -i for RFC4716 conversion
       // This works for some PPK exports
       try {
-        const { stdout: privateKey } = await execFileAsync('ssh-keygen', [
+        const sshKeygen = await findKeyTool('ssh-keygen');
+        if (!sshKeygen) throw new Error('ssh-keygen not found');
+        const { stdout: privateKey } = await execFileAsync(sshKeygen, [
           '-i', '-f', ppkPath, '-m', 'PEM',
         ]);
 
@@ -245,18 +291,24 @@ class KeychainManager {
    * Derive a public key from a private key using ssh-keygen -y.
    */
   private async derivePublicKey(privateKey: string, passphrase?: string): Promise<string> {
-    const tempDir = await this.createTempDir();
+    // ssh2 reads OpenSSH, PEM (RSA/EC/DSA) and PPK keys in-process, encrypted ones included,
+    // so the passphrase never goes on a command line (#5612).
+    const parsed = sshUtils.parseKey(privateKey, passphrase || undefined);
+    if (!(parsed instanceof Error)) {
+      return publicLine(Array.isArray(parsed) ? parsed[0] : parsed);
+    }
+    if (passphrase || /passphrase|encrypted/i.test(parsed.message)) {
+      throw new Error(`Couldn't read the key: ${parsed.message}`);
+    }
 
+    // An unencrypted format ssh2 doesn't know (PKCS#8, …): ssh-keygen, without a passphrase.
+    const sshKeygen = await findKeyTool('ssh-keygen');
+    if (!sshKeygen) throw new Error(`Couldn't read the key: ${parsed.message}`);
+    const tempDir = await this.createTempDir();
     try {
       const keyPath = path.join(tempDir, 'tmpkey');
       await fs.writeFile(keyPath, privateKey, { mode: 0o600 });
-
-      const args = ['-y', '-f', keyPath];
-      if (passphrase) {
-        args.push('-P', passphrase);
-      }
-
-      const { stdout } = await execFileAsync('ssh-keygen', args);
+      const { stdout } = await execFileAsync(sshKeygen, ['-y', '-f', keyPath]);
       return stdout.trim();
     } finally {
       await this.secureCleanup(tempDir);
