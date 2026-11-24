@@ -9,6 +9,7 @@ import type { BrowserWindow} from 'electron';
 import { IPC, DEFAULT_KEEPALIVE_INTERVAL } from '../../shared/constants';
 import type { ResolvedCredentials, SSHSession } from '../../shared/types';
 import { createHostVerifier } from './host-key';
+import { keyboardInteractiveAnswers } from './keyboard-interactive';
 import { StringDecoder } from 'string_decoder';
 import { classifyClose, closeMarker, RECONNECTED_MARKER } from './session-close';
 import { Scrollback } from './scrollback';
@@ -247,16 +248,9 @@ class SSHManager {
       // We wire up keyboard-interactive to relay prompts to the renderer.
       connectConfig.tryKeyboard = true;
       client.on('keyboard-interactive', (_name, _instructions, _lang, prompts, finish) => {
-        // For most servers the prompt is just the password prompt.
-        // If we already have a password, respond with it automatically.
-        if (credentials.password && prompts.length > 0) {
-          const responses = prompts.map(() => credentials.password as string);
-          finish(responses);
-        } else {
-          // No password available — send empty responses so ssh2 can continue
-          // to the next auth method rather than hanging.
-          finish(prompts.map(() => ''));
-        }
+        // The password only answers a single hidden password prompt (#5612); anything else
+        // gets empty answers, so ssh2 moves on to the next method instead of hanging.
+        finish(keyboardInteractiveAnswers(prompts, credentials.password));
       });
 
       // ---- Connect ----------------------------------------------------------

@@ -11,7 +11,7 @@
  * - Optional per-request delays so transfers are slow enough to pause.
  */
 
-import { Server, utils, type Connection, type SFTPWrapper } from 'ssh2';
+import { Server, utils, type Attributes, type Connection, type SFTPWrapper } from 'ssh2';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -205,7 +205,7 @@ function serveSftp(sftp: SFTPWrapper, opts: TestServerOptions): void {
   const root = path.resolve(opts.root);
   const handles = new Map<
     number,
-    { fd?: number; dir?: string; listed?: boolean; data?: Buffer }
+    { fd?: number; dir?: string; pending?: Array<{ filename: string; longname: string; attrs: Attributes }>; data?: Buffer }
   >();
   const virtual = opts.virtualFiles ?? {};
   /** The in-memory file at `p` ("/<name>"), if any. */
@@ -354,21 +354,25 @@ function serveSftp(sftp: SFTPWrapper, opts: TestServerOptions): void {
   sftp.on('READDIR', (reqid, h) => {
     const entry = handles.get(handleId(h));
     if (!entry?.dir) return sftp.status(reqid, STATUS_CODE.FAILURE);
-    if (entry.listed) return sftp.status(reqid, STATUS_CODE.EOF);
-    entry.listed = true;
     guard(reqid, () => {
-      const names = fs.readdirSync(entry.dir!).map((filename) => ({
-        filename,
-        longname: filename,
-        attrs: attrsOf(fs.statSync(path.join(entry.dir!, filename))),
-      }));
-      if (entry.dir === root) {
-        for (const [filename, data] of Object.entries(virtual)) {
-          names.push({ filename, longname: filename, attrs: virtualAttrs(data) });
+      if (!entry.pending) {
+        const names = fs.readdirSync(entry.dir!).map((filename) => ({
+          filename,
+          longname: filename,
+          attrs: attrsOf(fs.statSync(path.join(entry.dir!, filename))),
+        }));
+        if (entry.dir === root) {
+          for (const [filename, data] of Object.entries(virtual)) {
+            names.push({ filename, longname: filename, attrs: virtualAttrs(data) });
+          }
         }
+        entry.pending = names;
       }
-      if (names.length === 0) sftp.status(reqid, STATUS_CODE.EOF);
-      else sftp.name(reqid, names);
+      // At most 100 names per reply, as real servers do: one NAME packet with a 10,000-file
+      // folder (#5667) is larger than an SSH packet may be.
+      const batch = entry.pending.splice(0, 100);
+      if (batch.length === 0) sftp.status(reqid, STATUS_CODE.EOF);
+      else sftp.name(reqid, batch);
     });
   });
 

@@ -12,6 +12,7 @@ import { resolveVaultDir } from './fs-handlers';
 import * as crud from '../vault/crud';
 import { sshManager } from '../ssh';
 import { sftpManager } from '../sftp';
+import { securityManager } from '../security';
 import { getStoreDir as hardwareKeyStoreDir } from '../hardware-key/index';
 import { recordFileNames as hardwareKeyRecordFileNames } from '../hardware-key/record-names';
 import { pinStore } from '../vault/pin-unlock';
@@ -24,6 +25,13 @@ import {
 } from '../vault/manage';
 
 /** Wrap a handler result in a standardised envelope. */
+/** Write through a temp file and rename it over the target (one step on every OS). */
+async function writeFileAtomic(filePath: string, data: string): Promise<void> {
+  const tmp = `${filePath}.tmp-${process.pid}`;
+  await fs.writeFile(tmp, data, 'utf-8');
+  await fs.rename(tmp, filePath);
+}
+
 function ok<T>(data: T) {
   return { success: true as const, data };
 }
@@ -137,6 +145,7 @@ export function registerVaultHandlers(): void {
     try {
       await pushBeforeLock();
       vaultEngine.lock();
+      await securityManager.clearCopiedSecretNow(); // #5612
       return ok(null);
     } catch (err: unknown) {
       return fail(err instanceof Error ? err.message : String(err));
@@ -150,6 +159,7 @@ export function registerVaultHandlers(): void {
     try {
       await pushBeforeLock();
       vaultEngine.lock();
+      await securityManager.clearCopiedSecretNow(); // #5612
       try {
         sshManager.destroyAll();
       } catch {
@@ -227,9 +237,10 @@ export function registerVaultHandlers(): void {
           });
         });
 
-        // Update the salt file
+        // Update the salt file: a temp file renamed over it, so a crash mid-write can't leave a
+        // half-written salt next to the rekeyed database (#5612)
         const saltPath = currentPath + '.salt';
-        await fs.writeFile(saltPath, newSalt.toString('base64'), 'utf-8');
+        await writeFileAtomic(saltPath, newSalt.toString('base64'));
 
         // The PIN unlocks a copy of the old key, which no longer opens the vault (#2653)
         pinStore.clear(currentPath);

@@ -23,7 +23,18 @@ Design doc: `ssh-client-spec.md` (read the relevant section before changing a fe
   start-up chunk must stay under 400 kB: `pnpm check:bundle` (CI runs it after `pnpm build`) fails
   otherwise, so a new heavy dependency belongs in a lazy view, not in the shell.
 - Native/heavy deps are esbuild externals: `ssh2`, `@journeyapps/sqlcipher`, `basic-ftp`,
-  `@aws-sdk/client-s3`, `libsodium-wrappers-sumo`
+  `@aws-sdk/client-s3`, `libsodium-wrappers-sumo`, `electron-updater`. Those six are the only
+  `dependencies` (#5665): everything the renderer uses (React, zustand, lucide-react, xterm) and
+  `uuid` (bundled into main by esbuild) are devDependencies, so electron-builder doesn't copy
+  them into the asar. A new runtime dependency of **main** that stays external goes in
+  `dependencies`; anything esbuild or Vite bundles goes in devDependencies.
+  `electron-builder.yml` also leaves out `*.map`, `*.d.ts` and `*.md`. CI runs
+  `scripts/check-asar.mjs` on each packaged app.asar (no maps, no renderer packages, the runtime
+  modules present). v0.5.2: 67.4 MB / 7,625 files; now ~11 MB / ~1,950.
+- Start-up (#5665): sync backends are `require`d in `createBackend()`, so `@aws-sdk/client-s3`
+  (~170 ms to load) and `basic-ftp` only load when a vault syncs that way; `initSodium()` runs
+  alongside window creation (callers await it themselves). A test profile prints
+  `[nexus-startup] ready=…ms ready-to-show=…ms` (since main started) on stdout.
 - pnpm 10 (`packageManager` pinned), Node 24
 
 ## Commands
@@ -163,6 +174,16 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   `.nexus-download-<id>.part` and renames it over the target at the end, so a cancel only ever
   deletes that temp file. The test server's `virtualFiles` lists names a disk can't hold
   (`tests/e2e/sftp-download-names.spec.ts`).
+  Big folders (#5667): the listbox renders only the rows in view (`lib/virtual-rows.ts`, fixed
+  28 px rows + 8 overscan, unit-tested); the rows that aren't rendered are padding set through
+  `listRef` (no style prop). `focusRow` scrolls a row into view and focuses it once rendered
+  (`pendingRowFocus`); when the focused row is scrolled out, the listbox itself is the Tab stop
+  and hands focus back. Options carry `aria-setsize`/`aria-posinset`. So E2E can't find a row
+  that is scrolled away: scroll the pane (the listbox's parent) or use the keyboard first.
+  Selection checks use a `Set`. Local listings (`src/main/fs/local-list.ts`, unit-tested) lstat
+  64 entries at a time, and the Windows drive list stats every letter at once with a 1.5 s
+  timeout. The test SSH server answers READDIR in batches of 100 (one NAME packet with 10,000
+  entries never arrived). `tests/e2e/sftp-big-folder.spec.ts` uses 10,000-file folders.
   Transfers are pipelined (#5659, `copyPipelined` in `sftp/index.ts`): 64 positional
   `sftp.read`/`sftp.write` requests of 32 KB in flight, not ssh2's streams (one request at a
   time: 0.67 MB/s at 20 ms per request, now ~28 MB/s). Pause stops new requests (the sent ones
@@ -223,6 +244,23 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   "Clipboard clear timeout"), never `navigator.clipboard`: private keys since #2663. E2E can swap main's
   `clipboard.writeText`/`readText` for an in-memory fake via `app.evaluate` (`keychain.spec.ts`),
   which keeps the shared OS clipboard out of it.
+- Hardening (#5612): the renderer gets only `clipboard-read` / `clipboard-sanitized-write`
+  (`security/paths.ts`, `setPermissionRequestHandler` + `setPermissionCheckHandler`); no IPC hands
+  decrypted host credentials to the renderer (`hosts:resolve-credentials` is gone). A key
+  import from a file accepts only a path main's own picker returned (`fs/picked-files.ts`, one
+  use, 10 min). A copied secret is cleared at once on any lock and before quit
+  (`clearCopiedSecretNow`; the first quit waits for it). `NEXUS_DISABLE_IDLE_LOCK` works only
+  with `NEXUS_USER_DATA_DIR` (`idleLockDisabled`). Keyboard-interactive answers only a single
+  hidden "password" prompt (`ssh/keyboard-interactive.ts`); other prompts get empty answers.
+  Keys are generated and their public keys derived with ssh2 in-process
+  (`generateKeyPairPem`, retries the #5417 short ed25519 key), so no passphrase goes on a
+  command line; the PPK fallbacks call `puttygen` / `ssh-keygen` by absolute path
+  (`findKeyTool`). Fuses are flipped in `scripts/after-pack.js` before the macOS ad-hoc sign
+  (RunAsNode and NODE_OPTIONS off, asar integrity + only-load-from-asar on; the `--inspect`
+  switches stay on because Playwright attaches through them). With RunAsNode off,
+  `ELECTRON_RUN_AS_NODE=1 Nexus.exe` starts the **real app on the real profile**: never test a
+  fuse that way, use a test profile. `tests/unit/sftp-transfer.test.ts` opens its own SFTP
+  channel (`openTestSftp`): the unused `openSFTPDirect` (no host-key check) was removed.
 - `sr-only` is `position: absolute`: give its parent `relative`, or inside a scroll container it
   escapes to the nearest positioned ancestor outside and makes the whole page scroll (#2367).
 - Icons (#2374): Lucide only (`lucide-react`), always through `<Icon icon={Terminal} size={14} />`

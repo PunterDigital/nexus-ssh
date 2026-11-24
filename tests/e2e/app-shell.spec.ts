@@ -309,12 +309,19 @@ test('session tabs: more than fit scroll, the active one stays in view, and the 
   await expect(page.getByRole('button', { name: 'Scroll tabs right' })).toBeVisible();
 
   // Keyboard: arrows move focus, Enter opens the tab, Delete closes the focused session.
+  // Opening a terminal tab focuses the terminal one animation frame later (TerminalInstance).
+  // Wait for that before focusing a tab, or the late focus() lands after ours and the key goes
+  // to the terminal (the macOS packaged-app flake on #81 / #83).
+  const terminalHasFocus = () =>
+    page.evaluate(() => document.activeElement?.classList.contains('xterm-helper-textarea') ?? false);
+  await expect.poll(terminalHasFocus).toBe(true);
   await tabs.first().focus();
   await page.keyboard.press('ArrowRight');
   await expect(tabs.nth(1)).toBeFocused();
   await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'false');
   await page.keyboard.press('Enter');
   await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+  await expect.poll(terminalHasFocus).toBe(true);
   await tabs.nth(1).focus();
   await page.keyboard.press('Delete');
   await expect(tabs).toHaveCount(SESSIONS - 1);

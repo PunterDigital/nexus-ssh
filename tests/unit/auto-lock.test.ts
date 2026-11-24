@@ -48,6 +48,7 @@ describe('idle auto-lock', () => {
   afterEach(() => {
     securityManager.stopIdleMonitoring();
     delete process.env.NEXUS_DISABLE_IDLE_LOCK;
+    delete process.env.NEXUS_USER_DATA_DIR;
     vi.useRealTimers();
   });
 
@@ -65,8 +66,18 @@ describe('idle auto-lock', () => {
     expect(send).toHaveBeenCalledWith('security:vault-locked');
   });
 
-  it('does not poll idle time when NEXUS_DISABLE_IDLE_LOCK=1', () => {
+  it('still locks with NEXUS_DISABLE_IDLE_LOCK=1 outside a test profile (#5612)', () => {
     process.env.NEXUS_DISABLE_IDLE_LOCK = '1';
+    delete process.env.NEXUS_USER_DATA_DIR;
+    securityManager.init();
+    idleSeconds = 60 * 60;
+    vi.advanceTimersByTime(30_000);
+    expect(send).toHaveBeenCalledWith('security:vault-locked');
+  });
+
+  it('does not poll idle time when NEXUS_DISABLE_IDLE_LOCK=1 in a test profile', () => {
+    process.env.NEXUS_DISABLE_IDLE_LOCK = '1';
+    process.env.NEXUS_USER_DATA_DIR = 'test-profile';
     securityManager.init();
     idleSeconds = 60 * 60;
     vi.advanceTimersByTime(120_000);

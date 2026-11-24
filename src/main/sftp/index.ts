@@ -5,7 +5,7 @@
  */
 
 import type { Attributes, FileEntry, SFTPWrapper, Stats } from 'ssh2';
-import { Client } from 'ssh2';
+import type { Client } from 'ssh2';
 import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
 import * as path from 'path';
@@ -107,7 +107,6 @@ function sftpWrite(sftp: SFTPWrapper, handle: Buffer): WriteAt {
 
 class SFTPManager {
   private connections: Map<string, SFTPWrapper> = new Map();
-  private standaloneClients: Map<string, Client> = new Map();
   private transfers: Map<string, TransferState> = new Map();
   private transferQueue: TransferQueueItem[] = [];
   private activeTransfers: number = 0;
@@ -136,42 +135,6 @@ class SFTPManager {
   }
 
   // -----------------------------------------------------------------------
-  // openSFTPDirect — standalone SFTP session with its own SSH connection
-  // -----------------------------------------------------------------------
-
-  async openSFTPDirect(config: {
-    hostname: string;
-    port: number;
-    username: string;
-    password?: string;
-    privateKey?: string;
-    passphrase?: string;
-  }): Promise<string> {
-    const client = new Client();
-
-    await new Promise<void>((resolve, reject) => {
-      client.on('ready', () => resolve());
-      client.on('error', (err) => reject(err));
-
-      client.connect({
-        host: config.hostname,
-        port: config.port,
-        username: config.username,
-        password: config.password,
-        privateKey: config.privateKey,
-        passphrase: config.passphrase,
-        readyTimeout: 20_000,
-      });
-    });
-
-    const sftp = await this.sftpFromClient(client);
-    const connectionId = `sftp-${uuidv4()}`;
-    this.connections.set(connectionId, sftp);
-    this.standaloneClients.set(connectionId, client);
-    return connectionId;
-  }
-
-  // -----------------------------------------------------------------------
   // closeSFTP
   // -----------------------------------------------------------------------
 
@@ -184,17 +147,6 @@ class SFTPManager {
         // Ignore — may already be closed
       }
       this.connections.delete(connectionId);
-    }
-
-    // If this was a standalone connection, also tear down the SSH client
-    const client = this.standaloneClients.get(connectionId);
-    if (client) {
-      try {
-        client.end();
-      } catch {
-        // Ignore
-      }
-      this.standaloneClients.delete(connectionId);
     }
   }
 
