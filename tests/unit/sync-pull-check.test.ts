@@ -15,7 +15,7 @@ import {
   type SyncVault,
   type VaultFileInfo,
 } from '../../src/main/sync/pull-check';
-import { sameRemoteFile, syncEngine } from '../../src/main/sync/engine';
+import { NO_PASSWORD_PULL, sameRemoteFile, syncEngine } from '../../src/main/sync/engine';
 
 // #5611: a pull used to delete the local vault, rename the download in and only then try to
 // open it. Garbage in the sync location wiped the vault; an older genuine copy rolled it
@@ -320,5 +320,72 @@ describe('auto-sync ticks download only when the remote changed', () => {
     await syncEngine.pull(dbPath);
     expect(syncEngine.downloads).toBe(1);
     expect(fake.read(dbPath).hosts).toEqual(['from other device']);
+  });
+});
+
+// #5885: a hardware-key (passwordless) vault has no .salt; every push failed with ENOENT.
+describe('vaults without a .salt', () => {
+  let localDir: string;
+  let remoteDir: string;
+  let dbPath: string;
+  let fake: FakeVault;
+  const remote = (f: string) => path.join(remoteDir, f);
+  const write = (file: string, v: Partial<FakeVaultFile>) =>
+    writeFileSync(
+      file,
+      JSON.stringify({ password: PASSWORD, createdAt: 'A', generation: 0, hosts: [], ...v })
+    );
+
+  beforeEach(async () => {
+    localDir = mkdtempSync(path.join(tmpdir(), 'nexus-nosalt-local-'));
+    remoteDir = mkdtempSync(path.join(tmpdir(), 'nexus-nosalt-remote-'));
+    dbPath = path.join(localDir, 'Main Vault.db');
+    write(dbPath, { hosts: ['local-host'] });
+    fake = new FakeVault();
+    fake.openPath = dbPath;
+    fake.password = null; // opened with the hardware key: no master password
+    syncEngine.vault = () => fake.adapter();
+    await syncEngine.configure({ type: 'filesystem', directoryPath: remoteDir });
+  });
+
+  afterEach(async () => {
+    await syncEngine.disconnect();
+    rmSync(localDir, { recursive: true, force: true });
+    rmSync(remoteDir, { recursive: true, force: true });
+  });
+
+  it('push uploads the .db alone and succeeds', async () => {
+    await syncEngine.push(dbPath);
+    expect(existsSync(remote('Main Vault.db'))).toBe(true);
+    expect(existsSync(remote('Main Vault.db.salt'))).toBe(false);
+    expect(syncEngine.getStatus().lastError).toBeNull();
+  });
+
+  it('push from a vault with a .salt still uploads both', async () => {
+    writeFileSync(dbPath + '.salt', 'the-salt');
+    await syncEngine.push(dbPath);
+    expect(readFileSync(remote('Main Vault.db.salt'), 'utf8')).toBe('the-salt');
+  });
+
+  it('pull says plainly that a passwordless vault cannot pull, and never takes a stale remote salt', async () => {
+    write(remote('Main Vault.db'), { generation: 3, hosts: ['elsewhere'] });
+    writeFileSync(remote('Main Vault.db.salt'), 'salt from an earlier push');
+    syncEngine.downloads = 0;
+    const err = await syncEngine.pull(dbPath).catch((e: Error) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toBe(NO_PASSWORD_PULL);
+    expect((err as Error).message).not.toMatch(/ENOENT|\.salt|[\/]/);
+    expect(syncEngine.downloads).toBe(0);
+    expect(existsSync(dbPath + '.salt')).toBe(false);
+    expect(fake.read(dbPath).hosts).toEqual(['local-host']);
+  });
+
+  it('a pull whose synced copy has no .salt is checked as usual and keeps the local salt', async () => {
+    writeFileSync(dbPath + '.salt', 'local-salt');
+    fake.password = PASSWORD;
+    write(remote('Main Vault.db'), { generation: 2, hosts: ['from other device'] });
+    await syncEngine.pull(dbPath);
+    expect(fake.read(dbPath).hosts).toEqual(['from other device']);
+    expect(readFileSync(dbPath + '.salt', 'utf8')).toBe('local-salt');
   });
 });
