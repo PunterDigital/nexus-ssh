@@ -3,6 +3,7 @@
 // ============================================================
 
 import { ipcMain } from 'electron';
+import { takePickedFile } from '../fs/picked-files';
 import { IPC } from '../../shared/constants';
 import { keychainManager } from '../keychain/index';
 import * as crud from '../vault/crud';
@@ -68,6 +69,10 @@ export function registerKeychainHandlers(): void {
         let sshKey;
         if (params.source === 'file') {
           if (!params.filePath) throw new Error('filePath is required for file import');
+          // Only a file the user just picked in the open-file dialog (#5612)
+          if (!takePickedFile(params.filePath)) {
+            throw new Error('Choose the key file again with Browse.');
+          }
           sshKey = await keychainManager.importKeyFromFile({
             name: params.name.trim(),
             filePath: params.filePath,

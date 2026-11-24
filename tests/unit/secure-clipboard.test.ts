@@ -51,4 +51,23 @@ describe('secure clipboard auto-clear', () => {
     await vi.advanceTimersByTimeAsync(60_000);
     expect(clipboardText).toBe('s3cret');
   });
+
+  it('clears a copied secret at once on lock and before quit (#5612)', async () => {
+    await securityManager.copyToClipboardSecure('s3cret');
+    expect(securityManager.hasCopiedSecret()).toBe(true);
+    await securityManager.clearCopiedSecretNow();
+    expect(clipboardText).toBe('');
+    expect(securityManager.hasCopiedSecret()).toBe(false);
+    // The timer is gone too: nothing runs later.
+    clipboardText = 'user text';
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(clipboardText).toBe('user text');
+  });
+
+  it('the immediate clear also leaves something the user copied since', async () => {
+    await securityManager.copyToClipboardSecure('s3cret');
+    clipboardText = 'user text';
+    await securityManager.clearCopiedSecretNow();
+    expect(clipboardText).toBe('user text');
+  });
 });

@@ -208,6 +208,23 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   "Clipboard clear timeout"), never `navigator.clipboard`: private keys since #2663. E2E can swap main's
   `clipboard.writeText`/`readText` for an in-memory fake via `app.evaluate` (`keychain.spec.ts`),
   which keeps the shared OS clipboard out of it.
+- Hardening (#5612): the renderer gets only `clipboard-read` / `clipboard-sanitized-write`
+  (`security/paths.ts`, `setPermissionRequestHandler` + `setPermissionCheckHandler`); no IPC hands
+  decrypted host credentials to the renderer (`hosts:resolve-credentials` is gone). A key
+  import from a file accepts only a path main's own picker returned (`fs/picked-files.ts`, one
+  use, 10 min). A copied secret is cleared at once on any lock and before quit
+  (`clearCopiedSecretNow`; the first quit waits for it). `NEXUS_DISABLE_IDLE_LOCK` works only
+  with `NEXUS_USER_DATA_DIR` (`idleLockDisabled`). Keyboard-interactive answers only a single
+  hidden "password" prompt (`ssh/keyboard-interactive.ts`); other prompts get empty answers.
+  Keys are generated and their public keys derived with ssh2 in-process
+  (`generateKeyPairPem`, retries the #5417 short ed25519 key), so no passphrase goes on a
+  command line; the PPK fallbacks call `puttygen` / `ssh-keygen` by absolute path
+  (`findKeyTool`). Fuses are flipped in `scripts/after-pack.js` before the macOS ad-hoc sign
+  (RunAsNode and NODE_OPTIONS off, asar integrity + only-load-from-asar on; the `--inspect`
+  switches stay on because Playwright attaches through them). With RunAsNode off,
+  `ELECTRON_RUN_AS_NODE=1 Nexus.exe` starts the **real app on the real profile**: never test a
+  fuse that way, use a test profile. `tests/unit/sftp-transfer.test.ts` opens its own SFTP
+  channel (`openTestSftp`): the unused `openSFTPDirect` (no host-key check) was removed.
 - `sr-only` is `position: absolute`: give its parent `relative`, or inside a scroll container it
   escapes to the nearest positioned ancestor outside and makes the whole page scroll (#2367).
 - Icons (#2374): Lucide only (`lucide-react`), always through `<Icon icon={Terminal} size={14} />`

@@ -12,6 +12,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { Client, type SFTPWrapper } from 'ssh2';
 import { startTestServer, type TestServer } from '../fixtures/ssh-server';
 
 // The SFTP manager pulls in the SSH manager, which registers IPC handlers via electron.
@@ -74,6 +75,26 @@ let localDir: string;
 let remoteDir: string;
 let server: TestServer;
 let conn: string;
+let testClient: Client | undefined;
+
+/**
+ * An SFTP channel to the test server, registered with the manager as a connection. (The app's
+ * own direct-SFTP path was dead code without a host-key check and went in #5612.)
+ */
+async function openTestSftp(s: TestServer): Promise<string> {
+  const client = new Client();
+  testClient = client;
+  await new Promise<void>((resolve, reject) => {
+    client.on('ready', () => resolve()).on('error', reject);
+    client.connect({ host: s.host, port: s.port, username: s.username, password: s.password });
+  });
+  const sftp = await new Promise<SFTPWrapper>((resolve, reject) =>
+    client.sftp((err, w) => (err ? reject(err) : resolve(w))),
+  );
+  const id = 'sftp-test';
+  (sftpManager as unknown as { connections: Map<string, SFTPWrapper> }).connections.set(id, sftp);
+  return id;
+}
 
 beforeAll(async () => {
   localDir = mkdtempSync(path.join(tmpdir(), 'nexus-sftp-local-'));
@@ -88,12 +109,7 @@ beforeAll(async () => {
     readDelayMs: DELAY_MS,
     virtualFiles: { [HOSTILE_NAME]: Buffer.from('echo pwned\r\n') },
   });
-  conn = await sftpManager.openSFTPDirect({
-    hostname: server.host,
-    port: server.port,
-    username: server.username,
-    password: server.password,
-  });
+  conn = await openTestSftp(server);
   sftpManager.setMaxConcurrency(1);
   // Record every progress message main sends (one IPC message each).
   sftpManager.setMainWindow({
@@ -109,6 +125,7 @@ const progress: Array<{ id: string; status: string; transferred: number; at: num
 
 afterAll(async () => {
   sftpManager.destroyAll();
+  testClient?.end();
   await server?.close();
   rmSync(localDir, { recursive: true, force: true });
   rmSync(remoteDir, { recursive: true, force: true });
