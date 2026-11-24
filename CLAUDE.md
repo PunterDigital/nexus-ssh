@@ -163,6 +163,16 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   `.nexus-download-<id>.part` and renames it over the target at the end, so a cancel only ever
   deletes that temp file. The test server's `virtualFiles` lists names a disk can't hold
   (`tests/e2e/sftp-download-names.spec.ts`).
+  Big folders (#5667): the listbox renders only the rows in view (`lib/virtual-rows.ts`, fixed
+  28 px rows + 8 overscan, unit-tested); the rows that aren't rendered are padding set through
+  `listRef` (no style prop). `focusRow` scrolls a row into view and focuses it once rendered
+  (`pendingRowFocus`); when the focused row is scrolled out, the listbox itself is the Tab stop
+  and hands focus back. Options carry `aria-setsize`/`aria-posinset`. So E2E can't find a row
+  that is scrolled away: scroll the pane (the listbox's parent) or use the keyboard first.
+  Selection checks use a `Set`. Local listings (`src/main/fs/local-list.ts`, unit-tested) lstat
+  64 entries at a time, and the Windows drive list stats every letter at once with a 1.5 s
+  timeout. The test SSH server answers READDIR in batches of 100 (one NAME packet with 10,000
+  entries never arrived). `tests/e2e/sftp-big-folder.spec.ts` uses 10,000-file folders.
   Transfers are pipelined (#5659, `copyPipelined` in `sftp/index.ts`): 64 positional
   `sftp.read`/`sftp.write` requests of 32 KB in flight, not ssh2's streams (one request at a
   time: 0.67 MB/s at 20 ms per request, now ~28 MB/s). Pause stops new requests (the sent ones

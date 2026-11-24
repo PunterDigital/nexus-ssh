@@ -9,6 +9,7 @@ import { promises as fs } from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { IPC, VAULT_DEFAULT_DIR_NAME } from '../../shared/constants';
+import { listDrives, listLocalDir } from '../fs/local-list';
 
 /**
  * Resolve the active vault directory, honouring the user's configured path
@@ -54,56 +55,7 @@ function fail(error: string) {
   return { success: false as const, error };
 }
 
-export interface LocalFSEntry {
-  filename: string;
-  longname: string;
-  isDirectory: boolean;
-  isSymlink: boolean;
-  size: number;
-  modifyTime: number;
-  accessTime: number;
-  permissions: number;
-  owner: number;
-  group: number;
-}
-
-function formatLongname(name: string, stat: { isDirectory: () => boolean; size: number; mtime: Date }): string {
-  const type = stat.isDirectory() ? 'd' : '-';
-  const date = stat.mtime.toISOString().slice(0, 16).replace('T', ' ');
-  return `${type}rwxr-xr-x 1 user group ${String(stat.size).padStart(10)} ${date} ${name}`;
-}
-
-async function listDrives(): Promise<LocalFSEntry[]> {
-  if (process.platform !== 'win32') {
-    // On Unix, the root is just '/'
-    return [];
-  }
-  const drives: LocalFSEntry[] = [];
-  for (let code = 'A'.charCodeAt(0); code <= 'Z'.charCodeAt(0); code++) {
-    const letter = String.fromCharCode(code);
-    const driveRoot = `${letter}:\\`;
-    try {
-      const stat = await fs.stat(driveRoot);
-      if (stat.isDirectory()) {
-        drives.push({
-          filename: `${letter}:`,
-          longname: `drwxr-xr-x 1 user group          0 - ${letter}:`,
-          isDirectory: true,
-          isSymlink: false,
-          size: 0,
-          modifyTime: Math.floor(stat.mtimeMs / 1000),
-          accessTime: Math.floor(stat.atimeMs / 1000),
-          permissions: stat.mode,
-          owner: 0,
-          group: 0,
-        });
-      }
-    } catch {
-      // Drive not present
-    }
-  }
-  return drives;
-}
+export type { LocalFSEntry } from '../fs/local-list';
 
 export function registerFsHandlers(): void {
   // List a directory on the local filesystem
@@ -118,36 +70,8 @@ export function registerFsHandlers(): void {
         dirPath = '/';
       }
 
-      const resolved = path.resolve(dirPath);
-      const entries = await fs.readdir(resolved, { withFileTypes: true });
-
-      const results: LocalFSEntry[] = [];
-      for (const entry of entries) {
-        const fullPath = path.join(resolved, entry.name);
-        try {
-          const stat = await fs.lstat(fullPath);
-          results.push({
-            filename: entry.name,
-            longname: formatLongname(entry.name, {
-              isDirectory: () => stat.isDirectory(),
-              size: stat.size,
-              mtime: stat.mtime,
-            }),
-            isDirectory: stat.isDirectory(),
-            isSymlink: stat.isSymbolicLink(),
-            size: stat.size,
-            modifyTime: Math.floor(stat.mtimeMs / 1000),
-            accessTime: Math.floor(stat.atimeMs / 1000),
-            permissions: stat.mode,
-            owner: stat.uid ?? 0,
-            group: stat.gid ?? 0,
-          });
-        } catch {
-          // Skip entries that can't be stat'd (permission denied, etc.)
-        }
-      }
-
-      return ok(results);
+      // Stats run in parallel, a bounded number at once (#5667)
+      return ok(await listLocalDir(dirPath));
     } catch (err: unknown) {
       return fail(err instanceof Error ? err.message : String(err));
     }
