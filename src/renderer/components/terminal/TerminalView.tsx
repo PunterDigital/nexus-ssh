@@ -12,7 +12,15 @@ import { Icon } from '../common/Icon';
 // the active one while keeping inactive ones alive in the DOM
 // ============================================================
 
-export const TerminalView: React.FC = () => {
+interface TerminalViewProps {
+  /**
+   * Another view is showing (#5663). The terminals stay mounted, hidden, so coming back
+   * shows them as they were instead of rebuilding every xterm and replaying its history.
+   */
+  hidden?: boolean;
+}
+
+export const TerminalView: React.FC<TerminalViewProps> = ({ hidden = false }) => {
   const tabs = useTerminalStore((s) => s.tabs);
   const activeTabId = useTerminalStore((s) => s.activeTabId);
   const sessions = useTerminalStore((s) => s.sessions);
@@ -36,6 +44,7 @@ export const TerminalView: React.FC = () => {
     (activeSession.status === 'connecting' || activeSession.status === 'error');
 
   if (terminalTabs.length === 0) {
+    if (hidden) return null;
     return (
       <div className="flex flex-1 items-center justify-center bg-[var(--color-bg-primary)]">
         <div className="flex flex-col items-center gap-3 text-[var(--color-text-muted)]">
@@ -50,7 +59,10 @@ export const TerminalView: React.FC = () => {
   }
 
   return (
-    <div className="relative flex flex-1 overflow-hidden bg-[var(--color-bg-primary)]">
+    <div
+      className={`relative flex-1 overflow-hidden bg-[var(--color-bg-primary)] ${hidden ? 'hidden' : 'flex'}`}
+      data-terminal-view={hidden ? 'hidden' : 'shown'}
+    >
       {terminalTabs.map((tab) => {
         const session = sessions.find((s) => s.id === tab.sessionId);
         // Only render a real xterm instance once the session is connected
@@ -60,13 +72,13 @@ export const TerminalView: React.FC = () => {
           <TerminalInstance
             key={tab.sessionId!}
             sessionId={tab.sessionId!}
-            isActive={tab.id === activeTabId}
+            isActive={!hidden && tab.id === activeTabId}
             theme={theme.terminal}
           />
         );
       })}
 
-      {showOverlay && activeSession && (
+      {!hidden && showOverlay && activeSession && (
         <ConnectionStatus
           hostname={activeSession.hostname || activeSession.label}
           phase={activeSession.status === 'error' ? 'error' : 'connecting'}
@@ -75,7 +87,7 @@ export const TerminalView: React.FC = () => {
         />
       )}
 
-      {activeTab && reconnect && (
+      {!hidden && activeTab && reconnect && (
         <ReconnectDialog
           key={activeTab.sessionId!}
           sessionId={activeTab.sessionId!}

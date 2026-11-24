@@ -193,8 +193,16 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   into xterm options (validated, clamped). A module cache holds the current values: `useTerminalPrefsCache`
   (App) loads it on unlock and follows `settings:changed`, `terminal-store.reset()` clears it.
   `TerminalInstance` builds xterm from the cache (WebGL only if `gpuAcceleration`: applies to new
-  sessions) and updates open terminals in place. Another view unmounts `TerminalView`; coming back
-  rebuilds each xterm from the cache, and main replays the output (`markReady` → `scrollbackBuffer`).
+  sessions) and updates open terminals in place. Since #5663 `TerminalView` stays mounted
+  (`hidden`, every instance inactive, no overlay or reconnect dialog) while another view shows,
+  once a terminal tab exists (`App.tsx` `MainContent`), so a view switch rebuilds nothing. A
+  remount (React Strict Mode, a reload) still replays main's buffer (`markReady` →
+  `scrollbackBuffer`), which is a `Scrollback` (`ssh/scrollback.ts`, unit-tested): the newest
+  2 Mi characters, trimmed at a line start. PTY output is decoded with one `StringDecoder` per
+  stream, so a UTF-8 character split across packets stays whole. Resizes go through
+  `lib/resize-sender.ts` (at most one `ssh:resize` per 100 ms while dragging, unit-tested); a
+  hidden terminal (0 × 0 container) doesn't fit. The test shell has `flood <MB>` and `utf8split`
+  (`tests/e2e/terminal-scrollback.spec.ts`).
   Main's settings `DEFAULTS` must list every vault setting: `getAll` returns only those keys
   (cursor style/blink were missing until #2662).
 - WebGL glyph font (#5004): @xterm/addon-webgl 0.19 (and the 0.20 betas) sets its glyph-atlas
