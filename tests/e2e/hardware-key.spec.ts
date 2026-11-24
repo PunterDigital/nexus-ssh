@@ -1,5 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -52,7 +52,10 @@ test('hardware key: a passwordless vault unlocks with its PRF output after a res
     [PRF, CREDENTIAL] as const,
   );
   expect(path.basename(vaultPath)).toBe('HW Vault.db');
-  expect(existsSync(path.join(userDataDir, 'hwkey-store', 'HW Vault.hwkey'))).toBe(true);
+  // Named by vault path since #5902: `<file name>.<hash of its folder>.hwkey`.
+  expect(readdirSync(path.join(userDataDir, 'hwkey-store'))).toEqual([
+    expect.stringMatching(/^HW Vault\.[0-9a-f]{12}\.hwkey$/),
+  ]);
   await app.close();
 
   app = await launch();

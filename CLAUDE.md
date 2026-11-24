@@ -234,9 +234,20 @@ pnpm exec electron-builder --win --publish never   # local installer into dist-r
   Show in Folder, Delete…; `vault/VaultPickerDialogs.tsx`). Single-vault unlock screens reach the
   picker via "Manage vaults". Main-side logic is `src/main/vault/manage.ts` (no Electron imports,
   unit-tested): only `.db` files directly in the picker's folder, never the open vault. A vault's
-  files are `<name>.db`, `<name>.db.salt`, SQLite `-journal/-wal/-shm`, plus `hwkey-store/<name>.hwkey`
-  (unlock data keyed by file name): rename moves them all, delete sends
-  them all to the OS trash (`shell.trashItem`). Test profiles can set `NEXUS_TRASH_DIR` to move them
+  files are `<name>.db`, `<name>.db.salt`, SQLite `-journal/-wal/-shm`, plus the hardware-key
+  record in `hwkey-store/`: rename moves them all, delete sends
+  them all to the OS trash (`shell.trashItem`).
+  Hardware-key records (#5902, `hardware-key/record-names.ts`, no Electron imports): named
+  `<name>.<12 hex of sha256(folder)>.hwkey` (folder lower-cased on Windows/macOS), so same-named
+  vaults in different folders each keep theirs. Lookup (`hardwareKeyManager.findRecord`): own
+  record, then v0.6.0's `<name>.hwkey`, then the one path-named record for that name from another
+  folder (a moved vault folder; with two there is no telling, so neither). After an unlock
+  (`settleAfterUnlock`) a record found under another name is copied to the own name and kept;
+  once the own record unlocks, `<name>.hwkey` is deleted if it holds the same data. The migration
+  never deletes another folder's record (a copy of the vault may be there). Rename never overwrites an
+  existing `<new>.hwkey` (another vault's, possibly); delete trashes both names.
+  `tests/e2e/hardware-key-records.spec.ts` covers two same-named vaults and the migration on a
+  copied profile. Test profiles can set `NEXUS_TRASH_DIR` to move them
   into a folder instead of the real Recycle Bin. Sync settings live inside the `.db`.
 - Vault = SQLCipher DB + `.salt` file under `userData/vaults`. Keys: Argon2id (libsodium) →
   XSalsa20-Poly1305 key wrapping (`src/main/kdf`). Optional PIN and hardware-key (WebAuthn PRF) unlock.

@@ -14,14 +14,27 @@ export interface VaultFileContext {
   /** The folder the vault picker lists. */
   vaultDir: string;
   /**
-   * Per-vault files Nexus keeps outside the vault folder, named `<vault name><ext>`
-   * (hardware-key unlock data). They follow a rename and go with a delete.
+   * Per-vault files Nexus keeps outside the vault folder (hardware-key unlock data). They follow
+   * a rename and go with a delete.
    */
-  sideStores: Array<{ dir: string; ext: string }>;
+  sideStores: SideStore[];
   /** The vault that is open right now (it can't be renamed or deleted), or null. */
   openVaultPath: string | null;
   /** Move a file to the OS Recycle Bin / Trash. */
   trash: (file: string) => Promise<void>;
+}
+
+/** A folder of per-vault files kept outside the vault folder. */
+export interface SideStore {
+  dir: string;
+  /**
+   * The vault's file names in `dir`, given its path; the same order for any path, so a rename
+   * pairs them up. `trashStale`: a file already under the new name when the vault had none is
+   * left over from a vault deleted by hand, and goes to the trash rather than attach itself to
+   * the renamed vault. False for names other vaults may share (#5902: the old file-name
+   * hardware-key record, which a same-named vault in another folder may still use).
+   */
+  fileNames: (vaultPath: string) => Array<{ name: string; trashStale: boolean }>;
 }
 
 /** SQLite files that sit next to the .db (only after a crash, usually). */
@@ -88,18 +101,24 @@ function assertNotOpen(vaultPath: string, ctx: VaultFileContext, action: string)
   }
 }
 
-/** Every file that belongs to the vault, as [current path, path for a vault called `name`]. */
-function vaultFilePairs(vaultPath: string, name: string, ctx: VaultFileContext): Array<[string, string]> {
-  const oldName = vaultNameFromPath(vaultPath);
+/**
+ * Every file that belongs to the vault, as [current path, path for a vault called `name`,
+ * whether a stale file at the new path goes to the trash].
+ */
+function vaultFilePairs(vaultPath: string, name: string, ctx: VaultFileContext): Array<[string, string, boolean]> {
   const target = path.join(path.dirname(vaultPath), `${name}${VAULT_FILE_EXTENSION}`);
-  const pairs: Array<[string, string]> = [
-    [vaultPath, target],
-    [vaultPath + VAULT_SALT_EXTENSION, target + VAULT_SALT_EXTENSION],
-    ...DB_COMPANIONS.map((s): [string, string] => [vaultPath + s, target + s]),
-    ...PULL_BACKUPS.map((s): [string, string] => [vaultPath + s, target + s]),
+  const pairs: Array<[string, string, boolean]> = [
+    [vaultPath, target, true],
+    [vaultPath + VAULT_SALT_EXTENSION, target + VAULT_SALT_EXTENSION, true],
+    ...DB_COMPANIONS.map((s): [string, string, boolean] => [vaultPath + s, target + s, true]),
+    ...PULL_BACKUPS.map((s): [string, string, boolean] => [vaultPath + s, target + s, true]),
   ];
-  for (const { dir, ext } of ctx.sideStores) {
-    pairs.push([path.join(dir, `${oldName}${ext}`), path.join(dir, `${name}${ext}`)]);
+  for (const store of ctx.sideStores) {
+    const from = store.fileNames(vaultPath);
+    const to = store.fileNames(target);
+    from.forEach(({ name: file, trashStale }, i) => {
+      pairs.push([path.join(store.dir, file), path.join(store.dir, to[i].name), trashStale]);
+    });
   }
   return pairs;
 }
@@ -125,12 +144,15 @@ export async function renameVault(vaultPath: unknown, newName: unknown, ctx: Vau
 
   const done: Array<[string, string]> = [];
   try {
-    for (const [src, dest] of pairs) {
+    for (const [src, dest, trashStale] of pairs) {
       if (!(await exists(src))) {
         // Unlock data left behind by a vault deleted by hand would attach itself to this one.
-        if (!caseOnly && (await exists(dest))) await ctx.trash(dest);
+        if (trashStale && !caseOnly && (await exists(dest))) await ctx.trash(dest);
         continue;
       }
+      // A shared name that another vault's file already has: never overwrite it (#5902). This
+      // vault's copy stays under its old name instead.
+      if (!trashStale && !caseOnly && (await exists(dest))) continue;
       await fs.rename(src, dest);
       done.push([src, dest]);
     }

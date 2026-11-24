@@ -26,14 +26,9 @@ function fail(error: string) {
   return { success: false as const, error };
 }
 
-/**
- * Stable per-vault identifier used to scope the .hwkey file. We use the
- * vault filename (without .db) — it's already filesystem-safe because it
- * came from sanitizeVaultFilename at create time.
- */
-function vaultIdFromPath(vaultPath: string): string {
-  return path.basename(vaultPath, VAULT_FILE_EXTENSION);
-}
+// Hardware-key records are named by vault path since #5902 (`hardware-key/record-names.ts`):
+// new data goes under `hardwareKeyManager.ownRecordId(path)`, lookups go through `findRecord`,
+// which also finds a record v0.6.0 wrote under the file name only.
 
 async function getDefaultVaultDir(): Promise<string> {
   const dir = await resolveVaultDir();
@@ -63,8 +58,7 @@ export function registerHardwareKeyHandlers(): void {
   ipcMain.handle(IPC.HWKEY_HAS, async (_event, vaultPath: string) => {
     try {
       if (!vaultPath) return ok(false);
-      const vaultId = vaultIdFromPath(vaultPath);
-      return ok(hardwareKeyManager.isSetup(vaultId));
+      return ok((await hardwareKeyManager.findRecord(vaultPath)) !== null);
     } catch (err: unknown) {
       return fail(err instanceof Error ? err.message : String(err));
     }
@@ -75,8 +69,8 @@ export function registerHardwareKeyHandlers(): void {
   // WebAuthn assertion (credentialId in allowCredentials, salt as PRF input).
   ipcMain.handle(IPC.HWKEY_GET_INFO, async (_event, vaultPath: string) => {
     try {
-      const vaultId = vaultIdFromPath(vaultPath);
-      const info = await hardwareKeyManager.getCredentialInfo(vaultId);
+      const recordId = await hardwareKeyManager.findRecord(vaultPath);
+      const info = recordId ? await hardwareKeyManager.getCredentialInfo(recordId) : null;
       if (!info) throw new Error('Hardware key is not set up for this vault.');
       return ok(info);
     } catch (err: unknown) {
@@ -101,7 +95,7 @@ export function registerHardwareKeyHandlers(): void {
       const prfOutput = Buffer.from(payload.prfOutput, 'base64');
       try {
         await hardwareKeyManager.setup({
-          vaultId: vaultIdFromPath(vaultPath),
+          vaultId: hardwareKeyManager.ownRecordId(vaultPath),
           dbKey,
           prfOutput,
           credentialId: payload.credentialId,
@@ -152,7 +146,7 @@ export function registerHardwareKeyHandlers(): void {
         await crud.createVault({ name: payload.name ?? 'Default' });
 
         await hardwareKeyManager.setup({
-          vaultId: vaultIdFromPath(vaultPath),
+          vaultId: hardwareKeyManager.ownRecordId(vaultPath),
           dbKey,
           prfOutput,
           credentialId: payload.credentialId,
@@ -178,9 +172,13 @@ export function registerHardwareKeyHandlers(): void {
     const prfOutput = Buffer.from(payload.prfOutput, 'base64');
 
     try {
-      const vaultId = vaultIdFromPath(payload.vaultPath);
-      dbKey = await hardwareKeyManager.unwrapDbKey(vaultId, prfOutput);
+      const recordId = await hardwareKeyManager.findRecord(payload.vaultPath);
+      if (!recordId) throw new Error('Hardware key is not set up for this vault.');
+      dbKey = await hardwareKeyManager.unwrapDbKey(recordId, prfOutput);
       await vaultEngine.unlockWithKey(payload.vaultPath, dbKey);
+      // Only now that the record has opened the vault: copy an old-named record to the
+      // vault's own name, or drop the old one once the copy has worked (#5902).
+      await hardwareKeyManager.settleAfterUnlock(payload.vaultPath, recordId);
       return ok(payload.vaultPath);
     } catch (err: unknown) {
       return fail(err instanceof Error ? err.message : String(err));
@@ -193,14 +191,15 @@ export function registerHardwareKeyHandlers(): void {
   // ── HWKEY_REMOVE ────────────────────────────────────────────
   ipcMain.handle(IPC.HWKEY_REMOVE, async (_event, vaultPath: string) => {
     try {
-      const vaultId = vaultIdFromPath(vaultPath);
-      const info = await hardwareKeyManager.getCredentialInfo(vaultId);
+      const recordId = await hardwareKeyManager.findRecord(vaultPath);
+      if (!recordId) return ok(null);
+      const info = await hardwareKeyManager.getCredentialInfo(recordId);
       if (info?.passwordless) {
         throw new Error(
           'Cannot remove the hardware key from a passwordless vault — there would be no way left to unlock it. Set a master password first.',
         );
       }
-      hardwareKeyManager.clear(vaultId);
+      await hardwareKeyManager.removeForVault(vaultPath, recordId);
       return ok(null);
     } catch (err: unknown) {
       return fail(err instanceof Error ? err.message : String(err));
