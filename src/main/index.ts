@@ -18,6 +18,18 @@ import { getCSPHeader } from './security/csp';
 import { isInsideRoot, isPermissionAllowed } from './security/paths';
 import { setUpdaterWindow, startUpdateChecks } from './updater/index';
 
+// Start-up marks (#5665), printed for test profiles: main start → app ready → ready-to-show.
+const startedAt = process.hrtime.bigint();
+const sinceStart = () => Number((process.hrtime.bigint() - startedAt) / 1_000_000n);
+const startupMarks: Array<[string, number]> = [];
+function markStartup(name: string): void {
+  startupMarks.push([name, sinceStart()]);
+  if (name === 'ready-to-show' && process.env.NEXUS_USER_DATA_DIR) {
+    // eslint-disable-next-line no-console -- E2E reads this line (startup timings, #5665)
+    console.log(`[nexus-startup] ${startupMarks.map(([n, ms]) => `${n}=${ms}ms`).join(' ')}`);
+  }
+}
+
 let mainWindow: BrowserWindow | null = null;
 let localServer: http.Server | null = null;
 let rendererOrigin: string | null = null;
@@ -162,6 +174,7 @@ function createWindow(): void {
 
   // Show window when ready to avoid visual flash
   mainWindow.once('ready-to-show', () => {
+    markStartup('ready-to-show');
     if (isTestProfile) mainWindow?.showInactive();
     else mainWindow?.show();
   });
@@ -182,8 +195,10 @@ function setupIPC(): void {
 
 // App lifecycle
 app.whenReady().then(async () => {
-  // Initialise libsodium before anything else
-  await initSodium();
+  markStartup('ready');
+  // libsodium (a 1.5 MB WASM compile) loads while the window does: every caller awaits
+  // initSodium() itself before using it (#5665).
+  const sodiumReady = initSodium();
 
   // Start the loopback renderer server so the production renderer is served
   // from a "localhost" origin (required by WebAuthn for hardware-key unlock).
@@ -198,6 +213,7 @@ app.whenReady().then(async () => {
   createWindow();
   // Argon2id runs in a worker (#5661): start it now so the first unlock doesn't wait for it to start.
   warmKdfWorker();
+  await sodiumReady;
 
   // Wire singletons to the main window for IPC push events
   if (mainWindow) {

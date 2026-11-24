@@ -10,7 +10,9 @@ import { IPC, DEFAULT_KEEPALIVE_INTERVAL } from '../../shared/constants';
 import type { ResolvedCredentials, SSHSession } from '../../shared/types';
 import { createHostVerifier } from './host-key';
 import { keyboardInteractiveAnswers } from './keyboard-interactive';
+import { StringDecoder } from 'string_decoder';
 import { classifyClose, closeMarker, RECONNECTED_MARKER } from './session-close';
+import { Scrollback } from './scrollback';
 
 // ---------------------------------------------------------------------------
 // Internal state type
@@ -25,8 +27,8 @@ interface SSHSessionState {
   channel: ClientChannel | null;
   connected: boolean;
   startedAt: string;
-  /** All PTY output since connect — used to replay history on (re)mount. */
-  scrollbackBuffer: string[];
+  /** The newest PTY output, up to a budget (#5663) — replayed on (re)mount. */
+  scrollbackBuffer: Scrollback;
   /** True once the renderer's xterm instance has mounted and called markReady. */
   rendererReady: boolean;
   /** Last PTY size, so a reconnect opens the shell at the terminal's size. */
@@ -50,7 +52,7 @@ interface RetainedSession {
   hostId: string;
   label: string;
   colour: string | null;
-  scrollbackBuffer: string[];
+  scrollbackBuffer: Scrollback;
   rendererReady: boolean;
   cols: number;
   rows: number;
@@ -121,7 +123,7 @@ class SSHManager {
       connected: false,
       startedAt: new Date().toISOString(),
       // A reconnect continues the old output, so a remount replays all of it.
-      scrollbackBuffer: previous ? [...previous.scrollbackBuffer] : [],
+      scrollbackBuffer: previous ? previous.scrollbackBuffer.clone() : new Scrollback(),
       rendererReady: previous?.rendererReady ?? false,
       cols,
       rows,
@@ -162,12 +164,15 @@ class SSHManager {
             // Keep an in-memory scrollback of all PTY output so that if the
             // renderer's xterm instance re-mounts (React Strict Mode, tab
             // switch, etc.) it can replay the full history via markReady().
-            const forwardOrBuffer = (data: Buffer) => {
-              this.output(state, data.toString('utf8'));
+            // One decoder per stream: a multi-byte character split across two chunks
+            // comes out whole instead of as two U+FFFD (#5663).
+            const forwardOrBuffer = (decoder: StringDecoder) => (data: Buffer) => {
+              const text = decoder.write(data);
+              if (text) this.output(state, text);
             };
 
-            channel.on('data', forwardOrBuffer);
-            channel.stderr.on('data', forwardOrBuffer);
+            channel.on('data', forwardOrBuffer(new StringDecoder('utf8')));
+            channel.stderr.on('data', forwardOrBuffer(new StringDecoder('utf8')));
 
             // An exit status means the shell ended on purpose; a signal means it was killed.
             channel.on('exit', (code: number | null, signal?: string) => {
@@ -302,7 +307,7 @@ class SSHManager {
     // Return the full scrollback so the renderer can replay history.
     // We leave the buffer in place so subsequent remounts (Strict Mode,
     // tab switches) also get the same history.
-    const buffered = session.scrollbackBuffer.join('');
+    const buffered = session.scrollbackBuffer.text();
     session.rendererReady = true;
     return buffered;
   }
